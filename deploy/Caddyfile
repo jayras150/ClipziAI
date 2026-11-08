@@ -1,0 +1,51 @@
+# =============================================================================
+# Caddyfile — reverse proxy + HTTPS otomatis untuk Clipzi AI
+#
+# Satu domain melayani dua hal:
+#   /api/*  -> backend FastAPI  (port 8000, rute sudah diawali /api)
+#   lainnya -> frontend Next.js (port 3000)
+#
+# Karena satu origin, browser tidak lagi memerlukan konfigurasi CORS.
+# Domain diambil dari variabel lingkungan DOMAIN (lihat .env.vps.example).
+# =============================================================================
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# --- API FastAPI ---
+	# Catatan: JANGAN pakai handle_path (itu membuang prefix /api),
+	# karena rute backend memang /api/...
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+
+	# Dokumentasi interaktif & OpenAPI (opsional; hapus kalau tidak ingin publik)
+	handle /docs* {
+		reverse_proxy backend:8000
+	}
+	handle /redoc* {
+		reverse_proxy backend:8000
+	}
+	handle /openapi.json {
+		reverse_proxy backend:8000
+	}
+
+	# --- Frontend Next.js (semua rute lain) ---
+	handle {
+		reverse_proxy frontend:3000
+	}
+
+	# Header keamanan dasar
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

@@ -74,15 +74,18 @@ COPY . .
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin clipzi \
     && mkdir -p $APP_HOME/media $APP_HOME/tmp \
     && chown -R clipzi:clipzi $APP_HOME
-USER clipzi
 
 EXPOSE 8000
 
 # /api/health selalu balas 200 (status healthy/degraded), cocok untuk liveness.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-    CMD curl -fsS http://127.0.0.1:8000/api/health || exit 1
+    CMD curl -fsS http://127.0.0.1:${PORT:-8000}/api/health || exit 1
 
-# Backend saat ini hanya API server (belum ada worker ARQ terpisah).
-# Untuk production di balik reverse proxy, --proxy-headers dipakai agar
-# scheme/host asli diteruskan (penting untuk OAuth callback & webhook).
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+# Entrypoint memilih peran berdasarkan CLIPZI_ROLE:
+#   api (default) -> uvicorn app.main:app
+#   worker        -> uvicorn deployments.worker_api:app   (GPU worker Vast.ai)
+COPY --chown=clipzi:clipzi docker-entrypoint.sh /usr/local/bin/clipzi-entrypoint.sh
+RUN chmod 0755 /usr/local/bin/clipzi-entrypoint.sh
+
+USER clipzi
+ENTRYPOINT ["/usr/local/bin/clipzi-entrypoint.sh"]

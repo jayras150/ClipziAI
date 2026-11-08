@@ -1,0 +1,84 @@
+# =============================================================================
+# Clipzi AI — deployment VPS (API + frontend + HTTPS dalam satu mesin)
+#
+# Jalankan dari ROOT repo:
+#   docker compose --env-file deploy/.env.vps -f deploy/docker-compose.vps.yml up -d
+#
+# Variabel yang dibutuhkan (deploy/.env.vps):
+#   DOMAIN, DOCKERHUB_USER, TAG, NEXT_PUBLIC_API_URL
+#
+# Rahasia backend tetap dibaca dari backend/.env (di luar image).
+# =============================================================================
+name: clipzi
+
+services:
+  backend:
+    image: ${DOCKERHUB_USER:?isi DOCKERHUB_USER di deploy/.env.vps}/clipzi-backend:${TAG:-latest}
+    container_name: clipzi-api
+    env_file:
+      - ../backend/.env
+    expose:
+      - "8000"
+    volumes:
+      # cache cookies yt-dlp (token hasil rotasi ikut tersimpan antar restart)
+      - clipzi_cache:/app/.cache
+    mem_limit: 512m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  frontend:
+    image: ${DOCKERHUB_USER:?isi DOCKERHUB_USER di deploy/.env.vps}/clipzi-frontend:${TAG:-latest}
+    container_name: clipzi-web
+    environment:
+      # Dibaca saat container start -> ditulis ke /app/public/runtime-env.js
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://${DOMAIN}}
+    expose:
+      - "3000"
+    mem_limit: 256m
+    restart: unless-stopped
+    depends_on:
+      - backend
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: clipzi-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?isi DOMAIN di deploy/.env.vps}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    mem_limit: 128m
+    restart: unless-stopped
+    depends_on:
+      - backend
+      - frontend
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  caddy_data:
+  caddy_config:
+  clipzi_cache:
