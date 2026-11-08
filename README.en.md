@@ -28,7 +28,7 @@ viral scoring, auto subtitles, 9:16 smart crop, and auto-upload to YouTube.
 4. [Prerequisites](#-prerequisites)
 5. [Quick Start (local)](#-quick-start-local)
 6. [Environment Configuration](#-environment-configuration)
-7. [🐳 Build & Push Docker Image](#-build--push-docker-image) ← **full guide**
+7. [🐳 Build & Upload to Docker Hub](#-build--upload-to-docker-hub) ← **full guide**
 8. [Running Containers](#-running-containers)
 9. [Deploy to Vast.ai](#-deploy-to-vastai)
 10. [AI & Transcription Providers](#-ai--transcription-providers)
@@ -310,197 +310,442 @@ baked into the Docker image — values are injected at container runtime.
 
 ---
 
-## 🐳 Build & Push Docker Image
+## 🐳 Build & Upload to Docker Hub
 
-Clipzi ships **two separate images** so they can scale and deploy independently:
+This guide goes from zero to an image that runs on another server.
+Follow it **in order** — every step lists the command and the expected result.
 
-| Image | Base | Size ± | Contents |
-|-------|------|--------|----------|
-| `clipzi-backend` | `python:3.11-slim` | 1.3–1.8 GB | FastAPI + uvicorn, ffmpeg, yt-dlp (latest binary), faster-whisper, OpenCV, non-root user `clipzi` (uid 10001), healthcheck `/api/health` |
-| `clipzi-frontend` | `node:20-alpine` | ±180 MB | Next.js **standalone** output, runtime-env entrypoint, non-root user `nextjs` (uid 10001) |
+> **Important:** building does **not** need `backend/.env`. All secrets are only
+> required at `docker run` time (`--env-file`). The image is safe to share.
 
-### Prerequisites
+### 7-step overview
 
-```bash
-docker version          # must print a Server version, not an error
-docker login            # only if you will push to Docker Hub
-```
+| # | Step | Core command |
+|---|------|--------------|
+| 0 | Make sure Docker is running | `docker version` |
+| 1 | Choose the image name | `$DH_USER`, `$TAG` |
+| 2 | Log in to Docker Hub | `docker login` |
+| 3 | Build backend | `docker build ... backend` |
+| 4 | Build frontend | `docker build ... frontend` |
+| 5 | Test before pushing | `docker run ...` |
+| 6 | Push both images | `docker push ...` |
+| 7 | Pull on another server | `docker pull ...` |
 
-> If you see `failed to connect to the docker API ... dockerDesktopLinuxEngine`,
-> **Docker Desktop is not running**. Start it and wait for "Engine running".
-> You do not have to build on your laptop — you can build directly on a Vast.ai
-> instance (Docker is already available there).
+---
 
-### Dockerfile layout (multi-stage)
+### Step 0 — Make sure Docker is running
 
-**Backend** (`backend/Dockerfile`) — 2 stages:
-
-```
-builder stage : python:3.11-slim + build-essential → venv at /opt/venv
-runtime stage : python:3.11-slim + ffmpeg, libgl1, libsndfile1, libgomp1,
-                yt-dlp binary, COPY --from=builder /opt/venv → non-root user
-```
-
-**Frontend** (`frontend/Dockerfile`) — 3 stages:
-
-```
-deps stage    : node:20-alpine → npm ci
-builder stage : npm run build with ENV DOCKER_BUILD=1 → standalone output
-runner stage  : copy .next/standalone + static + public → node server.js
-```
-
-`DOCKER_BUILD=1` makes `next.config.js` use `output: "standalone"` only during a
-Docker build, so local `npm run dev` / `npm start` stay unaffected.
-
-### Step 1 — Build the backend image
+**Windows (PowerShell) / Linux / Vast.ai:**
 
 ```bash
-# from the repo root
-docker build -t clipzi-backend:1.0.0 -f backend/Dockerfile backend
+docker version
 ```
 
-Argument reference:
+You should see (at the bottom):
 
-| Argument | Meaning |
-|----------|---------|
-| `-t clipzi-backend:1.0.0` | image name + tag |
-| `-f backend/Dockerfile` | path to the Dockerfile |
-| `backend` | **build context** — this folder is sent to the daemon; `.env` is excluded by `backend/.dockerignore` |
-
-To target a specific architecture (e.g. an x86_64 Vast.ai instance):
-
-```bash
-docker build --platform linux/amd64 \
-  -t clipzi-backend:1.0.0 -f backend/Dockerfile backend
+```
+Server: Docker Desktop 4.x.x (engine 27.x)
+ Engine:
+  Version: 27.x
 ```
 
-### Step 2 — Build the frontend image
+If you get `failed to connect to the docker API ... dockerDesktopLinuxEngine`:
 
-```bash
-docker build -t clipzi-frontend:1.0.0 -f frontend/Dockerfile frontend
-```
+1. Open **Docker Desktop** → wait for **Engine running** (the whale icon stops animating)
+2. Run `docker version` again
+3. Still failing? Restart Docker Desktop and retry
 
-> `NEXT_PUBLIC_API_URL` does **not** need to be provided at build time. It is
-> injected at runtime by `frontend/docker-entrypoint.sh`, which writes
-> `/app/public/runtime-env.js`. So **one image** works locally, on a server, and
-> on Vast.ai.
+> On **Vast.ai** Docker is preinstalled — this step usually passes immediately.
 
-### Step 3 — (Optional) build both with the helper script
+---
+
+### Step 1 — Choose the image name
+
+Docker Hub requires the format `<username>/<repo>:<tag>`
+
+| Rule | ✅ Correct | ❌ Wrong | Reason |
+|------|-----------|---------|--------|
+| Username is mandatory | `budi/clipzi-backend` | `clipzi-backend` | push is rejected |
+| **All lowercase** | `budi/clipzi-backend` | `Budi/Clipzi-Backend` | `invalid reference format` |
+| No spaces | `budi/clipzi-backend` | `budi/clipzi backend` | same |
+| No `https://` | `budi/clipzi-backend` | `https://hub.docker.com/budi` | same |
+| Tag is free-form | `:1.0.0`, `:latest` | `:` (empty) | defaults to `latest` |
 
 **Windows (PowerShell):**
 
 ```powershell
-cd "C:\Users\WINDOWS 11 PRO\Documents\ClipziAI"
-docker login
-./scripts/build-and-push.ps1 -DockerHubUser <dockerhub-username> -Tag 1.0.0
+$DH_USER = "your-dockerhub-username"   # CHANGE
+$TAG     = "1.0.0"                     # CHANGE if needed
 ```
 
-**Linux / macOS / Vast.ai instance:**
+**Linux / macOS / Vast.ai (bash):**
 
 ```bash
-./scripts/build-and-push.sh <dockerhub-username> 1.0.0
+DH_USER="your-dockerhub-username"      # CHANGE
+TAG="1.0.0"
 ```
 
-Available parameters:
+> You do **not** have to create the repository manually — it is created on the
+> first push (as **public**). If you want it **private**, create it first at
+> hub.docker.com → *Create repository*.
 
-| PS1 | Bash (env) | Default | Purpose |
-|-----|-----------|---------|---------|
-| `-DockerHubUser` | 1st arg | required | Docker Hub username (image prefix) |
+---
+
+### Step 2 — Log in to Docker Hub (once per machine)
+
+```bash
+docker login -u "$DH_USER"
+```
+
+Enter your Docker Hub **password**. Expected output:
+
+```
+Login Succeeded
+```
+
+**With 2FA enabled** a plain password fails (`unauthorized`). Create a token:
+Docker Hub → *Account Settings* → *Security* → *New Access Token* with
+**Read & Write**, then use that token as the password.
+
+**Windows — if `$DH_USER` is not set in a new terminal:**
+
+```powershell
+docker login -u your-dockerhub-username
+```
+
+---
+
+### Step 3 — Build the backend image
+
+**Run from the repo root** (the folder containing `backend/` and `frontend/`).
+
+```powershell
+docker build -t "$DH_USER/clipzi-backend:$TAG" -f backend/Dockerfile backend
+```
+
+```bash
+docker build -t "$DH_USER/clipzi-backend:$TAG" -f backend/Dockerfile backend
+```
+
+The same command without variables (if you prefer):
+
+```bash
+docker build -t budi/clipzi-backend:1.0.0 -f backend/Dockerfile backend
+```
+
+What each part means:
+
+| Part | Meaning |
+|------|---------|
+| `docker build` | build an image from a Dockerfile |
+| `-t budi/clipzi-backend:1.0.0` | resulting image name + tag |
+| `-f backend/Dockerfile` | Dockerfile to use |
+| `backend` (last argument) | **build context** — this folder is sent to Docker; `.env` is excluded via `backend/.dockerignore` |
+
+Expected last line:
+
+```
+ => => naming to docker.io/budi/clipzi-backend:1.0.0
+```
+
+Duration: **5–15 minutes** on the first build (downloads ffmpeg + Python wheels);
+much faster afterwards thanks to the layer cache.
+
+**If the target server uses a different architecture** (e.g. an x86_64 Vast.ai
+instance while you build on Apple Silicon):
+
+```bash
+docker build --platform linux/amd64 \
+  -t "$DH_USER/clipzi-backend:$TAG" -f backend/Dockerfile backend
+```
+
+---
+
+### Step 4 — Build the frontend image
+
+```bash
+docker build -t "$DH_USER/clipzi-frontend:$TAG" -f frontend/Dockerfile frontend
+```
+
+Without variables:
+
+```bash
+docker build -t budi/clipzi-frontend:1.0.0 -f frontend/Dockerfile frontend
+```
+
+> **`NEXT_PUBLIC_API_URL` is not needed at build time.** It is injected at
+> container start by `frontend/docker-entrypoint.sh` → `/app/public/runtime-env.js`,
+> so a single image works on localhost, a VPS, and Vast.ai.
+
+Expected last line:
+
+```
+ => => naming to docker.io/budi/clipzi-frontend:1.0.0
+```
+
+---
+
+### Step 5 — Check the build result
+
+```powershell
+docker images --filter=reference="$DH_USER/*"
+```
+
+```bash
+docker images | grep "$DH_USER/clipzi"
+```
+
+Expected: **2 rows**
+
+```
+REPOSITORY                TAG     IMAGE ID       CREATED         SIZE
+budi/clipzi-backend       1.0.0   a1b2c3d4e5f6   2 minutes ago   1.52GB
+budi/clipzi-frontend      1.0.0   f6e5d4c3b2a1   1 minute ago    183MB
+```
+
+±1.5 GB for the backend is **normal** (ffmpeg + OpenCV + faster-whisper).
+If only one row appears, one build failed — scroll up and read the error.
+
+---
+
+### Step 6 — Test before pushing (recommended)
+
+**Backend** (needs `backend/.env` because it talks to the real database & Redis):
+
+```bash
+docker run -d --name test-api -p 8000:8000 \
+  --env-file backend/.env \
+  "$DH_USER/clipzi-backend:$TAG"
+```
+
+Wait ~10 seconds, then:
+
+```bash
+curl http://localhost:8000/api/health
+docker logs test-api --tail 20
+```
+
+Expected response:
+
+```json
+{"status":"healthy","redis":"connected","database":"connected","version":"1.0.0"}
+```
+
+If the container exits immediately (`docker ps` is empty), read
+`docker logs test-api` — usually a required variable is missing in `.env`
+(`SECRET_KEY`, `ENCRYPTION_KEY`, `DATABASE_URL`, `SUPABASE_*`, `R2_*`).
+
+Clean up:
+
+```bash
+docker rm -f test-api
+```
+
+**Frontend** (verify runtime env injection):
+
+```bash
+docker run -d --name test-web -p 3000:3000 \
+  -e NEXT_PUBLIC_API_URL=http://localhost:8000 \
+  "$DH_USER/clipzi-frontend:$TAG"
+
+sleep 5
+curl http://localhost:3000/runtime-env.js
+docker rm -f test-web
+```
+
+Expected:
+
+```js
+window.__ENV__ = { NEXT_PUBLIC_API_URL: "http://localhost:8000" };
+```
+
+If it matches, the frontend image is portable.
+
+---
+
+### Step 7 — Push to Docker Hub
+
+**Push the backend:**
+
+```bash
+docker push "$DH_USER/clipzi-backend:$TAG"
+```
+
+**Push the frontend:**
+
+```bash
+docker push "$DH_USER/clipzi-frontend:$TAG"
+```
+
+What you will see (layer by layer, then a summary):
+
+```
+The push refers to repository [docker.io/budi/clipzi-backend]
+5f70bf18a086: Pushed
+...
+1.0.0: digest: sha256:9c1f...abc size: 1157
+```
+
+If the last line contains `digest: sha256:... size: ...` → **success**.
+
+**Also tag `latest`** (so consumers can omit the version):
+
+```bash
+docker tag "$DH_USER/clipzi-backend:$TAG"  "$DH_USER/clipzi-backend:latest"
+docker tag "$DH_USER/clipzi-frontend:$TAG" "$DH_USER/clipzi-frontend:latest"
+docker push "$DH_USER/clipzi-backend:latest"
+docker push "$DH_USER/clipzi-frontend:latest"
+```
+
+---
+
+### Step 8 — Verify on Docker Hub
+
+Open in a browser (replace `budi`):
+
+| Image | URL |
+|-------|-----|
+| Backend | `https://hub.docker.com/r/budi/clipzi-backend/tags` |
+| Frontend | `https://hub.docker.com/r/budi/clipzi-frontend/tags` |
+
+Or from the terminal:
+
+```bash
+docker manifest inspect "$DH_USER/clipzi-backend:$TAG" | head -20
+```
+
+If tag `1.0.0` shows up on the Tags page (around 1.5 GB), the image is uploaded.
+
+---
+
+### Step 9 — Use the image on another server (VPS / Vast.ai)
+
+```bash
+# (for a private repo) log in on the target server first
+docker login -u "$DH_USER"
+
+# pull the images
+docker pull "$DH_USER/clipzi-backend:$TAG"
+docker pull "$DH_USER/clipzi-frontend:$TAG"
+
+# run the backend — secrets are provided here, not baked into the image
+docker run -d --name clipzi-api -p 8000:8000 \
+  --env-file backend/.env \
+  -v clipzi-cache:/app/.cache \
+  --restart unless-stopped \
+  "$DH_USER/clipzi-backend:$TAG"
+
+# run the frontend — point it at the backend server IP
+docker run -d --name clipzi-web -p 3000:3000 \
+  -e NEXT_PUBLIC_API_URL=http://SERVER_IP:8000 \
+  --restart unless-stopped \
+  "$DH_USER/clipzi-frontend:$TAG"
+```
+
+Check:
+
+```bash
+curl http://SERVER_IP:8000/api/health
+curl http://SERVER_IP:3000/runtime-env.js
+```
+
+On **Vast.ai**: paste `username/clipzi-backend:1.0.0` in the *Image* field, then
+expose ports `8000` and `3000` in the instance settings.
+
+---
+
+### Step 10 — Full one-shot flow (copy-paste)
+
+**Windows PowerShell** — change the first 2 lines, then run the whole block:
+
+```powershell
+$DH_USER = "your-dockerhub-username"
+$TAG     = "1.0.0"
+
+docker version
+docker login -u $DH_USER
+docker build -t "$DH_USER/clipzi-backend:$TAG"  -f backend/Dockerfile backend
+docker build -t "$DH_USER/clipzi-frontend:$TAG" -f frontend/Dockerfile frontend
+docker images --filter=reference="$DH_USER/*"
+docker push "$DH_USER/clipzi-backend:$TAG"
+docker push "$DH_USER/clipzi-frontend:$TAG"
+```
+
+**Linux / macOS / Vast.ai:**
+
+```bash
+DH_USER="your-dockerhub-username"
+TAG="1.0.0"
+
+set -e
+docker version
+docker login -u "$DH_USER"
+docker build -t "$DH_USER/clipzi-backend:$TAG"  -f backend/Dockerfile backend
+docker build -t "$DH_USER/clipzi-frontend:$TAG" -f frontend/Dockerfile frontend
+docker images | grep "$DH_USER/clipzi"
+docker push "$DH_USER/clipzi-backend:$TAG"
+docker push "$DH_USER/clipzi-frontend:$TAG"
+echo "DONE: $DH_USER/clipzi-backend:$TAG"
+```
+
+**Or use the provided helper script** (builds and pushes both images):
+
+```powershell
+./scripts/build-and-push.ps1 -DockerHubUser your-dockerhub-username -Tag 1.0.0
+```
+
+```bash
+./scripts/build-and-push.sh your-dockerhub-username 1.0.0
+```
+
+| PS1 parameter | Bash (env) | Default | Purpose |
+|---------------|-----------|---------|---------|
+| `-DockerHubUser` | 1st arg | required | Docker Hub username |
 | `-Tag` | 2nd arg | `latest` | image tag |
-| `-Platform` | `PLATFORM` | `linux/amd64` | target platform |
+| `-Platform` | `PLATFORM` | `linux/amd64` | target architecture |
 | `-BackendOnly` | `TARGET=backend` | — | backend only |
 | `-FrontendOnly` | `TARGET=frontend` | — | frontend only |
 | `-SkipPush` | `BUILD_ONLY=1` | — | build without pushing |
 
-Build locally only (no push):
+---
 
-```powershell
-./scripts/build-and-push.ps1 -DockerHubUser budi -SkipPush
-```
+### ❗ Build/push errors and fixes
 
-```bash
-BUILD_ONLY=1 ./scripts/build-and-push.sh budi
-```
+| Error message | Cause | Fix |
+|---------------|-------|-----|
+| `failed to connect to the docker API ...` | Docker Desktop is not running | Start Docker Desktop, wait for "Engine running" |
+| `"docker build" requires exactly 1 argument` | Build context missing | End the command with `backend` or `frontend` |
+| `unable to prepare context: path "backend" not found` | Not in the repo root | `cd` to the folder containing `backend/` & `frontend/` |
+| `invalid reference format` | Uppercase letters, spaces, or `https://` in the name | Use `<user>/<repo>:<tag>`, all lowercase |
+| `denied: requested access to the resource is denied` | Not logged in, or the name prefix ≠ login account | `docker login -u <user>` and match the prefix |
+| `unauthorized: incorrect username or password` | Wrong password / 2FA enabled | Use an **Access Token** (Read & Write) |
+| `no space left on device` | Disk full | `docker system prune -a -f`, rebuild |
+| `exec format error` when running | Wrong architecture | Build with `--platform linux/amd64` |
+| `toomanyrequests: ... pull rate limit` | Docker Hub rate limit | Log in before pulling, or use a private repo |
 
-### Step 4 — Push to Docker Hub
+### 📌 Important notes
 
-```bash
-docker login                     # once per machine
-docker push <user>/clipzi-backend:1.0.0
-docker push <user>/clipzi-frontend:1.0.0
-```
-
-Also tag `latest` if you want it as the default:
-
-```bash
-docker tag <user>/clipzi-backend:1.0.0  <user>/clipzi-backend:latest
-docker tag <user>/clipzi-frontend:1.0.0 <user>/clipzi-frontend:latest
-docker push <user>/clipzi-backend:latest
-docker push <user>/clipzi-frontend:latest
-```
-
-> Create the repository as **private** on Docker Hub if the image is not public.
-> A Vast.ai instance can pull private images as long as you provide credentials
-> (`docker login` on the instance) or an access token.
-
-### Step 5 — Verify the images
+1. **Secrets never enter the image.** Building needs no `.env`; never use
+   `ARG`/`ENV` for `SECRET_KEY` or API keys — they would be stored permanently in
+   the image layers (visible via `docker history`).
+2. **Private repo**: create it on Docker Hub before the first push, and
+   `docker login` on the target server too.
+3. **Rebuild is required** after changing `requirements.txt`, `package.json`, or a
+   Dockerfile — an existing image never updates itself.
+4. **Image size**: ±1.5 GB for the backend and ±180 MB for the frontend is
+   normal. To shrink it, remove unused entries from `requirements.txt`.
+5. **Without Docker Hub** — you can also `docker save` → `scp` → `docker load`:
 
 ```bash
-docker images | grep clipzi
-
-# Backend: healthcheck & endpoint
-docker run -d --rm --name test-api -p 8000:8000 \
-  --env-file backend/.env <user>/clipzi-backend:1.0.0
-sleep 5
-curl http://localhost:8000/api/health
-docker logs test-api
-docker rm -f test-api
-
-# Frontend: confirm runtime env injection
-docker run -d --rm --name test-web -p 3000:3000 \
-  -e NEXT_PUBLIC_API_URL=http://localhost:8000 \
-  <user>/clipzi-frontend:1.0.0
-sleep 5
-curl http://localhost:3000/runtime-env.js
-#   -> window.__ENV__ = { NEXT_PUBLIC_API_URL: "http://localhost:8000" };
-docker rm -f test-web
-```
-
-If `/runtime-env.js` returns the right URL, the frontend image is portable.
-
-### Without Docker Hub (build once, move to another machine)
-
-```bash
-# on the source machine
-docker save <user>/clipzi-backend:1.0.0 | gzip > clipzi-backend.tar.gz
+docker save "$DH_USER/clipzi-backend:$TAG" | gzip > clipzi-backend.tar.gz
 scp clipzi-backend.tar.gz user@server:/tmp/
-
-# on the target machine
+# on the target server:
 docker load < /tmp/clipzi-backend.tar.gz
 ```
 
-### Build tips (save time & disk)
 
-| Need | Command |
-|------|---------|
-| Rebuild without cache | `docker build --no-cache -t ... -f backend/Dockerfile backend` |
-| Inspect layers & size | `docker history <image>` |
-| Clean build leftovers | `docker builder prune -f` |
-| Remove unused images | `docker image prune -f` |
 
-### ⚠️ Build troubleshooting
 
-| Symptom | Cause & fix |
-|---------|-------------|
-| `failed to connect to the docker API ... dockerDesktopLinuxEngine` | Docker Desktop is not running → start it, wait for "Engine running" |
-| `pip install` fails in the builder stage | Check connectivity; behind a corporate proxy use `--build-arg HTTP_PROXY=...` |
-| Backend container exits immediately | Read `docker logs <container>`. Usually a missing required env var, or missing `greenlet` (make sure `sqlalchemy[asyncio]` is used) |
-| `ModuleNotFoundError: No module named 'app'` | Wrong build context — it must be `backend`, not the repo root |
-| Frontend blank / API 404 | Wrong `NEXT_PUBLIC_API_URL`, or the backend is unreachable from the browser |
-| Image too large | ±1.5 GB is expected for the backend (OpenCV + faster-whisper + ffmpeg). Trim unused entries from `requirements.txt` to shrink it |
-| `exec format error` on Vast.ai | Image was built for a different architecture → add `--platform linux/amd64` |
-
----
 
 ## ▶️ Running Containers
 

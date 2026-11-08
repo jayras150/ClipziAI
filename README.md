@@ -28,7 +28,7 @@ viral scoring, auto subtitle, smart crop 9:16, dan auto-upload ke YouTube.
 4. [Prasyarat](#-prasyarat)
 5. [Quick Start (lokal)](#-quick-start-lokal)
 6. [Konfigurasi Environment](#-konfigurasi-environment)
-7. [🐳 Build & Push Docker Image](#-build--push-docker-image) ← **panduan lengkap**
+7. [🐳 Panduan Build & Upload ke Docker Hub](#-panduan-build--upload-ke-docker-hub) ← **panduan lengkap**
 8. [Menjalankan Container](#-menjalankan-container)
 9. [Deploy ke Vast.ai](#-deploy-ke-vastai)
 10. [Provider AI & Transkripsi](#-provider-ai--transkripsi)
@@ -310,198 +310,451 @@ atau masuk ke Docker image — nilainya diberikan saat container dijalankan.
 
 ---
 
-## 🐳 Build & Push Docker Image
+## 🐳 Panduan Build & Upload ke Docker Hub
 
-Clipzi memakai **dua image terpisah** agar bisa diskalakan & di-deploy sendiri-sendiri:
+Panduan ini urut dari nol sampai image bisa dipakai di server lain.
+Ikuti **berurutan** — setiap langkah ada perintah + hasil yang diharapkan.
 
-| Image | Base | Ukuran ± | Isi |
-|-------|------|----------|-----|
-| `clipzi-backend` | `python:3.11-slim` | 1.3–1.8 GB | FastAPI + uvicorn, ffmpeg, yt-dlp (binary terbaru), faster-whisper, OpenCV, user non-root `clipzi` (uid 10001), healthcheck `/api/health` |
-| `clipzi-frontend` | `node:20-alpine` | ±180 MB | Next.js **standalone** output, entrypoint runtime-env, user non-root `nextjs` (uid 10001) |
+> **Penting:** build **tidak** memerlukan `backend/.env`. Semua rahasia baru
+> dibutuhkan saat `docker run` (`--env-file`). Jadi image aman dibagikan.
 
-### Prasyarat
+### Ringkasan 7 langkah
 
-```bash
-docker version          # harus menampilkan versi Server, bukan error
-docker login            # hanya jika akan push ke Docker Hub
-```
+| # | Langkah | Perintah inti |
+|---|---------|---------------|
+| 0 | Pastikan Docker hidup | `docker version` |
+| 1 | Tentukan nama image | `$DH_USER`, `$TAG` |
+| 2 | Login Docker Hub | `docker login` |
+| 3 | Build backend | `docker build ... backend` |
+| 4 | Build frontend | `docker build ... frontend` |
+| 5 | Uji image sebelum push | `docker run ...` |
+| 6 | Push 2 image | `docker push ...` |
+| 7 | Ambil di server lain | `docker pull ...` |
 
-> Jika muncul `failed to connect to the docker API ... dockerDesktopLinuxEngine`,
-> **Docker Desktop belum jalan**. Nyalakan dulu, tunggu sampai status "Engine running".
-> Tidak wajib build di laptop — bisa juga build langsung di instance Vast.ai
-> (Docker sudah tersedia di sana).
+---
 
-### Struktur Dockerfile (multi-stage)
+### Langkah 0 — Pastikan Docker berjalan
 
-**Backend** (`backend/Dockerfile`) — 2 stage:
-
-```
-stage builder : python:3.11-slim + build-essential → venv di /opt/venv
-stage runtime : python:3.11-slim + ffmpeg, libgl1, libsndfile1, libgomp1,
-                yt-dlp binary, COPY --from=builder /opt/venv → user non-root
-```
-
-**Frontend** (`frontend/Dockerfile`) — 3 stage:
-
-```
-stage deps    : node:20-alpine → npm ci
-stage builder : npm run build dengan ENV DOCKER_BUILD=1 → output standalone
-stage runner  : copy .next/standalone + static + public → node server.js
-```
-
-`DOCKER_BUILD=1` membuat `next.config.js` memakai `output: "standalone"` hanya
-saat build Docker, sehingga `npm run dev`/`npm start` di lokal tidak terpengaruh.
-
-### Langkah 1 — Build image backend
+**Windows (PowerShell) / Linux / Vast.ai:**
 
 ```bash
-# dari root repo
-docker build -t clipzi-backend:1.0.0 -f backend/Dockerfile backend
+docker version
 ```
 
-Penjelasan tiap argumen:
+Yang harus muncul (bagian bawah):
 
-| Argumen | Arti |
-|---------|------|
-| `-t clipzi-backend:1.0.0` | nama image + tag |
-| `-f backend/Dockerfile` | lokasi Dockerfile |
-| `backend` | **build context** — folder ini yang dikirim ke daemon; `.env` dikecualikan oleh `backend/.dockerignore` |
-
-Untuk menargetkan arsitektur tertentu (mis. instance Vast.ai x86_64):
-
-```bash
-docker build --platform linux/amd64 \
-  -t clipzi-backend:1.0.0 -f backend/Dockerfile backend
+```
+Server: Docker Desktop 4.x.x (engine 27.x)
+ Engine:
+  Version: 27.x
 ```
 
-### Langkah 2 — Build image frontend
+Kalau muncul `failed to connect to the docker API ... dockerDesktopLinuxEngine`:
 
-```bash
-docker build -t clipzi-frontend:1.0.0 -f frontend/Dockerfile frontend
-```
+1. Buka **Docker Desktop** → tunggu status **Engine running** (ikon paus berhenti beranimasi)
+2. `docker version` lagi
+3. Masih gagal? Restart Docker Desktop, lalu ulangi
 
-> `NEXT_PUBLIC_API_URL` **tidak** perlu diberikan saat build. Nilainya di-inject
-> saat container dijalankan oleh `frontend/docker-entrypoint.sh` yang menulis
-> `/app/public/runtime-env.js`. Jadi **satu image** bisa dipakai di lokal,
-> server, maupun Vast.ai.
+> Di **Vast.ai** Docker sudah terpasang — langkah ini biasanya langsung lolos.
 
-### Langkah 3 — (Opsional) build semua sekaligus dengan script
+---
+
+### Langkah 1 — Tentukan nama image
+
+Format wajib Docker Hub: `<username>/<repo>:<tag>`
+
+| Aturan | ✅ Benar | ❌ Salah | Alasan |
+|--------|---------|---------|--------|
+| Harus ada username | `budi/clipzi-backend` | `clipzi-backend` saja | push akan ditolak |
+| **Huruf kecil semua** | `budi/clipzi-backend` | `Budi/Clipzi-Backend` | `invalid reference format` |
+| Tanpa spasi | `budi/clipzi-backend` | `budi/clipzi backend` | idem |
+| Tanpa `https://` | `budi/clipzi-backend` | `https://hub.docker.com/budi` | idem |
+| Tag bebas | `:1.0.0`, `:latest` | `:` (kosong) | default `latest` |
 
 **Windows (PowerShell):**
 
 ```powershell
-cd "C:\Users\WINDOWS 11 PRO\Documents\ClipziAI"
-docker login
-./scripts/build-and-push.ps1 -DockerHubUser <username-dockerhub> -Tag 1.0.0
+$DH_USER = "username-dockerhub-anda"   # GANTI
+$TAG     = "1.0.0"                     # GANTI kalau perlu
 ```
 
-**Linux / macOS / instance Vast.ai:**
+**Linux / macOS / Vast.ai (bash):**
 
 ```bash
-./scripts/build-and-push.sh <username-dockerhub> 1.0.0
+DH_USER="username-dockerhub-anda"      # GANTI
+TAG="1.0.0"
 ```
 
-Parameter yang tersedia:
+> Repo **tidak perlu dibuat manual** di Docker Hub — otomatis dibuat saat push
+> pertama (jadi **public**). Kalau ingin **private**, buat dulu di
+> hub.docker.com → *Create repository* sebelum push.
 
-| PS1 | Bash (env) | Default | Fungsi |
-|-----|-----------|---------|--------|
-| `-DockerHubUser` | arg ke-1 | wajib | username Docker Hub (prefix nama image) |
-| `-Tag` | arg ke-2 | `latest` | tag image |
-| `-Platform` | `PLATFORM` | `linux/amd64` | target platform |
-| `-BackendOnly` | `TARGET=backend` | — | hanya backend |
-| `-FrontendOnly` | `TARGET=frontend` | — | hanya frontend |
-| `-SkipPush` | `BUILD_ONLY=1` | — | build tanpa push |
+---
 
-Contoh build lokal saja (tanpa push):
+### Langkah 2 — Login ke Docker Hub (sekali per mesin)
+
+```bash
+docker login -u "$DH_USER"
+```
+
+Masukkan **password Docker Hub**. Hasil yang diharapkan:
+
+```
+Login Succeeded
+```
+
+**Kalau 2FA aktif**, password biasa akan gagal (`unauthorized`). Buat token:
+Docker Hub → *Account Settings* → *Security* → *New Access Token* → hak **Read & Write**,
+lalu jadikan token itu sebagai password saat `docker login`.
+
+**Windows — kalau `$DH_USER` tidak terbaca di prompt baru:**
 
 ```powershell
-./scripts/build-and-push.ps1 -DockerHubUser budi -SkipPush
+docker login -u username-dockerhub-anda
+```
+
+---
+
+### Langkah 3 — Build image backend
+
+**Jalankan dari root repo** (folder yang berisi `backend/` dan `frontend/`).
+
+**Windows (PowerShell):**
+
+```powershell
+docker build -t "$DH_USER/clipzi-backend:$TAG" -f backend/Dockerfile backend
+```
+
+**Linux / macOS / Vast.ai (bash):**
+
+```bash
+docker build -t "$DH_USER/clipzi-backend:$TAG" -f backend/Dockerfile backend
+```
+
+Perintah yang sama, ditulis lengkap tanpa variabel (kalau lebih nyaman):
+
+```bash
+docker build -t budi/clipzi-backend:1.0.0 -f backend/Dockerfile backend
+```
+
+Arti tiap bagian:
+
+| Bagian | Arti |
+|--------|------|
+| `docker build` | bangun image dari Dockerfile |
+| `-t budi/clipzi-backend:1.0.0` | nama + tag image yang dihasilkan |
+| `-f backend/Dockerfile` | file Dockerfile yang dipakai |
+| `backend` (argumen terakhir) | **build context** — isi folder ini yang dikirim ke Docker; `.env` otomatis dikecualikan lewat `backend/.dockerignore` |
+
+Baris terakhir yang diharapkan:
+
+```
+ => => naming to docker.io/budi/clipzi-backend:1.0.0
+```
+
+Durasi: **5–15 menit** pertama kali (unduh ffmpeg + wheel Python), berikutnya jauh lebih cepat karena cache.
+
+**Kalau target server memakai arsitektur berbeda** (mis. instance Vast.ai x86_64 sementara kamu build di Apple Silicon):
+
+```bash
+docker build --platform linux/amd64 \
+  -t "$DH_USER/clipzi-backend:$TAG" -f backend/Dockerfile backend
+```
+
+---
+
+### Langkah 4 — Build image frontend
+
+```powershell
+docker build -t "$DH_USER/clipzi-frontend:$TAG" -f frontend/Dockerfile frontend
 ```
 
 ```bash
-BUILD_ONLY=1 ./scripts/build-and-push.sh budi
+docker build -t "$DH_USER/clipzi-frontend:$TAG" -f frontend/Dockerfile frontend
 ```
 
-### Langkah 4 — Push ke Docker Hub
+Versi tanpa variabel:
 
 ```bash
-docker login                     # sekali per mesin
-docker push <user>/clipzi-backend:1.0.0
-docker push <user>/clipzi-frontend:1.0.0
+docker build -t budi/clipzi-frontend:1.0.0 -f frontend/Dockerfile frontend
 ```
 
-Tambahkan juga tag `latest` bila ingin dipakai sebagai default:
+> **`NEXT_PUBLIC_API_URL` tidak perlu diisi saat build.** Nilainya di-inject saat
+> container dijalankan oleh `frontend/docker-entrypoint.sh` → `/app/public/runtime-env.js`.
+> Jadi satu image bisa dipakai di localhost, VPS, maupun Vast.ai.
 
-```bash
-docker tag <user>/clipzi-backend:1.0.0  <user>/clipzi-backend:latest
-docker tag <user>/clipzi-frontend:1.0.0 <user>/clipzi-frontend:latest
-docker push <user>/clipzi-backend:latest
-docker push <user>/clipzi-frontend:latest
+Baris terakhir yang diharapkan:
+
+```
+ => => naming to docker.io/budi/clipzi-frontend:1.0.0
 ```
 
-> Di Docker Hub, buat repository **private** dulu bila image tidak untuk publik.
-> Instance Vast.ai bisa pull image private selama kamu menyertakan kredensial
-> (`docker login` di instance) atau memakai token.
+---
 
-### Langkah 5 — Verifikasi image
+### Langkah 5 — Cek hasil build
+
+**Windows:**
+
+```powershell
+docker images --filter=reference="$DH_USER/*"
+```
+
+**Linux / macOS:**
 
 ```bash
-docker images | grep clipzi
+docker images | grep "$DH_USER/clipzi"
+```
 
-# Backend: cek healthcheck & endpoint
-docker run -d --rm --name test-api -p 8000:8000 \
-  --env-file backend/.env <user>/clipzi-backend:1.0.0
-sleep 5
+Harapan: **2 baris**
+
+```
+REPOSITORY                TAG     IMAGE ID       CREATED         SIZE
+budi/clipzi-backend       1.0.0   a1b2c3d4e5f6   2 minutes ago   1.52GB
+budi/clipzi-frontend      1.0.0   f6e5d4c3b2a1   1 minute ago    183MB
+```
+
+Kalau backend ±1,5 GB itu **normal** (ffmpeg + OpenCV + faster-whisper).
+Kalau hanya 1 baris muncul → salah satu build gagal, scroll ke atas dan baca error-nya.
+
+---
+
+### Langkah 6 — Uji image sebelum push (disarankan)
+
+**Backend** (butuh `backend/.env` karena memakai database & Redis asli):
+
+```bash
+docker run -d --name cek-api -p 8000:8000 \
+  --env-file backend/.env \
+  "$DH_USER/clipzi-backend:$TAG"
+```
+
+Tunggu ~10 detik, lalu:
+
+```bash
 curl http://localhost:8000/api/health
-docker logs test-api
-docker rm -f test-api
+docker logs cek-api --tail 20
+```
 
-# Frontend: cek runtime env ter-inject
-docker run -d --rm --name test-web -p 3000:3000 \
+Response yang diharapkan:
+
+```json
+{"status":"healthy","redis":"connected","database":"connected","version":"1.0.0"}
+```
+
+Kalau container langsung mati (`docker ps` kosong), lihat `docker logs cek-api` —
+biasanya ada variabel wajib yang kosong di `.env`
+(`SECRET_KEY`, `ENCRYPTION_KEY`, `DATABASE_URL`, `SUPABASE_*`, `R2_*`).
+
+Bersihkan:
+
+```bash
+docker rm -f cek-api
+```
+
+**Frontend** (uji injeksi runtime env):
+
+```bash
+docker run -d --name cek-web -p 3000:3000 \
   -e NEXT_PUBLIC_API_URL=http://localhost:8000 \
-  <user>/clipzi-frontend:1.0.0
+  "$DH_USER/clipzi-frontend:$TAG"
+
 sleep 5
 curl http://localhost:3000/runtime-env.js
-#   -> window.__ENV__ = { NEXT_PUBLIC_API_URL: "http://localhost:8000" };
-docker rm -f test-web
+docker rm -f cek-web
 ```
 
-Kalau `/runtime-env.js` menampilkan URL yang benar, image frontend sudah portabel.
+Harapan:
 
-### Tanpa Docker Hub (build di satu mesin, pindah ke mesin lain)
+```js
+window.__ENV__ = { NEXT_PUBLIC_API_URL: "http://localhost:8000" };
+```
+
+Kalau isinya sesuai, artinya image frontend sudah portabel.
+
+---
+
+### Langkah 7 — Push ke Docker Hub
+
+**Push backend:**
 
 ```bash
-# di mesin sumber
-docker save <user>/clipzi-backend:1.0.0 | gzip > clipzi-backend.tar.gz
-scp clipzi-backend.tar.gz user@server:/tmp/
+docker push "$DH_USER/clipzi-backend:$TAG"
+```
 
-# di mesin tujuan
+**Push frontend:**
+
+```bash
+docker push "$DH_USER/clipzi-frontend:$TAG"
+```
+
+Yang muncul (per layer, lalu ringkasan di akhir):
+
+```
+The push refers to repository [docker.io/budi/clipzi-backend]
+5f70bf18a086: Pushed
+...
+1.0.0: digest: sha256:9c1f...abc size: 1157
+```
+
+Kalau baris terakhir berisi `digest: sha256:... size: ...` → **berhasil**.
+
+**Sekalian tag `latest`** (agar bisa dipakai tanpa menyebut versi):
+
+```bash
+docker tag "$DH_USER/clipzi-backend:$TAG"  "$DH_USER/clipzi-backend:latest"
+docker tag "$DH_USER/clipzi-frontend:$TAG" "$DH_USER/clipzi-frontend:latest"
+docker push "$DH_USER/clipzi-backend:latest"
+docker push "$DH_USER/clipzi-frontend:latest"
+```
+
+---
+
+### Langkah 8 — Verifikasi di Docker Hub
+
+Buka di browser (ganti `budi`):
+
+| Image | URL |
+|-------|-----|
+| Backend | `https://hub.docker.com/r/budi/clipzi-backend/tags` |
+| Frontend | `https://hub.docker.com/r/budi/clipzi-frontend/tags` |
+
+Atau lewat terminal:
+
+```bash
+docker manifest inspect "$DH_USER/clipzi-backend:$TAG" | head -20
+```
+
+Kalau tag `1.0.0` terlihat di halaman Tags (dengan ukuran ±1,5 GB), image sudah ter-upload.
+
+---
+
+### Langkah 9 — Pakai image di server lain (VPS / Vast.ai)
+
+```bash
+# (kalau repo private) login dulu di server tujuan
+docker login -u "$DH_USER"
+
+# ambil image
+docker pull "$DH_USER/clipzi-backend:$TAG"
+docker pull "$DH_USER/clipzi-frontend:$TAG"
+
+# jalankan backend — rahasia diberikan di sini, bukan di image
+docker run -d --name clipzi-api -p 8000:8000 \
+  --env-file backend/.env \
+  -v clipzi-cache:/app/.cache \
+  --restart unless-stopped \
+  "$DH_USER/clipzi-backend:$TAG"
+
+# jalankan frontend — arahkan ke IP server backend
+docker run -d --name clipzi-web -p 3000:3000 \
+  -e NEXT_PUBLIC_API_URL=http://IP_SERVER:8000 \
+  --restart unless-stopped \
+  "$DH_USER/clipzi-frontend:$TAG"
+```
+
+Cek:
+
+```bash
+curl http://IP_SERVER:8000/api/health
+curl http://IP_SERVER:3000/runtime-env.js
+```
+
+Di **Vast.ai**: tempel `username/clipzi-backend:1.0.0` di kolom *Image*, lalu buka
+port `8000` dan `3000` pada pengaturan instance.
+
+---
+
+### Langkah 10 — Alur lengkap sekali jalan (copy-paste)
+
+**Windows PowerShell** — ganti 2 baris pertama, lalu jalankan seluruh blok:
+
+```powershell
+$DH_USER = "username-dockerhub-anda"
+$TAG     = "1.0.0"
+
+docker version
+docker login -u $DH_USER
+docker build -t "$DH_USER/clipzi-backend:$TAG"  -f backend/Dockerfile backend
+docker build -t "$DH_USER/clipzi-frontend:$TAG" -f frontend/Dockerfile frontend
+docker images --filter=reference="$DH_USER/*"
+docker push "$DH_USER/clipzi-backend:$TAG"
+docker push "$DH_USER/clipzi-frontend:$TAG"
+```
+
+**Linux / macOS / Vast.ai:**
+
+```bash
+DH_USER="username-dockerhub-anda"
+TAG="1.0.0"
+
+set -e
+docker version
+docker login -u "$DH_USER"
+docker build -t "$DH_USER/clipzi-backend:$TAG"  -f backend/Dockerfile backend
+docker build -t "$DH_USER/clipzi-frontend:$TAG" -f frontend/Dockerfile frontend
+docker images | grep "$DH_USER/clipzi"
+docker push "$DH_USER/clipzi-backend:$TAG"
+docker push "$DH_USER/clipzi-frontend:$TAG"
+echo "SELESAI: $DH_USER/clipzi-backend:$TAG"
+```
+
+**Atau pakai script yang sudah disediakan** (otomatis build + push keduanya):
+
+```powershell
+./scripts/build-and-push.ps1 -DockerHubUser username-dockerhub-anda -Tag 1.0.0
+```
+
+```bash
+./scripts/build-and-push.sh username-dockerhub-anda 1.0.0
+```
+
+| Parameter PS1 | Bash (env) | Default | Fungsi |
+|---------------|-----------|---------|--------|
+| `-DockerHubUser` | arg ke-1 | wajib | username Docker Hub |
+| `-Tag` | arg ke-2 | `latest` | tag image |
+| `-Platform` | `PLATFORM` | `linux/amd64` | target arsitektur |
+| `-BackendOnly` | `TARGET=backend` | — | hanya backend |
+| `-FrontendOnly` | `TARGET=frontend` | — | hanya frontend |
+| `-SkipPush` | `BUILD_ONLY=1` | — | build tanpa push (uji lokal) |
+
+---
+
+### ❗ Error saat build/push dan solusinya
+
+| Pesan error | Penyebab | Solusi |
+|-------------|----------|--------|
+| `failed to connect to the docker API ...` | Docker Desktop mati | Nyalakan Docker Desktop, tunggu "Engine running" |
+| `"docker build" requires exactly 1 argument` | Lupa menulis build context | Akhiri dengan `backend` atau `frontend` |
+| `unable to prepare context: path "backend" not found` | Tidak di root repo | `cd` ke folder yang berisi `backend/` & `frontend/` |
+| `invalid reference format` | Nama image ada huruf besar, spasi, atau `https://` | Pakai `<user>/<repo>:<tag>` huruf kecil semua |
+| `denied: requested access to the resource is denied` | Belum login, atau prefix nama image ≠ akun login | `docker login -u <user>` dan samakan prefix |
+| `unauthorized: incorrect username or password` | Password salah / 2FA aktif | Pakai **Access Token** (Read & Write) |
+| `no space left on device` | Disk penuh | `docker system prune -a -f` lalu build ulang |
+| `exec format error` saat container jalan | Arsitektur beda | Build dengan `--platform linux/amd64` |
+| `toomanyrequests: ... pull rate limit` | Rate limit Docker Hub | Login sebelum pull, atau pakai repo private |
+
+### 📌 Catatan penting
+
+1. **Rahasia tidak pernah masuk image.** Build tidak butuh `.env`; jangan pernah
+   memakai `ARG`/`ENV` untuk `SECRET_KEY` atau API key — nilainya tersimpan
+   permanen di layer image (bisa dilihat dengan `docker history`).
+2. **Repo private**: buat dulu di Docker Hub sebelum push pertama, dan
+   `docker login` juga di server tujuan.
+3. **Rebuild wajib** setelah mengubah `requirements.txt`, `package.json`, atau
+   Dockerfile — image lama tidak berubah sendiri.
+4. **Ukuran image**: backend ±1,5 GB dan frontend ±180 MB itu normal. Untuk
+   memperkecil, hapus dependency yang tidak terpakai dari `requirements.txt`.
+5. **Tanpa Docker Hub** — bisa juga `docker save` → `scp` → `docker load`:
+
+```bash
+docker save "$DH_USER/clipzi-backend:$TAG" | gzip > clipzi-backend.tar.gz
+scp clipzi-backend.tar.gz user@server:/tmp/
+# di server tujuan:
 docker load < /tmp/clipzi-backend.tar.gz
 ```
 
-### Tips build (hemat waktu & disk)
 
-| Kebutuhan | Perintah |
-|-----------|----------|
-| Rebuild tanpa cache | `docker build --no-cache -t ... -f backend/Dockerfile backend` |
-| Lihat layer & ukuran | `docker history <image>` |
-| Bersihkan sisa build | `docker builder prune -f` |
-| Bersihkan image tak terpakai | `docker image prune -f` |
-| Build paralel dua image | jalankan `build-and-push` script (otomatis berurutan) |
 
-### ⚠️ Troubleshooting build
-
-| Gejala | Penyebab & solusi |
-|--------|-------------------|
-| `failed to connect to the docker API ... dockerDesktopLinuxEngine` | Docker Desktop belum jalan → nyalakan, tunggu "Engine running" |
-| `pip install` gagal di stage builder | Cek koneksi; untuk proxy korporat set `--build-arg HTTP_PROXY=...` |
-| Container backend langsung exit | Baca `docker logs <container>`. Umumnya `DATABASE_URL`/`SECRET_KEY` kosong, atau `greenlet` tidak ada (pastikan `sqlalchemy[asyncio]` — sudah ada di requirements) |
-| `ModuleNotFoundError: No module named 'app'` | Build context salah — harus `backend`, bukan root repo |
-| Frontend blank / API 404 | `NEXT_PUBLIC_API_URL` salah atau backend tidak reachable dari browser |
-| Image terlalu besar | Backend ±1.5 GB wajar (OpenCV + faster-whisper + ffmpeg). Bisa dikecilkan dengan menghapus dependency tak terpakai dari `requirements.txt` |
-| `exec format error` di Vast.ai | Image di-build untuk arsitektur beda → tambahkan `--platform linux/amd64` |
-
----
 
 ## ▶️ Menjalankan Container
 
