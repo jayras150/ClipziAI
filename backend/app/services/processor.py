@@ -148,6 +148,48 @@ class VideoProcessor:
         if result.returncode != 0:
             raise RuntimeError(f"FFmpeg failed: {result.stderr}")
 
+    async def extract_audio(
+        self,
+        input_path: str,
+        output_path: str,
+        sample_rate: int = 16000,
+    ) -> str:
+        """Ekstrak audio mono 16 kHz (format ideal untuk API transkripsi)."""
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
+            "-i", input_path,
+            "-vn", "-ac", "1", "-ar", str(sample_rate),
+            "-c:a", "libmp3lame", "-q:a", "4",
+            output_path,
+        ]
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._run_ffmpeg, cmd)
+        return output_path
+
+    async def extract_thumbnail(
+        self,
+        input_path: str,
+        output_path: str,
+        at_second: float = 1.0,
+    ) -> Optional[str]:
+        """Ambil satu frame sebagai thumbnail JPEG (None bila gagal)."""
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
+            "-ss", str(at_second),
+            "-i", input_path,
+            "-frames:v", "1",
+            "-q:v", "3",
+            output_path,
+        ]
+
+        loop = asyncio.get_event_loop()
+        try:
+            await loop.run_in_executor(None, self._run_ffmpeg, cmd)
+            return output_path
+        except Exception:
+            return None
+
     async def get_video_info(self, video_path: str) -> Dict[str, Any]:
         cmd = [
             "ffprobe", "-v", "quiet", "-print_format", "json",

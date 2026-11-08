@@ -117,6 +117,16 @@ class Settings(BaseSettings):
     VAST_MAX_WORKERS: int = 4
     VAST_TARGET_UTIL: float = 0.9
     VAST_INACTIVITY_TIMEOUT: int = 300
+    # Mode dispatch (lihat app/services/vast_worker.py):
+    #   VAST_ENDPOINT_URL  -> POST langsung ke URL endpoint (paling portabel)
+    #   kosong             -> pakai SDK `vastai` (Serverless.queue_endpoint_request)
+    VAST_ENDPOINT_URL: Optional[str] = None
+    # Timeout tunggu respons worker (detik) untuk mode HTTP
+    VAST_REQUEST_TIMEOUT: int = 600
+    # Port worker HTTP (dipakai deployments/worker_api.py)
+    WORKER_PORT: int = 8000
+    # Folder kerja sementara untuk unduh/render di worker
+    WORKER_WORK_DIR: str = "./work"
 
     # Email SMTP
     SMTP_HOST: Optional[str] = None

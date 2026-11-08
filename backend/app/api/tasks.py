@@ -1,6 +1,8 @@
 """
 Task endpoints - Create, get, list, delete tasks
 """
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -13,6 +15,9 @@ from app.models.task import Task, TaskStatus
 from app.models.user_profile import UserProfile
 from app.schemas.task import TaskCreate, TaskResponse, TaskListResponse
 from app.schemas.common import MessageResponse
+from app.services.vast_worker import dispatch_mode, submit_task
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -71,7 +76,18 @@ async def create_task(
     db.add(task)
     await db.commit()
     await db.refresh(task)
-    
+
+    # Kirim job ke worker GPU (Vast.ai serverless) — tidak memblokir respons.
+    # Bila dispatch gagal, task tetap tersimpan (status queued) dan error hanya
+    # dicatat di log agar bisa di-retry manual.
+    dispatch = await submit_task(task.id)
+    logger.info(
+        "Task %s dibuat (mode dispatch=%s, queued=%s)",
+        task.id,
+        dispatch_mode(),
+        dispatch.get("queued"),
+    )
+
     return task
 
 
