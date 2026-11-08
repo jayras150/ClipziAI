@@ -37,7 +37,11 @@ out/
 next-env.d.ts
 
 # --- IDE ---
-.vscode/
+# Simpan settings workspace (interpreter & TS SDK) agar diagnostik konsisten,
+# tapi jangan commit state pribadi VS Code.
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
 .idea/
 *.swp
 *.swo

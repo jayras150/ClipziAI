@@ -1,0 +1,28 @@
+{
+  // Interpreter yang benar-benar berisi dependency backend.
+  // (frontend/.venv hanya berisi 3 paket dan tidak dipakai untuk Python backend)
+  "python.defaultInterpreterPath": "C:\\Users\\WINDOWS 11 PRO\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\\python.exe",
+  "python.terminal.activateEnvironment": true,
+
+  // Agar `import app.*` dikenali Pylance dari root workspace
+  "python.analysis.extraPaths": ["backend"],
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportMissingModuleSource": "none"
+  },
+
+  // Pakai TypeScript dari node_modules (5.9.3), bukan versi bawaan VS Code,
+  // supaya hasil diagnostik editor sama dengan `npx tsc --noEmit`.
+  "typescript.tsdk": "frontend/node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "typescript.tsserver.maxTsServerMemory": 3072,
+
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true
+  },
+  "search.exclude": {
+    "frontend/.next": true,
+    "frontend/node_modules": true
+  }
+}

@@ -1,0 +1,18 @@
+{
+  // Konfigurasi Pyright/Pylance untuk workspace Clipzi AI.
+  // Backend ada di folder `backend/`, jadi `import app.*` perlu `extraPaths`.
+  "pythonVersion": "3.12",
+  "include": ["backend/app", "scripts"],
+  "exclude": [
+    "**/__pycache__",
+    "**/.venv",
+    "**/node_modules",
+    "frontend",
+    "docker-data",
+    ".next"
+  ],
+  "extraPaths": ["backend"],
+  "typeCheckingMode": "basic",
+  // yt-dlp tidak menyertakan `py.typed`, jadi warning ini tidak informatif.
+  "reportMissingModuleSource": "none"
+}
