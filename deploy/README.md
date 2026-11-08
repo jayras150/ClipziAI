@@ -243,8 +243,8 @@ python scripts/vastai-setup.py template
 
 > **Cari hash lagi nanti** (kalau lupa):
 > ```bash
-> vastai show templates            # tabel, kolom hash/id
-> vastai show templates --raw      # JSON
+> vastai search templates           # daftar template, lihat kolom hash_id
+> vastai search templates --raw     # JSON (field `hash_id`)
 > ```
 > atau buka halaman template di console dan salin dari kartunya.
 

@@ -244,14 +244,24 @@ def cmd_template(args) -> None:
         show(cmd)
         return
 
-    run(cmd)
+    created_output = run(cmd)
+    if created_output:
+        print(created_output)
 
     name = cfg("VAST_TEMPLATE_NAME", "clipzi-worker")
     print("\n=== Mencari hash template ===")
-    for item in _as_list(run(["vastai", "show", "templates", "--raw"])):
-        if str(item.get("name")) != name:
-            continue
-        template_hash = item.get("hash") or item.get("template_hash") or item.get("id")
+    # CLI tidak punya `show templates`; yang benar `search templates`.
+    # Field hash bernama `hash_id`.
+    matches = [
+        item
+        for item in _as_list(run(["vastai", "search", "templates", "--raw"]))
+        if str(item.get("name")) == name
+    ]
+    matches.sort(key=lambda item: item.get("id") or 0, reverse=True)
+
+    if matches:
+        item = matches[0]
+        template_hash = item.get("hash_id") or item.get("hash") or item.get("id")
         print(f"  nama : {name}")
         print(f"  hash : {template_hash}")
         print(f"  id   : {item.get('id')}")
@@ -260,8 +270,9 @@ def cmd_template(args) -> None:
         return
 
     print("Template dibuat, tetapi hash tidak ditemukan otomatis.")
-    print("Buka cloud.vast.ai/templates dan salin hash dari kartu template,")
-    print("atau jalankan: vastai show templates")
+    print("Kemungkinan template masih privat sehingga tidak muncul di pencarian.")
+    print("Alternatif: buka cloud.vast.ai/templates dan salin hash dari kartu template,")
+    print("atau pakai mode tanpa template: isi VAST_WORKER_IMAGE saja.")
 
 
 def cmd_update(args) -> None:
