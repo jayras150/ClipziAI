@@ -20,8 +20,21 @@
     "**/__pycache__": true,
     "**/*.pyc": true
   },
+  // Watcher kehabisan batas = TS server berhenti membaca ulang file dan
+  // menampilkan error basi (mis. "Expression expected" di layout.tsx padahal
+  // `tsc` bersih). Kecualikan folder besar dari watcher/pencarian.
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/.next/**": true,
+    "**/backend/.venv/**": true,
+    "**/frontend/.venv/**": true,
+    "**/__pycache__/**": true,
+    "**/.git/objects/**": true
+  },
+  "search.followSymlinks": false,
   "search.exclude": {
     "frontend/.next": true,
-    "frontend/node_modules": true
+    "frontend/node_modules": true,
+    "backend/.venv": true
   }
 }
