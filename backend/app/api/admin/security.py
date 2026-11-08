@@ -2,7 +2,7 @@
 Admin security events endpoints
 """
 from fastapi import APIRouter, Depends
-from typing import List
+from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -15,7 +15,7 @@ router = APIRouter()
 @router.get("/", response_model=List[dict])
 async def get_security_events(
     db: AsyncSession = Depends(get_db_session),
-    risk_level: str = None,
+    risk_level: Optional[str] = None,
     limit: int = 100,
 ):
     query = select(SecurityEvent)

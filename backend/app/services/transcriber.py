@@ -12,10 +12,10 @@ settings = get_settings()
 class AudioTranscriber:
     """Transcribe audio locally or through an OpenAI-compatible API."""
     
-    def __init__(self, model_size: str = None):
+    def __init__(self, model_size: Optional[str] = None):
         self.provider = (settings.TRANSCRIPTION_PROVIDER or "local").strip().lower()
         self.model_size = model_size or settings.TRANSCRIPTION_MODEL or settings.WHISPER_MODEL
-        self._model = None
+        self._model: Optional[Any] = None
 
     def _is_local(self) -> bool:
         return self.provider in {"local", "faster-whisper", "faster_whisper"}
@@ -86,13 +86,17 @@ class AudioTranscriber:
         client = self._get_remote_client()
         try:
             with open(audio_path, "rb") as audio_file:
-                response = await client.audio.transcriptions.create(
-                    file=audio_file,
-                    model=self.model_size,
-                    language=language or None,
-                    response_format="verbose_json",
-                    timestamp_granularities=["segment", "word"],
-                )
+                # `language=None` tidak diterima SDK; kirim hanya bila diisi.
+                request_kwargs: Dict[str, Any] = {
+                    "file": audio_file,
+                    "model": self.model_size,
+                    "response_format": "verbose_json",
+                    "timestamp_granularities": ["segment", "word"],
+                }
+                if language:
+                    request_kwargs["language"] = language
+
+                response = await client.audio.transcriptions.create(**request_kwargs)
         except Exception as exc:
             raise RuntimeError(
                 f"Transkripsi melalui provider '{self.provider}' gagal: {exc}"

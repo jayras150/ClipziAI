@@ -3,7 +3,7 @@ Task model - Video processing tasks
 """
 import enum
 from datetime import datetime
-from typing import Optional, List
+from typing import TYPE_CHECKING, Optional, List
 from uuid import UUID, uuid4
 
 from sqlalchemy import String, DateTime, Integer, Float, Boolean, ForeignKey, Enum, Text
@@ -52,3 +52,6 @@ class Task(Base):
 
     user: Mapped["User"] = relationship(back_populates="tasks")
     clips: Mapped[list["Clip"]] = relationship(back_populates="task", cascade="all, delete-orphan")
+if TYPE_CHECKING:  # hanya untuk type checker (hindari circular import)
+    from app.models.clip import Clip
+    from app.models.user import User

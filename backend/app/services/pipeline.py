@@ -20,7 +20,7 @@ from app.core.config import get_settings
 from app.db.session import AsyncSessionLocal
 from app.models.clip import Clip
 from app.models.task import Task, TaskStatus
-from app.services.cookie_store import cookie_session, report_failure, report_success
+from app.services import cookie_store
 from app.services.credit_service import CreditService
 from app.services.downloader import VideoDownloader
 from app.services.processor import VideoProcessor
@@ -148,17 +148,22 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
         try:
             # 1) Unduh sumber (memakai cookie pool bila ada)
             await _set_progress(db, task, 5)
-            async with cookie_session(db) as (cookie, cookiefile):
-                try:
-                    video_path = await downloader.download_video(
-                        task.source_url, "source", cookies_path=cookiefile
-                    )
-                except Exception as exc:
-                    if cookie is not None:
-                        await report_failure(db, cookie, str(exc))
-                    raise
+            acquired = await cookie_store.acquire(db)
+            cookie, cookiefile = acquired if acquired else (None, None)
+            try:
+                video_path = await downloader.download_video(
+                    task.source_url, "source", cookies_path=cookiefile
+                )
                 if cookie is not None:
-                    await report_success(db, cookie)
+                    await cookie_store.report_success(db, cookie)
+            except Exception as exc:
+                if cookie is not None:
+                    await cookie_store.report_failure(db, cookie, str(exc))
+                raise
+            finally:
+                # Simpan balik token yang mungkin sudah dirotasi yt-dlp
+                if cookie is not None:
+                    await cookie_store.sync_back(db, cookie)
 
             # 2) Probe metadata
             info = await processor.get_video_info(video_path)

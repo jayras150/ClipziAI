@@ -3,7 +3,7 @@ GDPRRequest model - Data export/deletion requests
 """
 import enum
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from uuid import UUID, uuid4
 
 from sqlalchemy import String, DateTime, Text, ForeignKey, Enum
@@ -37,4 +37,7 @@ class GDPRRequest(Base):
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
+
+if TYPE_CHECKING:  # hanya untuk type checker (hindari circular import)
+    from app.models.user import User
     user: Mapped["User"] = relationship(back_populates="gdpr_requests")

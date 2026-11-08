@@ -171,4 +171,6 @@ class Settings(BaseSettings):
 
 @lru_cache()
 def get_settings() -> Settings:
-    return Settings()
+    # Nilai wajib dibaca dari environment/.env saat runtime, sehingga Pylance
+    # tidak bisa memverifikasi argumen konstruktor di sini.
+    return Settings()  # type: ignore[call-arg]

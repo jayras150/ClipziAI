@@ -2,7 +2,7 @@
 UserAPIKey model - User's personal API keys
 """
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from uuid import UUID, uuid4
 
 from sqlalchemy import String, DateTime, Integer, Boolean, ForeignKey
@@ -27,4 +27,7 @@ class UserAPIKey(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
+
+if TYPE_CHECKING:  # hanya untuk type checker (hindari circular import)
+    from app.models.user import User
     user: Mapped["User"] = relationship(back_populates="api_keys")

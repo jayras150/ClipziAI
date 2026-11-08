@@ -54,12 +54,14 @@ async def update_profile(
     result = await db.execute(select(UserProfile).where(UserProfile.user_id == current_user.id))
     profile = result.scalar_one_or_none()
     
-    if profile:
-        if update_data.language:
-            profile.language = update_data.language
-        if update_data.timezone:
-            profile.timezone = update_data.timezone
-    
+    if profile is None:
+        raise HTTPException(status_code=404, detail="User profile not found")
+
+    if update_data.language:
+        profile.language = update_data.language
+    if update_data.timezone:
+        profile.timezone = update_data.timezone
+
     await db.commit()
     
     return UserProfileResponse(

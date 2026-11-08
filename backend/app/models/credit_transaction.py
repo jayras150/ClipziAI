@@ -3,7 +3,7 @@ CreditTransaction model - Credit ledger
 """
 import enum
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from uuid import UUID, uuid4
 
 from sqlalchemy import String, DateTime, Integer, ForeignKey, Enum, Text
@@ -35,4 +35,7 @@ class CreditTransaction(Base):
     balance_after: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
+
+if TYPE_CHECKING:  # hanya untuk type checker (hindari circular import)
+    from app.models.user import User
     user: Mapped["User"] = relationship(back_populates="credit_transactions")

@@ -2,7 +2,7 @@
 Admin audit log endpoints
 """
 from fastapi import APIRouter, Depends
-from typing import List
+from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -15,8 +15,8 @@ router = APIRouter()
 @router.get("/", response_model=List[dict])
 async def get_audit_logs(
     db: AsyncSession = Depends(get_db_session),
-    actor_type: str = None,
-    action: str = None,
+    actor_type: Optional[str] = None,
+    action: Optional[str] = None,
     limit: int = 100,
 ):
     query = select(AuditLog)

@@ -2,7 +2,7 @@
 Clip model - Individual short video clips
 """
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from uuid import UUID, uuid4
 
 from sqlalchemy import String, DateTime, Integer, Float, Boolean, ForeignKey, Text
@@ -36,4 +36,7 @@ class Clip(Base):
     editing_applied: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
+
+if TYPE_CHECKING:  # hanya untuk type checker (hindari circular import)
+    from app.models.task import Task
     task: Mapped["Task"] = relationship(back_populates="clips")

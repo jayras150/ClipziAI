@@ -3,7 +3,7 @@ UserSubscription model
 """
 import enum
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from uuid import UUID, uuid4
 
 from sqlalchemy import String, DateTime, Boolean, ForeignKey, Enum
@@ -37,3 +37,6 @@ class UserSubscription(Base):
 
     user: Mapped["User"] = relationship(back_populates="subscriptions")
     plan: Mapped["PricingPlan"] = relationship(back_populates="subscriptions")
+if TYPE_CHECKING:  # hanya untuk type checker (hindari circular import)
+    from app.models.pricing_plan import PricingPlan
+    from app.models.user import User

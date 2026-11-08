@@ -20,42 +20,32 @@ class VideoProcessor:
         self.work_dir.mkdir(parents=True, exist_ok=True)
     
     async def detect_scenes(self, video_path: str) -> List[Dict[str, Any]]:
-        """Detect scene changes using PySceneDetect."""
+        """Detect scene changes using PySceneDetect (API 0.6+/0.7+)."""
         try:
-            from scenedetect import VideoManager, SceneManager
-            from scenedetect.detectors import ContentDetector
-            
-            loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(
-                None, self._detect_scenes_sync, video_path
-            )
+            from scenedetect import ContentDetector, detect  # noqa: F401
         except ImportError:
             return [{"start": 0, "end": 60, "confidence": 1.0}]
-    
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._detect_scenes_sync, video_path)
+
     def _detect_scenes_sync(self, video_path: str) -> List[Dict[str, Any]]:
-        from scenedetect import VideoManager, SceneManager
-        from scenedetect.detectors import ContentDetector
-        
-        video_manager = VideoManager([video_path])
-        scene_manager = SceneManager()
-        scene_manager.add_detector(ContentDetector())
-        
-        video_manager.start()
-        scene_manager.detect_scenes(frame_source=video_manager)
-        
-        scene_list = scene_manager.get_scene_list()
-        
-        scenes = []
-        for start_time, end_time in scene_list:
-            scenes.append({
+        """Deteksi scene memakai `detect()`.
+
+        Catatan: `VideoManager` sudah dihapus sejak PySceneDetect 0.7, sehingga
+        implementasi lama selalu gagal import lalu jatuh ke fallback 60 detik.
+        """
+        from scenedetect import ContentDetector, detect
+
+        scenes = detect(video_path, ContentDetector())
+        return [
+            {
                 "start": start_time.get_seconds(),
                 "end": end_time.get_seconds(),
                 "confidence": 1.0,
-            })
-        
-        video_manager.release()
-        return scenes
-    
+            }
+            for start_time, end_time in scenes
+        ]
     async def smart_crop_9x16(
         self,
         input_path: str,
@@ -190,16 +180,23 @@ class VideoProcessor:
         except Exception:
             return None
 
+    def _probe_sync(self, cmd: List[str]) -> str:
+        """Jalankan ffprobe (sync) dan kembalikan stdout JSON."""
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"ffprobe gagal: {result.stderr}")
+        return result.stdout
+
     async def get_video_info(self, video_path: str) -> Dict[str, Any]:
         cmd = [
             "ffprobe", "-v", "quiet", "-print_format", "json",
             "-show_format", "-show_streams", video_path,
         ]
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, subprocess.run, cmd, subprocess.PIPE, subprocess.PIPE, True)
-        
+        stdout = await loop.run_in_executor(None, self._probe_sync, cmd)
+
         import json
-        data = json.loads(result.stdout)
+        data = json.loads(stdout)
         
         duration = float(data.get("format", {}).get("duration", 0))
         width = 0

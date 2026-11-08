@@ -3,7 +3,7 @@ Multi-platform repurpose models
 """
 import enum
 from datetime import datetime
-from typing import Optional, List
+from typing import TYPE_CHECKING, Optional, List
 from uuid import UUID, uuid4
 
 from sqlalchemy import String, DateTime, Integer, ForeignKey, Enum, Text
@@ -79,3 +79,6 @@ class PlatformPreset(Base):
     recommended_settings: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+if TYPE_CHECKING:  # hanya untuk type checker (hindari circular import)
+    from app.models.multi_platform import MultiPlatformJob
+    from app.models.multi_platform import PlatformOutput

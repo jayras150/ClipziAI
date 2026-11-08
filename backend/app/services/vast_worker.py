@@ -44,7 +44,8 @@ async def _dispatch_http(task_id: UUID) -> Dict[str, Any]:
     """Kirim job ke worker lewat HTTP (fire-and-forget)."""
     import httpx
 
-    url = settings.VAST_ENDPOINT_URL.rstrip("/") + "/process"
+    endpoint_url = (settings.VAST_ENDPOINT_URL or "").strip().rstrip("/")
+    url = endpoint_url + "/process"
     payload = {"task_id": str(task_id)}
 
     async def _post() -> None:

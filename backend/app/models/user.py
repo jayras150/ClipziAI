@@ -3,7 +3,7 @@ User model - Authentication & profile
 """
 import enum
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from uuid import UUID, uuid4
 
 from sqlalchemy import String, DateTime, Boolean, Text, ForeignKey, Enum
@@ -52,3 +52,13 @@ class User(Base):
     webhook_subscriptions: Mapped[list["WebhookSubscription"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     gdpr_requests: Mapped[list["GDPRRequest"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     invoices: Mapped[list["Invoice"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+if TYPE_CHECKING:  # hanya untuk type checker (hindari circular import)
+    from app.models.credit_transaction import CreditTransaction
+    from app.models.gdpr_request import GDPRRequest
+    from app.models.invoice import Invoice
+    from app.models.task import Task
+    from app.models.transaction import Transaction
+    from app.models.user_api_key import UserAPIKey
+    from app.models.user_profile import UserProfile
+    from app.models.user_subscription import UserSubscription
+    from app.models.webhook_subscription import WebhookSubscription

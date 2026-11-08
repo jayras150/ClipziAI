@@ -127,7 +127,12 @@ async def list_tasks(
     )
     total = count_result.scalar() or 0
     
-    return TaskListResponse(tasks=tasks, total=total, page=page, page_size=page_size)
+    return TaskListResponse(
+        tasks=[TaskResponse.model_validate(task) for task in tasks],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.delete("/{task_id}", response_model=MessageResponse)

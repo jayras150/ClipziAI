@@ -2,7 +2,7 @@
 Admin task monitoring endpoints
 """
 from fastapi import APIRouter, Depends, HTTPException
-from typing import List
+from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
@@ -15,7 +15,7 @@ router = APIRouter()
 @router.get("/", response_model=List[dict])
 async def list_all_tasks(
     db: AsyncSession = Depends(get_db_session),
-    status_filter: str = None,
+    status_filter: Optional[str] = None,
 ):
     query = select(Task)
     if status_filter:

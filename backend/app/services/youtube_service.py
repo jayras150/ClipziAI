@@ -3,7 +3,7 @@ YouTube Service - OAuth2, Data API v3 upload
 """
 import asyncio
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 from urllib.parse import urlencode
 
 import requests
@@ -119,7 +119,7 @@ class YouTubeService:
         video_path: str,
         title: str,
         description: str = "",
-        tags: list = None,
+        tags: Optional[List[str]] = None,
         privacy_status: str = "public",
     ) -> Dict[str, Any]:
         """Upload video to YouTube."""

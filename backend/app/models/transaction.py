@@ -3,7 +3,7 @@ Transaction model - Duitku payments
 """
 import enum
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from uuid import UUID, uuid4
 
 from sqlalchemy import String, DateTime, Integer, ForeignKey, Enum, Text
@@ -36,4 +36,7 @@ class Transaction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
+
+if TYPE_CHECKING:  # hanya untuk type checker (hindari circular import)
+    from app.models.user import User
     user: Mapped["User"] = relationship(back_populates="transactions")
