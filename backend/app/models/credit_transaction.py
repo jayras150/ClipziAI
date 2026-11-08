@@ -34,8 +34,8 @@ class CreditTransaction(Base):
     admin_id: Mapped[Optional[UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)  # admin who adjusted
     balance_after: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    user: Mapped["User"] = relationship(back_populates="credit_transactions")
 
 
 if TYPE_CHECKING:  # hanya untuk type checker (hindari circular import)
     from app.models.user import User
-    user: Mapped["User"] = relationship(back_populates="credit_transactions")

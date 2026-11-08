@@ -34,8 +34,8 @@ class Invoice(Base):
     pdf_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # R2 URL
     issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    user: Mapped["User"] = relationship(back_populates="invoices")
 
 
 if TYPE_CHECKING:  # hanya untuk type checker (hindari circular import)
     from app.models.user import User
-    user: Mapped["User"] = relationship(back_populates="invoices")

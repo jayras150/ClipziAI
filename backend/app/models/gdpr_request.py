@@ -36,8 +36,8 @@ class GDPRRequest(Base):
     admin_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    user: Mapped["User"] = relationship(back_populates="gdpr_requests")
 
 
 if TYPE_CHECKING:  # hanya untuk type checker (hindari circular import)
     from app.models.user import User
-    user: Mapped["User"] = relationship(back_populates="gdpr_requests")

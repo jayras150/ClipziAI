@@ -34,8 +34,8 @@ class PricingPlan(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    subscriptions: Mapped[list["UserSubscription"]] = relationship(back_populates="plan")
 
 
 if TYPE_CHECKING:  # hanya untuk type checker (hindari circular import)
     from app.models.user_subscription import UserSubscription
-    subscriptions: Mapped[list["UserSubscription"]] = relationship(back_populates="plan")

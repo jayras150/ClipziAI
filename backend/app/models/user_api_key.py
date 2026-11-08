@@ -26,8 +26,8 @@ class UserAPIKey(Base):
     last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    user: Mapped["User"] = relationship(back_populates="api_keys")
 
 
 if TYPE_CHECKING:  # hanya untuk type checker (hindari circular import)
     from app.models.user import User
-    user: Mapped["User"] = relationship(back_populates="api_keys")

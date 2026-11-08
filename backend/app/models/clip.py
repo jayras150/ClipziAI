@@ -35,8 +35,8 @@ class Clip(Base):
     youtube_video_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     editing_applied: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    task: Mapped["Task"] = relationship(back_populates="clips")
 
 
 if TYPE_CHECKING:  # hanya untuk type checker (hindari circular import)
     from app.models.task import Task
-    task: Mapped["Task"] = relationship(back_populates="clips")

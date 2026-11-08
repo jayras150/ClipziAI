@@ -41,8 +41,8 @@ class UserProfile(Base):
     plan_features_locked: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    user: Mapped["User"] = relationship(back_populates="profile")
 
 
 if TYPE_CHECKING:  # hanya untuk type checker (hindari circular import)
     from app.models.user import User
-    user: Mapped["User"] = relationship(back_populates="profile")

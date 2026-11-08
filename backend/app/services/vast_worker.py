@@ -316,6 +316,66 @@ async def _dispatch_oneshot(task_id: UUID) -> Dict[str, Any]:
     }
 
 
+async def cleanup_orphan_instances() -> int:
+    """Hapus instance berlabel ``clipzi-*`` yang task-nya sudah tidak aktif.
+
+    Dipanggil saat API start. Menangani kasus API restart / crash sehingga reaper
+    di memori hilang dan instance GPU tertinggal hidup (terus ditagih).
+    Mengembalikan jumlah instance yang dihapus.
+    """
+    key = (settings.VAST_API_KEY or "").strip()
+    if not key:
+        return 0
+
+    from sqlalchemy import String, cast, select
+
+    from app.db.session import AsyncSessionLocal
+    from app.models.task import Task, TaskStatus
+
+    try:
+        client = _get_vast_client()
+        instances = await asyncio.to_thread(client.show_instances)
+    except Exception as exc:  # pragma: no cover - jaringan/SDK
+        logger.warning("Pemeriksaan instance yatim dilewati: %s", exc)
+        return 0
+
+    if not isinstance(instances, list):
+        return 0
+
+    active = {TaskStatus.QUEUED, TaskStatus.PROCESSING}
+    removed = 0
+
+    for instance in instances:
+        label = str(instance.get("label") or "")
+        if not label.startswith("clipzi-"):
+            continue
+        instance_id = instance.get("id") or instance.get("instance_id")
+        if not instance_id:
+            continue
+
+        prefix = label[len("clipzi-"):].lower()
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Task.status).where(cast(Task.id, String).like(f"{prefix}%"))
+            )
+            statuses = [row[0] for row in result.all()]
+
+        # Task masih dikerjakan -> biarkan reaper normal yang menghapus.
+        if any(status in active for status in statuses):
+            continue
+
+        try:
+            await asyncio.to_thread(client.destroy_instance, int(instance_id))
+            removed += 1
+            logger.warning(
+                "Instance yatim %s (label %s) dihapus saat startup", instance_id, label
+            )
+        except Exception as exc:  # pragma: no cover - jaringan
+            logger.error("Gagal menghapus instance yatim %s: %s", instance_id, exc)
+
+    return removed
+
+
 async def submit_task(task_id: UUID) -> Dict[str, Any]:
     """Kirim satu task ke worker sesuai mode yang aktif.
 

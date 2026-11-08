@@ -1,6 +1,7 @@
 """
 Clipzi AI - FastAPI Application Entry Point
 """
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,11 +25,23 @@ from app.api import scheduled_publish
 
 settings = get_settings()
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     await init_db()
+    # Bersihkan instance GPU yatim (mode `oneshot`) yang tertinggal karena
+    # restart/crash: reaper di memori hilang, tapi instance tetap ditagih.
+    try:
+        from app.services.vast_worker import cleanup_orphan_instances
+
+        removed = await cleanup_orphan_instances()
+        if removed:
+            logger.warning("%s instance Vast.ai yatim dihapus saat startup", removed)
+    except Exception as exc:  # jangan gagalkan startup karena Vast
+        logger.warning("Pemeriksaan instance yatim gagal: %s", exc)
     yield
     # Shutdown
     await engine.dispose()
