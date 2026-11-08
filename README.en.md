@@ -923,7 +923,8 @@ python scripts/vastai-setup.py status       # read endpoint URL -> set VAST_ENDP
 | `... logs --tail 200` | last 200 endpoint log lines (`vastai get endpt-logs`) |
 | `... benchmark --gpus RTX_4090,RTX_3090` | find the best perf/$ GPU (`vastai run benchmarks`) |
 | `... teardown` | delete workergroup + endpoint (worker billing stops) |
-| `... activate` | activate an endpoint in `stopped` state (`--stop` to stop it again) |
+| `... activate` | activate the endpoint (`--stop` to stop the GPU, `--suspend` to stop managing) |
+| `... update --max-workers 0` | force zero workers without stopping the endpoint |
 | `python scripts/vastai-setup.py --dry-run create` | print the `vastai` commands without running them |
 
 Autoscaling parameters (from `backend/.env`):

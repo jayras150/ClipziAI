@@ -257,8 +257,20 @@ python scripts/vastai-setup.py activate   # kalau state=stopped -> aktifkan
 python scripts/vastai-setup.py logs       # log endpoint
 ```
 
-> `activate` menjalankan `vastai update endpoint <id> --endpoint_state active`.
-> Gunakan `--stop` untuk menghentikan lagi (worker jadi inactive, GPU tidak ditagih).
+> **Catatan penting:** di Vast.ai, **workergroup tidak punya perintah start/stop**
+> (`vastai update workergroup` hanya mengubah template/search/launch). Yang
+> mengendalikan hidup-matinya worker adalah **endpoint**.
+
+| Aksi | Perintah | Efek pada worker & tagihan |
+|------|----------|---------------------------|
+| Mulai / aktifkan | `vastai-setup.py activate` | Engine mulai menaikkan worker sesuai trafik. GPU ditagih saat worker `Ready`/`Loading` |
+| **Stop** (GPU berhenti) | `vastai-setup.py activate --stop` | Semua worker jadi `Inactive`: **GPU tidak ditagih**, storage + bandwidth tetap |
+| Suspend (engine diam) | `vastai-setup.py activate --suspend` | Engine berhenti mengelola, tapi worker yang sudah `Ready` **tetap hidup & ditagih** |
+| Paksa 0 worker | `vastai-setup.py update --max-workers 0` | Batas atas worker = 0 (endpoint tetap aktif) |
+| Hapus permanen | `vastai-setup.py teardown` | Workergroup + endpoint dihapus, seluruh tagihan worker berhenti |
+
+Jadi: **"stop workergroup" = `activate --stop`** (endpoint `stopped`), bukan perintah
+`workergroup` tersendiri. Untuk mengaktifkan kembali cukup `activate`.
 
 ### 8.4b Alternatif: Vast Deployments (`@remote`)
 

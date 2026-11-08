@@ -182,7 +182,17 @@ def find_endpoint_by_name() -> Optional[dict]:
 
 
 def cmd_activate(args) -> None:
-    """Aktifkan atau hentikan endpoint (endpoint_state active|stopped)."""
+    """Ubah endpoint_state: active | suspended | stopped.
+
+    Catatan penting: workergroup sendiri TIDAK punya perintah start/stop di CLI
+    Vast (`vastai update workergroup` hanya mengubah template/search/launch).
+    Yang mengendalikan hidup-matinya worker adalah endpoint:
+
+      active    -> engine menaikkan/menurunkan worker sesuai trafik
+      suspended -> engine berhenti mengelola, worker yang sudah siap TETAP aktif
+                   (masih ditagih GPU)
+      stopped   -> semua worker jadi inactive (GPU tidak ditagih; storage tetap)
+    """
     endpoint_id = args.endpoint_id or cfg("VAST_ENDPOINT_ID")
     if not endpoint_id:
         existing = find_endpoint_by_name()
@@ -190,7 +200,15 @@ def cmd_activate(args) -> None:
     if not endpoint_id:
         fail("endpoint tidak ditemukan. Buat dulu: python scripts/vastai-setup.py create")
 
-    state = "stopped" if args.stop else "active"
+    if args.state:
+        state = args.state
+    elif args.stop:
+        state = "stopped"
+    elif args.suspend:
+        state = "suspended"
+    else:
+        state = "active"
+
     cmd = ["vastai", "update", "endpoint", str(endpoint_id), "--endpoint_state", state]
     print(f"\n=== Set endpoint {endpoint_id} -> {state} ===")
     if args.dry_run:
@@ -198,6 +216,11 @@ def cmd_activate(args) -> None:
         return
     run(cmd)
     print(f"Endpoint {endpoint_id} sekarang: {state}")
+    if state == "stopped":
+        print("Worker menjadi inactive: GPU tidak ditagih (storage/bandwidth tetap).")
+    elif state == "suspended":
+        print("Engine berhenti mengelola; worker yang sudah Ready MASIH ditagih GPU.")
+        print("Gunakan 'activate --stop' bila ingin GPU benar-benar berhenti.")
 
 
 def cmd_create(args) -> None:
@@ -283,9 +306,12 @@ def cmd_update(args) -> None:
 
     cmd = [
         "vastai", "update", "endpoint", str(endpoint_id),
-        "--target_util", cfg("VAST_TARGET_UTIL", "0.9"),
-        "--max_workers", cfg("VAST_MAX_WORKERS", "4"),
-        "--inactivity_timeout", cfg("VAST_INACTIVITY_TIMEOUT", "300"),
+        "--target_util", str(args.target_util or cfg("VAST_TARGET_UTIL", "0.9")),
+        "--max_workers", str(args.max_workers if args.max_workers is not None else cfg("VAST_MAX_WORKERS", "4")),
+        "--inactivity_timeout", str(
+            args.inactivity_timeout if args.inactivity_timeout is not None
+            else cfg("VAST_INACTIVITY_TIMEOUT", "300")
+        ),
     ]
     print("\n=== Memperbarui parameter autoscaling ===")
     if args.dry_run:
@@ -396,6 +422,9 @@ def main() -> int:
 
     p_update = sub.add_parser("update", help="perbarui parameter autoscaling")
     p_update.add_argument("--endpoint-id", help="id endpoint (default dari env/API)")
+    p_update.add_argument("--max-workers", type=int, help="batas worker (0 = tidak ada worker)")
+    p_update.add_argument("--inactivity-timeout", type=int, help="detik idle sebelum scale-to-zero")
+    p_update.add_argument("--target-util", type=float, help="target utilisasi (0-1)")
     p_update.set_defaults(func=cmd_update)
 
     sub.add_parser("status", help="lihat endpoint & workergroup").set_defaults(func=cmd_status)
@@ -416,9 +445,15 @@ def main() -> int:
     p_down.add_argument("-y", "--yes", action="store_true", help="tanpa konfirmasi")
     p_down.set_defaults(func=cmd_teardown)
 
-    p_state = sub.add_parser("activate", help="aktifkan endpoint (endpoint_state=active)")
+    p_state = sub.add_parser(
+        "activate", help="ubah endpoint_state (active/suspended/stopped)"
+    )
     p_state.add_argument("--endpoint-id", help="id endpoint")
-    p_state.add_argument("--stop", action="store_true", help="hentikan endpoint (stopped)")
+    p_state.add_argument(
+        "--state", choices=["active", "suspended", "stopped"], help="state tujuan (default active)"
+    )
+    p_state.add_argument("--stop", action="store_true", help="alias untuk --state stopped")
+    p_state.add_argument("--suspend", action="store_true", help="alias untuk --state suspended")
     p_state.set_defaults(func=cmd_activate)
 
     args = parser.parse_args()
