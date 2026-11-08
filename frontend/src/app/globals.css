@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-[#0F172A] text-white min-h-screen;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-white/5 backdrop-blur-md border border-white/10 rounded-xl p-6;
+  }
+
+  .btn-primary {
+    @apply bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 text-white px-6 py-3 rounded-lg font-semibold hover:scale-105 transition-transform duration-300 shadow-lg shadow-purple-500/30;
+  }
+
+  .btn-secondary {
+    @apply bg-white/10 border border-white/20 text-white px-6 py-3 rounded-lg font-semibold hover:bg-white/20 transition-colors duration-300;
+  }
+
+  .feature-badge {
+    @apply inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 text-xs font-medium border border-blue-500/30;
+  }
+
+  .locked-badge {
+    @apply inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gray-500/20 text-gray-400 text-xs font-medium border border-gray-500/30;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent;
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "name": "clipzi-ai-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "14.2.35",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwindcss": "^3.4.3",
+    "framer-motion": "^11.0.0",
+    "axios": "^1.7.0",
+    "lucide-react": "^0.378.0",
+    "js-cookie": "^3.0.5",
+    "qrcode.react": "^3.1.0"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.38",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "14.2.35",
+    "typescript": "^5.4.0",
+    "@types/react": "^18.2.0",
+    "@types/node": "^20.0.0",
+    "@types/js-cookie": "^3.0.6"
+  }
+}
