@@ -1,10 +1,15 @@
-fastapi>=0.104.0
-uvicorn>=0.24.0
+# Framework dipin ke kombinasi yang sudah terbukti (Store Python yang dipakai
+# selama pengembangan). FastAPI 0.16x / Starlette 1.x mengubah struktur
+# app.routes, jadi jangan dibiarkan naik mayor tanpa uji ulang.
+fastapi==0.115.6
+starlette==0.41.3
+uvicorn==0.30.6
 # Dibutuhkan langsung oleh app/core/config.py (BaseSettings) — wajib eksplisit,
 # karena fastapi tidak menarik pydantic-settings secara otomatis.
-pydantic>=2.6.0
-pydantic-settings>=2.1.0
-sqlalchemy>=2.0.0
+pydantic==2.13.5
+pydantic-settings==2.6.1
+# [asyncio] wajib: menarik greenlet yang dibutuhkan AsyncSession/SQLAlchemy async
+sqlalchemy[asyncio]==2.0.36
 asyncpg>=0.29.0
 alembic>=1.13.0
 python-jose[cryptography]>=3.3.0

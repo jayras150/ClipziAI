@@ -1,7 +1,8 @@
 {
-  // Interpreter yang benar-benar berisi dependency backend.
-  // (frontend/.venv hanya berisi 3 paket, bukan untuk Python backend)
-  "python.defaultInterpreterPath": "C:\\Users\\WINDOWS 11 PRO\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\\python.exe",
+  // Interpreter proyek: venv khusus backend yang berisi semua dependency.
+  // Jalankan `python -m venv backend/.venv` + `pip install -r backend/requirements.txt`
+  // bila folder ini belum ada.
+  "python.defaultInterpreterPath": "backend\\.venv\\Scripts\\python.exe",
   "python.terminal.activateEnvironment": true,
 
   // CATATAN: python.analysis.extraPaths / typeCheckingMode /

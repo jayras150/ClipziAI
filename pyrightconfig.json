@@ -12,6 +12,11 @@
     ".next"
   ],
   "extraPaths": ["backend"],
+  // Venv proyek (berisi semua dependency backend). Dibuat dengan:
+  //   python -m venv backend/.venv
+  //   backend/.venv/Scripts/python.exe -m pip install -r backend/requirements.txt
+  "venvPath": "backend",
+  "venv": ".venv",
   "typeCheckingMode": "basic",
   // yt-dlp tidak menyertakan `py.typed`, jadi warning ini tidak informatif.
   "reportMissingModuleSource": "none"
