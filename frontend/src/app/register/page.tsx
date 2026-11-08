@@ -4,7 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { Mail, Lock, User } from "lucide-react"
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+import { getApiBaseUrl } from "@/lib/env"
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -20,7 +20,7 @@ export default function RegisterPage() {
     setError("")
     setLoading(true)
     try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
+      const response = await fetch(`${getApiBaseUrl()}/api/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),

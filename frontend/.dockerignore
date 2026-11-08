@@ -1,0 +1,24 @@
+# Dependencies di-install ulang di dalam image
+node_modules/
+.next/
+out/
+
+# Secrets & env lokal
+.env
+.env.*
+!.env.example
+
+# VCS & editor
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Logs & cache lokal
+*.log
+dev-log*.txt
+*.tsbuildinfo
+.eslintcache
+coverage/

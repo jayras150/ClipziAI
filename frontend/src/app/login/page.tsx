@@ -4,7 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { Mail, Lock, Globe, Twitter, Facebook } from "lucide-react"
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+import { getApiBaseUrl } from "@/lib/env"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -17,7 +17,7 @@ export default function LoginPage() {
     setError("")
     setLoading(true)
     try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+      const response = await fetch(`${getApiBaseUrl()}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),

@@ -5,37 +5,12 @@ services:
     build: ./backend
     ports:
       - "8000:8000"
+    # Semua kredensial dibaca dari satu file: backend/.env
+    env_file:
+      - ./backend/.env
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/clipzi
-      # Upstash: rediss://default:<password>@<nama-db>.upstash.io:6379 (isi di file .env root)
-      - REDIS_URL=${REDIS_URL}
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_KEY=${SUPABASE_KEY}
-      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
-      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}
-      - R2_ENDPOINT_URL=${R2_ENDPOINT_URL}
-      - R2_BUCKET_NAME=${R2_BUCKET_NAME}
-      - R2_PUBLIC_DOMAIN=${R2_PUBLIC_DOMAIN}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - AI_PROVIDER=${AI_PROVIDER:-openai}
-      - AI_API_KEY=${AI_API_KEY}
-      - AI_BASE_URL=${AI_BASE_URL:-}
-      - AI_MODEL=${AI_MODEL:-}
-      - AI_TEMPERATURE=${AI_TEMPERATURE:-0.7}
-      - AI_MAX_TOKENS=${AI_MAX_TOKENS:-2048}
-      - TRANSCRIPTION_PROVIDER=${TRANSCRIPTION_PROVIDER:-local}
-      - TRANSCRIPTION_API_KEY=${TRANSCRIPTION_API_KEY}
-      - TRANSCRIPTION_BASE_URL=${TRANSCRIPTION_BASE_URL:-}
-      - TRANSCRIPTION_MODEL=${TRANSCRIPTION_MODEL:-}
-      - WHISPER_MODEL=${WHISPER_MODEL:-small}
-      - YOUTUBE_CLIENT_ID=${YOUTUBE_CLIENT_ID}
-      - YOUTUBE_CLIENT_SECRET=${YOUTUBE_CLIENT_SECRET}
-      - DUITKU_MERCHANT_CODE=${DUITKU_MERCHANT_CODE}
-      - DUITKU_API_KEY=${DUITKU_API_KEY}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - SECRET_KEY=${SECRET_KEY}
-      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
-      - YOUTUBE_REDIRECT_URI=${YOUTUBE_REDIRECT_URI:-http://localhost:8000/api/youtube/callback}
+      # Override khusus compose: database memakai service `db` di jaringan Docker
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/clipzi
       - DEBUG=true
     volumes:
       - ./backend:/app

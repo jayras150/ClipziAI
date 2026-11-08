@@ -1,5 +1,9 @@
 fastapi>=0.104.0
 uvicorn>=0.24.0
+# Dibutuhkan langsung oleh app/core/config.py (BaseSettings) — wajib eksplisit,
+# karena fastapi tidak menarik pydantic-settings secara otomatis.
+pydantic>=2.6.0
+pydantic-settings>=2.1.0
 sqlalchemy>=2.0.0
 asyncpg>=0.29.0
 alembic>=1.13.0

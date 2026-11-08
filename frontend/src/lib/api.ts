@@ -1,13 +1,14 @@
 import axios, { AxiosInstance } from "axios"
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+import { getApiBaseUrl } from "./env"
 
 export class ApiClient {
   private client: AxiosInstance
 
   constructor(token?: string) {
     this.client = axios.create({
-      baseURL: API_BASE_URL,
+      // Dibaca saat runtime agar NEXT_PUBLIC_API_URL bisa diganti tanpa rebuild image.
+      baseURL: getApiBaseUrl(),
       headers: {
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),

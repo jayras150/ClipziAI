@@ -74,9 +74,66 @@ npm run dev
 
 ### 3. Deploy dengan Docker
 
+Tersedia dua image terpisah: **backend** (FastAPI) dan **frontend** (Next.js).
+
+#### a. Jalankan dari source (docker compose)
+
 ```bash
-docker-compose up -d
+cp backend/.env.example backend/.env   # lalu isi kredensial
+docker compose up -d --build
 ```
+
+Backend di `http://localhost:8000`, frontend di `http://localhost:3000`.
+
+#### b. Build & push ke Docker Hub (image portable)
+
+```powershell
+# Windows
+./scripts/build-and-push.ps1 -DockerHubUser <username-dockerhub> -Tag 1.0.0
+```
+
+```bash
+# Linux / macOS / instance Vast.ai
+./scripts/build-and-push.sh <username-dockerhub> 1.0.0
+```
+
+Perintah di atas menghasilkan:
+
+| Image | Keterangan |
+|-------|-----------|
+| `<user>/clipzi-backend:<tag>` | FastAPI + ffmpeg + yt-dlp + faster-whisper, non-root user, healthcheck `/api/health` |
+| `<user>/clipzi-frontend:<tag>` | Next.js standalone (Node 20 Alpine), non-root user |
+
+#### c. Menjalankan image di server mana pun
+
+```bash
+# Backend — semua rahasia dibaca dari file .env (tidak ikut masuk image)
+docker run -d --name clipzi-api \
+  -p 8000:8000 \
+  --env-file backend/.env \
+  <user>/clipzi-backend:1.0.0
+
+# Frontend — NEXT_PUBLIC_API_URL bisa diganti kapan saja tanpa rebuild
+docker run -d --name clipzi-web \
+  -p 3000:3000 \
+  -e NEXT_PUBLIC_API_URL=http://IP_PUBLIK:8000 \
+  <user>/clipzi-frontend:1.0.0
+```
+
+Atau lewat compose untuk image hasil push:
+
+```bash
+export DOCKERHUB_USER=<username-dockerhub>
+export TAG=1.0.0
+export NEXT_PUBLIC_API_URL=http://IP_PUBLIK:8000
+docker compose -f docker-compose.prod.yml up -d
+```
+
+> **Kenapa `NEXT_PUBLIC_API_URL` bisa runtime?**
+> `frontend/docker-entrypoint.sh` menulis `/app/public/runtime-env.js` setiap
+> container start. Nilainya dibaca lewat `window.__ENV__` (lihat
+> `frontend/src/lib/env.ts`), sehingga **satu image** bisa dipakai di laptop,
+> Vast.ai, atau VPS tanpa rebuild.
 
 ---
 
@@ -237,10 +294,18 @@ Lihat `docs/android-client.md` untuk contoh lengkap.
 ## 📦 Deployment ke Vast.ai
 
 1. Buat akun di [Vast.ai](https://vast.ai)
-2. Pilih instance GPU min 4GB VRAM
-3. Deploy Docker image
-4. Set variabel lingkungan dari `.env.example`
-5. Dapatkan API Key dan gunakan di aplikasi Android
+2. Build & push image lebih dulu: `./scripts/build-and-push.ps1 -DockerHubUser <user>`
+3. Sewa instance (GPU min 4GB VRAM; CPU-only cukup untuk API + transkripsi cloud),
+   lalu pilih/tempel image `<user>/clipzi-backend:<tag>` pada kolom image
+4. Tambahkan port `8000` (API) dan `3000` (frontend) di pengaturan instance
+5. Isi environment lewat `--env-file` atau variabel lingkungan Vast.ai
+   (lihat `backend/.env.example`)
+6. Frontend dijalankan dengan
+   `-e NEXT_PUBLIC_API_URL=http://<IP_PUBLIK_INSTANCE>:8000`
+7. Ambil API Key dari dashboard dan gunakan di aplikasi Android
+
+> Catatan storage: file video sebaiknya langsung diarahkan ke Cloudflare R2
+> (`R2_*`), karena disk instance Vast.ai bersifat sementara.
 
 ---
 

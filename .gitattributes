@@ -1,0 +1,21 @@
+# Shell script harus LF agar bisa dieksekusi di dalam container Linux
+*.sh text eol=lf
+
+# Normalisasi file teks lain
+*.py text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+
+# File binary - jangan diubah
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary

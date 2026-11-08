@@ -1,5 +1,5 @@
 from functools import lru_cache
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 from typing import List, Optional
 
@@ -96,6 +96,21 @@ class Settings(BaseSettings):
     @property
     def CORS_ORIGINS(self) -> List[str]:
         return [item.strip() for item in self.CORS_ORIGINS_RAW.split(",") if item.strip()]
+
+    @field_validator("DATABASE_URL")
+    @classmethod
+    def _use_async_driver(cls, value: str) -> str:
+        """Paksa driver async (asyncpg) untuk SQLAlchemy.
+
+        Connection string dari Supabase/Neon biasanya berbentuk
+        `postgres://` atau `postgresql://` (driver sync). Tanpa normalisasi ini
+        `create_async_engine` gagal saat start karena mencoba memuat psycopg2.
+        """
+        if value.startswith("postgres://"):
+            return "postgresql+asyncpg://" + value[len("postgres://"):]
+        if value.startswith("postgresql://"):
+            return "postgresql+asyncpg://" + value[len("postgresql://"):]
+        return value
 
     class Config:
         env_file = ".env"

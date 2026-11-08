@@ -1,0 +1,35 @@
+# Jangan pernah kirim secrets / file lokal ke build context
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.pyc
+
+# VCS & editor
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Runtime artifacts
+*.log
+tmp/
+media/
+uploads/
+outputs/

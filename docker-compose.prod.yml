@@ -1,0 +1,41 @@
+# =============================================================================
+# Clipzi AI - menjalankan image hasil build/push Docker Hub.
+#
+# Pakai:
+#   export DOCKERHUB_USER=budi
+#   export NEXT_PUBLIC_API_URL=http://IP_PUBLIK:8000
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# File .env backend dibaca langsung sebagai env_file (tidak ikut masuk image).
+# =============================================================================
+services:
+  backend:
+    image: ${DOCKERHUB_USER:-youruser}/clipzi-backend:${TAG:-latest}
+    container_name: clipzi-api
+    env_file:
+      - ./backend/.env
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  frontend:
+    image: ${DOCKERHUB_USER:-youruser}/clipzi-frontend:${TAG:-latest}
+    container_name: clipzi-web
+    environment:
+      # Dibaca saat container start lalu ditulis ke /runtime-env.js
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
