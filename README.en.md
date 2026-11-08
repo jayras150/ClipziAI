@@ -30,7 +30,7 @@ viral scoring, auto subtitles, 9:16 smart crop, and auto-upload to YouTube.
 6. [Environment Configuration](#-environment-configuration)
 7. [🐳 Build & Upload to Docker Hub](#-build--upload-to-docker-hub) ← **full guide**
 8. [Running Containers](#-running-containers)
-9. [Deploy to Vast.ai](#-deploy-to-vastai)
+9. [Hybrid Architecture: VPS + Serverless](#-hybrid-architecture-vps--vastai-serverless)
 10. [AI & Transcription Providers](#-ai--transcription-providers)
 11. [yt-dlp Cookies & Auto Rotation](#-yt-dlp-cookies--auto-rotation)
 12. [Database & Migrations](#-database--migrations)
@@ -84,7 +84,8 @@ ClipziAI/
 │   │   ├── db/             # async engine + init_db()
 │   │   ├── models/         # 31 SQLAlchemy models
 │   │   ├── schemas/        # Pydantic
-│   │   └── services/       # AI, transcriber, downloader, cookie_store, storage
+│   │   └── services/       # AI, transcriber, downloader, cookie_store, storage, pipeline
+│   ├── deployments/        # HTTP worker for Vast.ai (CLIPZI_ROLE=worker)
 │   ├── alembic/            # (no migrations yet — see §Database)
 │   ├── Dockerfile          # backend image (multi-stage)
 │   ├── requirements.txt    # pinned versions (see note)
@@ -103,6 +104,7 @@ ClipziAI/
 │   ├── check_ytdlp_cookies.py  # cookie health check (cron)
 │   ├── seed_pricing.py
 │   └── grant_signup_credits.py
+├── deploy/                  # VPS: Caddyfile + compose + deploy & migration guide
 ├── docker-compose.yml       # dev: build from source (backend+db+frontend)
 ├── docker-compose.prod.yml  # prod: use images from Docker Hub
 ├── pyrightconfig.json       # Pylance: extraPaths + venv
@@ -503,7 +505,7 @@ budi/clipzi-backend       1.0.0   a1b2c3d4e5f6   2 minutes ago   1.52GB
 budi/clipzi-frontend      1.0.0   f6e5d4c3b2a1   1 minute ago    183MB
 ```
 
-±1.5 GB for the backend is **normal** (ffmpeg + OpenCV + faster-whisper).
+±800 MB for the backend is **normal** (ffmpeg + OpenCV + yt-dlp). `faster-whisper` is not installed by default.
 If only one row appears, one build failed — scroll up and read the error.
 
 ---
@@ -614,7 +616,7 @@ Or from the terminal:
 docker manifest inspect "$DH_USER/clipzi-backend:$TAG" | head -20
 ```
 
-If tag `1.0.0` shows up on the Tags page (around 1.5 GB), the image is uploaded.
+If tag `1.0.0` shows up on the Tags page (around 800 MB), the image is uploaded.
 
 ---
 
@@ -732,7 +734,7 @@ echo "DONE: $DH_USER/clipzi-backend:$TAG"
    `docker login` on the target server too.
 3. **Rebuild is required** after changing `requirements.txt`, `package.json`, or a
    Dockerfile — an existing image never updates itself.
-4. **Image size**: ±1.5 GB for the backend and ±180 MB for the frontend is
+4. **Image size**: ±800 MB for the backend and ±180 MB for the frontend is
    normal. To shrink it, remove unused entries from `requirements.txt`.
 5. **Without Docker Hub** — you can also `docker save` → `scp` → `docker load`:
 
@@ -822,67 +824,149 @@ docker compose -f docker-compose.prod.yml up -d
 
 ### D. Capacity notes
 
-- The **backend runs fine without a GPU**. `faster-whisper` in the image uses
-  CPU (`int8`), which is enough for `WHISPER_MODEL=small`.
+- The **backend runs fine without a GPU**: transcription uses an API provider,
+  and video rendering happens on the Vast.ai GPU worker.
 - For higher throughput, move transcription to a cloud provider
   (`TRANSCRIPTION_PROVIDER=groq|openai`) to keep the instance CPU free.
 
 ---
 
-## 📦 Deploy to Vast.ai
+## 🔀 Hybrid Architecture: VPS + Vast.ai Serverless
 
-1. **Build & push the images** from a machine where Docker is running:
+The API and frontend run on a **single always-on cheap VPS**, while the heavy
+video processing runs on a **Vast.ai serverless GPU** that bills per second and
+automatically scales to zero when idle.
 
-   ```bash
-   ./scripts/build-and-push.sh <dockerhub-username> 1.0.0
-   ```
+```
+        Browser
+           │ HTTPS (single domain)
+           ▼
+┌──────────────────────── VPS (Docker) ────────────────────────┐
+│  Caddy :80/:443  ──/api/*──►  backend FastAPI :8000          │
+│                  ──/*─────►  frontend Next.js :3000          │
+└───────────────────────────┬──────────────────────────────────┘
+                            │
+        ┌───────────────────┼────────────────────┐
+        ▼                   ▼                    ▼
+  Supabase            Upstash Redis        Cloudflare R2
+  (PostgreSQL)        (cache/queue)        (video & files)
+        ▲
+        │ task status updates
+┌───────┴──────────────────────────────────────────────────────┐
+│ Vast.ai Serverless Endpoint (GPU, scale-to-zero)             │
+│ Worker: deployments/worker_api.py → pipeline → upload to R2   │
+└──────────────────────────────────────────────────────────────┘
+```
 
-2. Create a [vast.ai](https://vast.ai) account → *Search* → pick an instance
-   (CPU-only is enough for the API plus cloud transcription; a GPU only helps
-   if you want fast local transcription).
+### Why hybrid (instead of putting the whole API on serverless)?
 
-3. In the **Image** field paste:
-   `<dockerhub-username>/clipzi-backend:1.0.0`
+| Reason | Explanation |
+|--------|-------------|
+| **Cold start** | An idle serverless endpoint must provision + boot first. If the whole API lived there, the user's first request (login, dashboard) would wait for it |
+| **Cost** | GPUs are expensive; the API only needs CPU. Keeping the API always-on on a 1–2 GB VPS is far cheaper |
+| **Webhooks** | Duitku callbacks and OAuth need an endpoint that is always ready |
+| **Scaling** | GPU workers can scale 0→N without affecting the API |
 
-4. Optional **On-start script** to launch the container automatically:
+### Components
 
-   ```bash
-   docker run -d --name clipzi-api -p 8000:8000 \
-     --env-file /workspace/backend/.env \
-     -v clipzi-cache:/app/.cache \
-     --restart unless-stopped \
-     <dockerhub-username>/clipzi-backend:1.0.0
-   ```
+| Component | Role | Managed by |
+|-----------|------|------------|
+| VPS + Caddy | Hosts the API & frontend, automatic HTTPS, single origin (no CORS) | `deploy/` |
+| Vast **endpoint** | Router + autoscaling policy (`max_workers`, `inactivity_timeout`, …) | `scripts/vastai-setup.py create` |
+| Vast **workergroup** | GPU worker pool: image, GPU filter, disk | same |
+| Vast **worker** | Runs `deployments/worker_api.py` (`CLIPZI_ROLE=worker`) | automatically by Vast |
+| Supabase / Upstash / R2 | Durable state (nothing on the VPS) | external services |
 
-5. Expose ports **8000** (API) and **3000** (frontend) in the instance settings.
+### One job's flow
 
-6. Provide the environment. Safest: upload `backend/.env` to the instance and use
-   `--env-file`. Alternative: enter variables one by one in the *Environment* panel.
+1. User submits a task → API validates credits → stores the task (`status=queued`)
+2. API dispatches the job to the Vast endpoint (`VAST_ENDPOINT_URL` or SDK)
+3. Worker runs `run_video_pipeline(task_id)`: download → transcribe → cut → burn subtitles → upload to R2
+4. Worker updates `task.status`/`progress`/`clips` in PostgreSQL
+5. Frontend polls `GET /api/tasks/{id}`
 
-7. Run the frontend with the instance public IP:
 
-   ```bash
-   docker run -d --name clipzi-web -p 3000:3000 \
-     -e NEXT_PUBLIC_API_URL=http://<PUBLIC_IP>:8000 \
-     <dockerhub-username>/clipzi-frontend:1.0.0
-   ```
+### Deployment guide
 
-8. Verify:
+The step-by-step guide (DNS, Docker, swap, verification, operations) lives in
+**[`deploy/README.md`](deploy/README.md)**. Summary:
 
-   ```bash
-   curl http://<PUBLIC_IP>:8000/api/health
-   curl http://<PUBLIC_IP>:3000/runtime-env.js
-   ```
+```bash
+# --- on the VPS ---
+git clone <REPO_URL> clipzi-ai && cd clipzi-ai
+cp backend/.env.example backend/.env && nano backend/.env            # all secrets
+cp deploy/.env.vps.example deploy/.env.vps && nano deploy/.env.vps   # DOMAIN, DOCKERHUB_USER, TAG
 
-> ⚠️ **Important on Vast.ai**
-> - Instance disk is **ephemeral** → send rendered videos to Cloudflare R2
->   (`R2_*`), never keep them locally.
-> - Datacenter IPs are often blocked by YouTube → prepare **yt-dlp cookies**
->   (next section).
-> - Google OAuth **rejects** `http://IP` redirect URIs → for the YouTube connect
->   feature use a domain + HTTPS (Cloudflare Tunnel / reverse proxy).
+docker compose --env-file deploy/.env.vps -f deploy/docker-compose.vps.yml pull
+docker compose --env-file deploy/.env.vps -f deploy/docker-compose.vps.yml up -d
 
----
+curl https://<DOMAIN>/api/health            # {"status":"healthy",...}
+curl https://<DOMAIN>/runtime-env.js        # window.__ENV__ = {...}
+```
+
+```bash
+# --- locally: prepare the GPU worker ---
+pip install vastai
+vastai set api-key <VAST_API_KEY>
+python scripts/vastai-setup.py create       # endpoint + workergroup
+python scripts/vastai-setup.py status       # read endpoint URL -> set VAST_ENDPOINT_URL
+```
+
+### Vast.ai CLI cheatsheet
+
+| Command | Purpose |
+|---------|---------|
+| `python scripts/vastai-setup.py create` | create endpoint + workergroup (check `status` first to avoid duplicates) |
+| `... update` | re-apply `VAST_MAX_WORKERS`, `VAST_TARGET_UTIL`, `VAST_INACTIVITY_TIMEOUT` |
+| `... status` | show endpoint, URL, workergroup, worker count |
+| `... logs --tail 200` | last 200 endpoint log lines (`vastai get endpt-logs`) |
+| `... benchmark --gpus RTX_4090,RTX_3090` | find the best perf/$ GPU (`vastai run benchmarks`) |
+| `... teardown` | delete workergroup + endpoint (worker billing stops) |
+| `python scripts/vastai-setup.py --dry-run create` | print the `vastai` commands without running them |
+
+Autoscaling parameters (from `backend/.env`):
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `VAST_MIN_WORKERS` | `0` | 0 = scale to zero when idle |
+| `VAST_MAX_WORKERS` | `4` | parallel worker ceiling |
+| `VAST_TARGET_UTIL` | `0.9` | target utilization |
+| `VAST_INACTIVITY_TIMEOUT` | `300` | idle seconds before workers stop |
+| `VAST_GPU_FILTER` | `gpu_ram>=16 disk_space>=40 inet_down>200` | marketplace filter |
+
+> 💰 **Billing model**: `Ready`/`Loading` workers bill GPU per second; `Inactive`
+> (cold) workers bill only storage + bandwidth; a `Destroyed` endpoint bills
+> nothing. Hence `VAST_MIN_WORKERS=0` + `inactivity_timeout` is the cheapest setup.
+
+### One image, two roles
+
+The same backend image serves as API and worker; the role comes from an env var:
+
+| `CLIPZI_ROLE` | Process | Used on |
+|---------------|---------|---------|
+| `api` (default) | `uvicorn app.main:app` (63 REST paths) | VPS |
+| `worker` | `uvicorn deployments.worker_api:app` (`/health`, `/ready`, `/process`) | Vast worker |
+
+### VPS migration / upgrade
+
+Nothing durable lives on the VPS — only 3 config files need moving
+(`backend/.env`, `deploy/.env.vps`, `deploy/Caddyfile`). Downtime: 1–3 minutes.
+
+**Full walkthrough** (steps A–E, rollback, checklist):
+**[`deploy/README.md` → 🚚 Migrasi / Upgrade VPS](deploy/README.md#-migrasi--upgrade-vps)**.
+
+### Fallback: dedicated GPU instance
+
+If you prefer not to use serverless, run API + worker as regular containers on a
+dedicated GPU instance:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d
+```
+
+You pay for the GPU 24/7 even without jobs — only sensible at sustained load.
+
+
 
 ## 🤖 AI & Transcription Providers
 

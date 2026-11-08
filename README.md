@@ -30,7 +30,7 @@ viral scoring, auto subtitle, smart crop 9:16, dan auto-upload ke YouTube.
 6. [Konfigurasi Environment](#-konfigurasi-environment)
 7. [🐳 Panduan Build & Upload ke Docker Hub](#-panduan-build--upload-ke-docker-hub) ← **panduan lengkap**
 8. [Menjalankan Container](#-menjalankan-container)
-9. [Deploy ke Vast.ai](#-deploy-ke-vastai)
+9. [Arsitektur Hybrid: VPS + Serverless](#-arsitektur-hybrid-vps--vastai-serverless)
 10. [Provider AI & Transkripsi](#-provider-ai--transkripsi)
 11. [Cookies yt-dlp & Rotasi Otomatis](#-cookies-yt-dlp--rotasi-otomatis)
 12. [Database & Migrasi](#-database--migrasi)
@@ -84,7 +84,8 @@ ClipziAI/
 │   │   ├── db/             # engine async + init_db()
 │   │   ├── models/         # 31 model SQLAlchemy
 │   │   ├── schemas/        # Pydantic
-│   │   └── services/       # AI, transcriber, downloader, cookie_store, storage
+│   │   └── services/       # AI, transcriber, downloader, cookie_store, storage, pipeline
+│   ├── deployments/        # worker HTTP untuk Vast.ai (CLIPZI_ROLE=worker)
 │   ├── alembic/            # (belum ada migration — lihat §Database)
 │   ├── Dockerfile          # image backend (multi-stage)
 │   ├── requirements.txt    # versi dipin (lihat catatan)
@@ -103,6 +104,7 @@ ClipziAI/
 │   ├── check_ytdlp_cookies.py  # health-check cookies (cron)
 │   ├── seed_pricing.py
 │   └── grant_signup_credits.py
+├── deploy/                  # VPS: Caddyfile + compose + panduan deploy & migrasi
 ├── docker-compose.yml       # dev: build dari source (backend+db+frontend)
 ├── docker-compose.prod.yml  # prod: pakai image dari Docker Hub
 ├── pyrightconfig.json       # Pylance: extraPaths + venv
@@ -513,7 +515,7 @@ budi/clipzi-backend       1.0.0   a1b2c3d4e5f6   2 minutes ago   1.52GB
 budi/clipzi-frontend      1.0.0   f6e5d4c3b2a1   1 minute ago    183MB
 ```
 
-Kalau backend ±1,5 GB itu **normal** (ffmpeg + OpenCV + faster-whisper).
+Kalau backend ±800 MB itu **normal** (ffmpeg + OpenCV + yt-dlp). `faster-whisper` tidak dipasang default.
 Kalau hanya 1 baris muncul → salah satu build gagal, scroll ke atas dan baca error-nya.
 
 ---
@@ -624,7 +626,7 @@ Atau lewat terminal:
 docker manifest inspect "$DH_USER/clipzi-backend:$TAG" | head -20
 ```
 
-Kalau tag `1.0.0` terlihat di halaman Tags (dengan ukuran ±1,5 GB), image sudah ter-upload.
+Kalau tag `1.0.0` terlihat di halaman Tags (dengan ukuran ±800 MB), image sudah ter-upload.
 
 ---
 
@@ -742,7 +744,7 @@ echo "SELESAI: $DH_USER/clipzi-backend:$TAG"
    `docker login` juga di server tujuan.
 3. **Rebuild wajib** setelah mengubah `requirements.txt`, `package.json`, atau
    Dockerfile — image lama tidak berubah sendiri.
-4. **Ukuran image**: backend ±1,5 GB dan frontend ±180 MB itu normal. Untuk
+4. **Ukuran image**: backend ±800 MB dan frontend ±180 MB itu normal. Untuk
    memperkecil, hapus dependency yang tidak terpakai dari `requirements.txt`.
 5. **Tanpa Docker Hub** — bisa juga `docker save` → `scp` → `docker load`:
 
@@ -831,67 +833,150 @@ Isi `docker-compose.prod.yml`:
 
 ### D. Catatan kapasitas
 
-- **Backend** bisa jalan **tanpa GPU**. `faster-whisper` di image memakai CPU (`int8`),
-  cukup untuk `WHISPER_MODEL=small`.
+- **Backend** bisa jalan **tanpa GPU**: transkripsi memakai API provider,
+  sedangkan render video dijalankan di worker GPU Vast.ai.
 - Untuk volume tinggi, pindahkan transkripsi ke provider cloud
   (`TRANSCRIPTION_PROVIDER=groq|openai`) sehingga CPU instance tetap ringan.
 
 ---
 
-## 📦 Deploy ke Vast.ai
+## 🔀 Arsitektur Hybrid: VPS + Vast.ai Serverless
 
-1. **Build & push image** dari mesin yang Docker-nya hidup:
+API + frontend berjalan di **satu VPS murah yang selalu-on**, sementara proses
+video berat dijalankan di **GPU Vast.ai serverless** yang dibayar per detik dan
+otomatis berhenti saat idle (scale-to-zero).
 
-   ```bash
-   ./scripts/build-and-push.sh <user-dockerhub> 1.0.0
-   ```
+```
+        Browser
+           │ HTTPS (satu domain)
+           ▼
+┌──────────────────────── VPS (Docker) ────────────────────────┐
+│  Caddy :80/:443  ──/api/*──►  backend FastAPI :8000          │
+│                  ──/*─────►  frontend Next.js :3000          │
+└───────────────────────────┬──────────────────────────────────┘
+                            │
+        ┌───────────────────┼────────────────────┐
+        ▼                   ▼                    ▼
+  Supabase            Upstash Redis        Cloudflare R2
+  (PostgreSQL)        (cache/queue)        (video & file)
+        ▲
+        │ update status task
+┌───────┴──────────────────────────────────────────────────────┐
+│ Vast.ai Serverless Endpoint (GPU, scale-to-zero)             │
+│ Worker: deployments/worker_api.py → pipeline → upload ke R2   │
+└──────────────────────────────────────────────────────────────┘
+```
 
-2. Buat akun di [vast.ai](https://vast.ai) → *Search* → pilih instance
-   (CPU-only cukup untuk API + transkripsi cloud; GPU hanya bila ingin
-   transkripsi lokal yang cepat).
+### Mengapa hybrid (bukan seluruh API di serverless)?
 
-3. Pada kolom **Image**, tempel:
-   `<user-dockerhub>/clipzi-backend:1.0.0`
+| Alasan | Penjelasan |
+|--------|-----------|
+| **Cold start** | Endpoint serverless yang idle perlu waktu provisioning + boot. Kalau seluruh API di sana, request pertama user (login, buka dashboard) ikut menunggu |
+| **Biaya** | GPU mahal; API hanya butuh CPU. Menjalankan API 24/7 di VPS 1–2 GB jauh lebih murah |
+| **Webhook** | Callback Duitku & OAuth butuh endpoint yang selalu siap |
+| **Skala** | Worker GPU bisa naik/turun otomatis (0→N) tanpa mempengaruhi API |
 
-4. Pada **On-start script** (opsional), jalankan container otomatis:
+### Komponen
 
-   ```bash
-   docker run -d --name clipzi-api -p 8000:8000 \
-     --env-file /workspace/backend/.env \
-     -v clipzi-cache:/app/.cache \
-     --restart unless-stopped \
-     <user-dockerhub>/clipzi-backend:1.0.0
-   ```
+| Komponen | Peran | Dikelola oleh |
+|----------|-------|---------------|
+| VPS + Caddy | Hosting API & frontend, HTTPS otomatis, satu origin (tanpa CORS) | `deploy/` |
+| Vast **endpoint** | Router + kebijakan autoscale (`max_workers`, `inactivity_timeout`, dst.) | `scripts/vastai-setup.py create` |
+| Vast **workergroup** | Pool worker GPU: image, filter GPU, disk | idem |
+| Vast **worker** | Menjalankan `deployments/worker_api.py` (`CLIPZI_ROLE=worker`) | otomatis oleh Vast |
+| Supabase / Upstash / R2 | State permanen (tidak ada di VPS) | layanan eksternal |
 
-5. Buka port **8000** (API) dan **3000** (frontend) di pengaturan instance.
+### Alur satu job
 
-6. Isi environment. Cara paling aman: upload `backend/.env` ke instance lalu
-   gunakan `--env-file`. Alternatif: isi satu per satu di panel *Environment*.
+1. User submit task → API validasi kredit → simpan task (`status=queued`)
+2. API mengirim job ke endpoint Vast (`VAST_ENDPOINT_URL` atau SDK)
+3. Worker menjalankan `run_video_pipeline(task_id)`: unduh → transkripsi → potong → burn subtitle → upload R2
+4. Worker memperbarui `task.status`/`progress`/`clips` di PostgreSQL
+5. Frontend memantau lewat `GET /api/tasks/{id}` (polling)
 
-7. Jalankan frontend dengan IP publik instance:
 
-   ```bash
-   docker run -d --name clipzi-web -p 3000:3000 \
-     -e NEXT_PUBLIC_API_URL=http://<IP_PUBLIK>:8000 \
-     <user-dockerhub>/clipzi-frontend:1.0.0
-   ```
+### Panduan deploy
 
-8. Verifikasi:
+Panduan langkah-per-langkah (DNS, Docker, swap, verifikasi, operasional) ada di
+**[`deploy/README.md`](deploy/README.md)**. Ringkasannya:
 
-   ```bash
-   curl http://<IP_PUBLIK>:8000/api/health
-   curl http://<IP_PUBLIK>:3000/runtime-env.js
-   ```
+```bash
+# --- di VPS ---
+git clone <URL_REPO> clipzi-ai && cd clipzi-ai
+cp backend/.env.example backend/.env && nano backend/.env      # isi semua rahasia
+cp deploy/.env.vps.example deploy/.env.vps && nano deploy/.env.vps   # DOMAIN, DOCKERHUB_USER, TAG
 
-> ⚠️ **Penting untuk Vast.ai**
-> - Disk instance bersifat **sementara** → hasil video wajib diarahkan ke
->   Cloudflare R2 (`R2_*`), jangan disimpan lokal.
-> - IP datacenter sering diblokir YouTube → siapkan **cookies yt-dlp**
->   (lihat bagian berikut).
-> - Google OAuth **menolak** redirect URI `http://IP` → untuk fitur connect
->   YouTube pakai domain + HTTPS (Cloudflare Tunnel / reverse proxy).
+docker compose --env-file deploy/.env.vps -f deploy/docker-compose.vps.yml pull
+docker compose --env-file deploy/.env.vps -f deploy/docker-compose.vps.yml up -d
 
----
+curl https://<DOMAIN>/api/health            # {"status":"healthy",...}
+curl https://<DOMAIN>/runtime-env.js        # window.__ENV__ = {...}
+```
+
+```bash
+# --- di mesin lokal: siapkan GPU worker ---
+pip install vastai
+vastai set api-key <VAST_API_KEY>
+python scripts/vastai-setup.py create       # endpoint + workergroup
+python scripts/vastai-setup.py status       # lihat URL endpoint -> isi VAST_ENDPOINT_URL
+```
+
+### Cheatsheet CLI Vast.ai
+
+| Perintah | Fungsi |
+|----------|--------|
+| `python scripts/vastai-setup.py create` | buat endpoint + workergroup (idempotent secara manual, cek `status` dulu) |
+| `... update` | terapkan ulang `VAST_MAX_WORKERS`, `VAST_TARGET_UTIL`, `VAST_INACTIVITY_TIMEOUT` |
+| `... status` | lihat endpoint, URL, workergroup, jumlah worker |
+| `... logs --tail 200` | 200 baris log endpoint (`vastai get endpt-logs`) |
+| `... benchmark --gpus RTX_4090,RTX_3090` | cari GPU dengan perf/$ terbaik (`vastai run benchmarks`) |
+| `... teardown` | hapus workergroup + endpoint (billing worker berhenti) |
+| `python scripts/vastai-setup.py --dry-run create` | lihat perintah `vastai` tanpa menjalankan |
+
+Parameter autoscale yang dipakai (dari `backend/.env`):
+
+| Variabel | Default | Arti |
+|----------|---------|------|
+| `VAST_MIN_WORKERS` | `0` | 0 = scale-to-zero saat idle |
+| `VAST_MAX_WORKERS` | `4` | batas worker paralel |
+| `VAST_TARGET_UTIL` | `0.9` | target utilisasi |
+| `VAST_INACTIVITY_TIMEOUT` | `300` | detik idle sebelum worker dihentikan |
+| `VAST_GPU_FILTER` | `gpu_ram>=16 disk_space>=40 inet_down>200` | filter marketplace |
+
+> 💰 **Model biaya**: worker `Ready`/`Loading` ditagih GPU per detik; worker
+> `Inactive` (cold) hanya ditagih storage + bandwidth; endpoint `Destroyed`
+> tidak menagih apa pun. Karena itu `VAST_MIN_WORKERS=0` + `inactivity_timeout`
+> adalah kombinasi termurah.
+
+### Satu image, dua peran
+
+Image backend yang sama dipakai untuk API dan worker; peran dipilih lewat env:
+
+| `CLIPZI_ROLE` | Proses yang dijalankan | Dipakai di |
+|---------------|------------------------|------------|
+| `api` (default) | `uvicorn app.main:app` (63 endpoint REST) | VPS |
+| `worker` | `uvicorn deployments.worker_api:app` (`/health`, `/ready`, `/process`) | worker Vast |
+
+### Migrasi / upgrade VPS
+
+Tidak ada data permanen di VPS — hanya 3 file konfigurasi yang perlu dipindah
+(`backend/.env`, `deploy/.env.vps`, `deploy/Caddyfile`). Downtime 1–3 menit.
+
+**Panduan lengkap** (langkah A–E, rollback, checklist): lihat
+**[`deploy/README.md` → 🚚 Migrasi / Upgrade VPS](deploy/README.md#-migrasi--upgrade-vps)**.
+
+### Fallback: instance GPU dedicated
+
+Kalau tidak ingin memakai serverless, API + worker bisa dijalankan sebagai
+container biasa (mis. satu instance GPU yang selalu hidup):
+
+```bash
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Bayar GPU 24/7 walau tidak ada job — cocok hanya bila beban tinggi terus-menerus.
+
+
 
 ## 🤖 Provider AI & Transkripsi
 
