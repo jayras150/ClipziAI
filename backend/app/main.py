@@ -17,6 +17,7 @@ from app.api.admin import transactions as admin_transactions
 from app.api.admin import audit as admin_audit
 from app.api.admin import system as admin_system
 from app.api.admin import security as admin_security
+from app.api.admin import ytdlp_cookies as admin_ytdlp_cookies
 from app.api import multi_platform, clip_templates, bulk_jobs, analytics
 from app.api import api_keys, webhooks, compliance
 from app.api import scheduled_publish
@@ -78,6 +79,11 @@ app.include_router(admin_transactions.router, prefix="/api/admin/transactions", 
 app.include_router(admin_audit.router, prefix="/api/admin/audit", tags=["Admin Audit"])
 app.include_router(admin_system.router, prefix="/api/admin/system", tags=["Admin System"])
 app.include_router(admin_security.router, prefix="/api/admin/security", tags=["Admin Security"])
+app.include_router(
+    admin_ytdlp_cookies.router,
+    prefix="/api/admin/ytdlp-cookies",
+    tags=["Admin yt-dlp Cookies"],
+)
 
 
 @app.get("/")

@@ -243,6 +243,49 @@ docker run -d --name clipzi-api -p 8000:8000 \
 > `cookies.txt`, `.cache/`, dan `downloads/` sudah masuk `.gitignore` dan
 > `.dockerignore`.
 
+### 🔄 Rotasi otomatis (multiple akun, tanpa redeploy)
+
+Cara statis di atas akan mati saat sesi Google dicabut. Untuk produksi, cookies
+dikelola lewat database (tabel `ytdlp_cookies`, terenkripsi AES-256-GCM):
+
+```bash
+# 1. Upload cookies (boleh banyak akun, label unik)
+curl -X POST http://localhost:8000/api/admin/ytdlp-cookies \
+  -H "Content-Type: application/json" \
+  -d '{"label":"akun-1","cookies":"<isi cookies.txt>"}'
+
+# 2. Cek semua cookies sekarang
+curl -X POST http://localhost:8000/api/admin/ytdlp-cookies/probe-all
+
+# 3. Lihat status pool
+curl http://localhost:8000/api/admin/ytdlp-cookies
+```
+
+**Apa yang otomatis:**
+
+| Mekanisme | Penjelasan |
+|-----------|-----------|
+| Rotasi multi-akun | `acquire()` memilih cookies aktif yang paling lama tidak dipakai (round-robin) — beban tersebar, risiko per akun turun |
+| Refresh token jangka pendek | yt-dlp menulis balik cookie jar ke `cookiefile` (`YoutubeDL.save_cookies()`), lalu `sync_back()` mengenkripsi ulang ke DB → token seperti `__Secure-1PSIDTS` tetap segar |
+| Deteksi kedaluwarsa | Teks error diuji terhadap penanda seperti `Sign in to confirm`, `cookies are no longer valid`, `HTTP 403`; atau `fail_count >= YTDLP_COOKIE_MAX_FAILURES` → status `expired` |
+| Failover | Cookies `expired` otomatis dilewati, download memakai akun berikutnya |
+
+**Apa yang tetap manual:** bila sesi Google benar-benar mati (dicabut / logout
+massal / verifikasi keamanan), tidak ada tool yang bisa menghidupkannya tanpa
+login ulang — ekspor cookies baru dan upload lagi ke endpoint di atas.
+
+**Jadwalkan pemeriksaan (cron tiap 6 jam):**
+
+```cron
+0 */6 * * * cd /app/backend && python ../scripts/check_ytdlp_cookies.py >> /var/log/clipzi-cookies.log 2>&1
+```
+
+Script keluar dengan kode `1` bila ada cookies yang jadi `expired` — bisa dipakai
+untuk alerting (email/webhook).
+
+> 💡 Boleh isi beberapa akun (mis. 3–5). Dengan rotasi, satu akun yang kena
+> rate-limit tidak menghentikan seluruh pipeline.
+
 ---
 
 ## ⚡ Konfigurasi Redis (Upstash)

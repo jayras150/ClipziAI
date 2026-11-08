@@ -94,6 +94,14 @@ class Settings(BaseSettings):
     # Opsional, mis. "youtube:player_client=web_safari,android"
     YTDLP_EXTRACTOR_ARGS: Optional[str] = None
 
+    # Rotasi cookies otomatis (tabel ytdlp_cookies)
+    # Berapa kali gagal sebelum cookies ditandai expired
+    YTDLP_COOKIE_MAX_FAILURES: int = 3
+    # Video probe untuk uji validitas cookies (harus video publik)
+    YTDLP_COOKIE_PROBE_URL: str = "https://www.youtube.com/watch?v=BaW_jenozKc"
+    # Folder cache file cookies (hasil decrypt). Kosong = ./.cache/ytdlp_cookies
+    YTDLP_COOKIE_CACHE_DIR: Optional[str] = None
+
     # Email SMTP
     SMTP_HOST: Optional[str] = None
     SMTP_PORT: int = 587
