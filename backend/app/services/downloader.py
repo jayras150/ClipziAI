@@ -18,7 +18,7 @@ import binascii
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Mapping, Optional, cast
 
 from app.core.config import get_settings
 
@@ -116,7 +116,7 @@ class VideoDownloader:
             return "vimeo"
         return "unknown"
 
-    def detect_proactively(self, info: dict) -> str:
+    def detect_proactively(self, info: Mapping[str, Any]) -> str:
         """Detect platform from yt-dlp info dict."""
         extractor = info.get("extractor", "")
         if "youtube" in extractor:
@@ -229,8 +229,12 @@ class VideoDownloader:
     def _extract_info(self, url: str, ydl_opts: dict) -> Dict[str, Any]:
         import yt_dlp
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        # yt-dlp mengetik parameter sebagai TypedDict (`_Params`) yang sangat
+        # sempit; cast agar type checker tidak salah tuduh pada dict dinamis.
+        with yt_dlp.YoutubeDL(cast(Any, ydl_opts)) as ydl:
             info = ydl.extract_info(url, download=False)
+            if not info:
+                raise RuntimeError(f"yt-dlp tidak mengembalikan info untuk: {url}")
             return {
                 "title": info.get("title"),
                 "duration": info.get("duration"),
@@ -242,6 +246,6 @@ class VideoDownloader:
     def _download(self, url: str, ydl_opts: dict):
         import yt_dlp
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with yt_dlp.YoutubeDL(cast(Any, ydl_opts)) as ydl:
             ydl.download([url])
 

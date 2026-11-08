@@ -12,6 +12,9 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
+    // Selaraskan dengan diagnostik VS Code: import side-effect ke modul yang
+    // tidak punya deklarasi (mis. "./globals.css") harus error, bukan diabaikan.
+    "noUncheckedSideEffectImports": true,
     "plugins": [
       {
         "name": "next"

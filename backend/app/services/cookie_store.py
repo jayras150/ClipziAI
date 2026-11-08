@@ -15,7 +15,7 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Any, Optional, Sequence, cast
 from uuid import UUID
 
 from sqlalchemy import select
@@ -246,7 +246,7 @@ async def reactivate(db: AsyncSession, cookie: YtdlpCookie) -> None:
 def _probe_sync(cookiefile: str, url: str) -> tuple[bool, Optional[str]]:
     import yt_dlp
 
-    opts = {
+    opts: dict[str, Any] = {
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
@@ -258,7 +258,9 @@ def _probe_sync(cookiefile: str, url: str) -> tuple[bool, Optional[str]]:
         opts["proxy"] = settings.YTDLP_PROXY
 
     try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
+        # yt-dlp mengetik params sebagai TypedDict `_Params`; cast agar dict
+        # dinamis ini tidak dianggap salah tipe.
+        with yt_dlp.YoutubeDL(cast(Any, opts)) as ydl:
             ydl.extract_info(url, download=False)
         return True, None
     except Exception as exc:  # DownloadError dan turunannya

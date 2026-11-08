@@ -1,7 +1,8 @@
-// Deklarasi tipe untuk side-effect import CSS global (mis. `import "./globals.css"`).
-// Next.js/types hanya mendeklarasikan `*.module.css`, sehingga tanpa deklarasi ini
-// TypeScript alias editor melaporkan error ts(2882).
-declare module "*.css";
+// Tipe global aplikasi.
+//
+// File ini adalah MODULE (karena memakai `export {}`), jadi deklarasi wildcard
+// untuk aset (*.css, *.svg, dst.) TIDAK boleh ditaruh di sini — lihat
+// `src/types/assets.d.ts` yang sengaja script-mode.
 
 export {};
 
