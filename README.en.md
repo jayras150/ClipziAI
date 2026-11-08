@@ -916,6 +916,7 @@ python scripts/vastai-setup.py status       # read endpoint URL -> set VAST_ENDP
 
 | Command | Purpose |
 |---------|---------|
+| `python scripts/vastai-setup.py template` | create the **worker template** (image+port+env) and print its hash → set `VAST_TEMPLATE_HASH` |
 | `python scripts/vastai-setup.py create` | create endpoint + workergroup (check `status` first to avoid duplicates) |
 | `... update` | re-apply `VAST_MAX_WORKERS`, `VAST_TARGET_UTIL`, `VAST_INACTIVITY_TIMEOUT` |
 | `... status` | show endpoint, URL, workergroup, worker count |

@@ -3,6 +3,7 @@
 Kelola endpoint + workergroup Vast.ai Serverless untuk Clipzi AI.
 
 Pemakaian:
+    python scripts/vastai-setup.py template    # buat template worker -> dapat hash
     python scripts/vastai-setup.py create      # buat endpoint + workergroup
     python scripts/vastai-setup.py update      # terapkan perubahan scaling
     python scripts/vastai-setup.py status      # lihat endpoint & worker
@@ -108,6 +109,28 @@ def workergroup_create_cmd() -> list:
     return cmd
 
 
+def template_create_cmd() -> list:
+    """Perintah membuat template worker (pembungkus `docker run`).
+
+    Template menyimpan: image, port yang dibuka, env yang di-set, dan disk.
+    Hash hasil pembuatan dipakai di VAST_TEMPLATE_HASH.
+    """
+    cmd = [
+        "vastai", "create", "template",
+        "--name", cfg("VAST_TEMPLATE_NAME", "clipzi-worker"),
+        "--image", cfg("VAST_WORKER_IMAGE") or "<user>/clipzi-backend:1.0.0",
+        "--env", "-p 8000:8000 -e CLIPZI_ROLE=worker",
+        "--disk_space", cfg("VAST_WORKER_DISK", "40"),
+        "--desc", "Clipzi AI GPU worker (FastAPI + ffmpeg + yt-dlp)",
+    ]
+    onstart = cfg("VAST_WORKER_ONSTART")
+    if onstart:
+        cmd += ["--onstart-cmd", onstart]
+    if cfg("VAST_TEMPLATE_PUBLIC").lower() in ("1", "true", "yes"):
+        cmd.append("--public")
+    return cmd
+
+
 def find_ids() -> tuple:
     """Ambil (endpoint_id, workergroup_id) dari API Vast (butuh --raw)."""
     endpoint_id = cfg("VAST_ENDPOINT_ID")
@@ -162,6 +185,42 @@ def cmd_create(args) -> None:
     run(workergroup_cmd)
     print("\nSelesai. Jalankan `python scripts/vastai-setup.py status` untuk melihat URL")
     print("endpoint, lalu isi VAST_ENDPOINT_URL (atau VAST_API_KEY + VAST_ENDPOINT_NAME)")
+
+
+def cmd_template(args) -> None:
+    """Buat template worker lalu cetak hash-nya (untuk VAST_TEMPLATE_HASH)."""
+    image = cfg("VAST_WORKER_IMAGE")
+    if not image and not args.dry_run:
+        fail(
+            "VAST_WORKER_IMAGE kosong.\n"
+            "Isi di backend/.env dengan image backend Anda, contoh:\n"
+            "  VAST_WORKER_IMAGE=budi/clipzi-backend:1.0.0"
+        )
+
+    cmd = template_create_cmd()
+    print(f"\n=== Membuat template '{cfg('VAST_TEMPLATE_NAME', 'clipzi-worker')}' ===")
+    if args.dry_run:
+        show(cmd)
+        return
+
+    run(cmd)
+
+    name = cfg("VAST_TEMPLATE_NAME", "clipzi-worker")
+    print("\n=== Mencari hash template ===")
+    for item in _as_list(run(["vastai", "show", "templates", "--raw"])):
+        if str(item.get("name")) != name:
+            continue
+        template_hash = item.get("hash") or item.get("template_hash") or item.get("id")
+        print(f"  nama : {name}")
+        print(f"  hash : {template_hash}")
+        print(f"  id   : {item.get('id')}")
+        print("\nTambahkan ke backend/.env:")
+        print(f"  VAST_TEMPLATE_HASH={template_hash}")
+        return
+
+    print("Template dibuat, tetapi hash tidak ditemukan otomatis.")
+    print("Buka cloud.vast.ai/templates dan salin hash dari kartu template,")
+    print("atau jalankan: vastai show templates")
 
 
 def cmd_update(args) -> None:
@@ -276,6 +335,10 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("create", help="buat endpoint + workergroup").set_defaults(func=cmd_create)
+
+    sub.add_parser(
+        "template", help="buat template worker (image+port+env) & cetak hash-nya"
+    ).set_defaults(func=cmd_template)
 
     p_update = sub.add_parser("update", help="perbarui parameter autoscaling")
     p_update.add_argument("--endpoint-id", help="id endpoint (default dari env/API)")

@@ -168,18 +168,106 @@ Penyebab umum: DNS belum propagasi, port 80/443 terblokir firewall VPS.
 
 ## 8. Siapkan GPU worker di Vast.ai
 
-Worker menjalankan **image backend yang sama** dengan entrypoint berbeda
-(`deployments.worker_api:app`), lalu didaftarkan sebagai endpoint serverless.
+Worker menjalankan **image backend yang sama**, hanya berbeda peran
+(`CLIPZI_ROLE=worker` → `uvicorn deployments.worker_api:app`).
+
+### 8.1 Apa itu "template" dan kenapa perlu?
+
+Di Vast.ai, **template = pembungkus perintah `docker run`**. Isinya:
+
+| Field template | Nilai untuk Clipzi | Kenapa |
+|----------------|--------------------|--------|
+| Image Path:Tag | `<user>/clipzi-backend:1.0.0` | image worker yang sudah kamu push |
+| Docker options | `-p 8000:8000 -e CLIPZI_ROLE=worker` | buka port worker + pilih peran worker |
+| Disk space | `40` GB | ruang unduh video + render sementara |
+| Launch mode | Docker ENTRYPOINT (default) | entrypoint image sudah memilih peran |
+
+Workergroup (pool worker) butuh **template** (`--template_hash`) **atau**
+filter GPU langsung (`--search_params`). Jadi ada 2 cara:
+
+### 8.2 CARA A — tanpa template (paling cepat, 2 menit)
+
+Cukup isi **satu** variabel dengan image Docker Hub kamu:
+
+```env
+# backend/.env
+VAST_WORKER_IMAGE=budi/clipzi-backend:1.0.0
+VAST_TEMPLATE_HASH=
+```
+
+Script akan mengirim image lewat `launch_args` (`--image ...`) dan filter GPU
+lewat `search_params`. Cocok untuk uji coba pertama.
+
+### 8.3 CARA B — dengan template (disarankan untuk produksi)
+
+**Lewat script (otomatis):**
 
 ```bash
-# di mesin lokal (butuh: pip install vastai)
-export VAST_API_KEY=...           # https://cloud.vast.ai/account/
+# di mesin lokal, dari root repo
+export VAST_API_KEY=...            # https://cloud.vast.ai/account/
+pip install vastai                 # CLI resmi wajib ada
+vastai set api-key "$VAST_API_KEY"
 
-python scripts/vastai-setup.py --help
-python scripts/vastai-setup.py create     # buat endpoint + workergroup
-python scripts/vastai-setup.py status     # lihat endpoint & worker
+# 1) isi image di backend/.env
+#    VAST_WORKER_IMAGE=budi/clipzi-backend:1.0.0
+
+# 2) buat template -> script mencetak hash
+python scripts/vastai-setup.py template
+#   === Membuat template 'clipzi-worker' ===
+#   > vastai create template --name clipzi-worker --image budi/clipzi-backend:1.0.0 \
+#           --env '-p 8000:8000 -e CLIPZI_ROLE=worker' --disk_space 40 ...
+#   === Mencari hash template ===
+#     hash : 79ebdd2ebfb9d42cedf7a221c42d37a5
+#     Tambahkan ke backend/.env:
+#       VAST_TEMPLATE_HASH=79ebdd2ebfb9d42cedf7a221c42d37a5
+```
+
+**Lewat web console (kalau lebih nyaman klik):**
+
+1. Buka **[cloud.vast.ai/templates](https://cloud.vast.ai/templates)** → tombol **+ New**
+2. **Template Name**: `clipzi-worker`
+3. **Image Path:Tag**: `docker.io/<user>/clipzi-backend:1.0.0`
+   (untuk Docker Hub boleh tanpa `docker.io/`)
+4. **Docker options**: isi persis
+   ```
+   -p 8000:8000 -e CLIPZI_ROLE=worker
+   ```
+5. **Disk Space**: `40`
+6. **Launch Mode**: biarkan **Docker ENTRYPOINT** (jangan SSH/Jupyter)
+7. **Save**, lalu buka kartu template itu — **hash** tertulis di sana
+   (32 karakter hex, mis. `79ebdd2ebfb9d42cedf7a221c42d37a5`)
+8. Isi ke `backend/.env`:
+   ```env
+   VAST_TEMPLATE_HASH=79ebdd2ebfb9d42cedf7a221c42d37a5
+   ```
+
+> **Cari hash lagi nanti** (kalau lupa):
+> ```bash
+> vastai show templates            # tabel, kolom hash/id
+> vastai show templates --raw      # JSON
+> ```
+> atau buka halaman template di console dan salin dari kartunya.
+
+### 8.4 Buat endpoint + workergroup
+
+```bash
+python scripts/vastai-setup.py create     # endpoint + workergroup
+python scripts/vastai-setup.py status     # lihat URL endpoint & jumlah worker
 python scripts/vastai-setup.py logs       # log endpoint
 ```
+
+### 8.5 Ringkasan variabel Vast.ai
+
+| Variabel | Wajib? | Contoh | Fungsi |
+|----------|--------|--------|--------|
+| `VAST_API_KEY` | ✅ | `abc123...` | autentikasi ke Vast.ai |
+| `VAST_ENDPOINT_NAME` | ✅ | `clipzi-processing` | nama endpoint (unik per akun) |
+| `VAST_WORKER_IMAGE` | ✅ (salah satu) | `budi/clipzi-backend:1.0.0` | image worker; dipakai saat membuat template / mode tanpa template |
+| `VAST_TEMPLATE_HASH` | ⭐ disarankan | `79ebdd2ebfb9...` | template worker (hasil langkah 8.3) |
+| `VAST_ENDPOINT_URL` | ⭐ | `https://xxxx.run.vast.ai` | URL endpoint; kalau diisi, API memakai mode HTTP |
+| `VAST_GPU_FILTER` | — | `gpu_ram>=16 disk_space>=40` | filter GPU (dipakai bila tanpa template) |
+| `VAST_MAX_WORKERS` | — | `4` | batas worker paralel |
+| `VAST_INACTIVITY_TIMEOUT` | — | `300` | detik idle → scale-to-zero |
 
 Setelah endpoint aktif, ambil URL-nya lalu isi di `backend/.env`:
 
