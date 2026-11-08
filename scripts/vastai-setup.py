@@ -28,6 +28,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 ROOT = Path(__file__).resolve().parent.parent
 ENV_FILE = ROOT / "backend" / ".env"
@@ -170,21 +171,61 @@ def _as_list(raw: str) -> list:
     return data if isinstance(data, list) else []
 
 
+def find_endpoint_by_name() -> Optional[dict]:
+    """Cari endpoint yang sudah ada dengan nama dari konfigurasi (read-only)."""
+    name = cfg("VAST_ENDPOINT_NAME", "clipzi-processing")
+    raw = run(["vastai", "show", "endpoints", "--raw"])
+    for item in _as_list(raw):
+        if str(item.get("endpoint_name") or item.get("name")) == name:
+            return item
+    return None
+
+
+def cmd_activate(args) -> None:
+    """Aktifkan atau hentikan endpoint (endpoint_state active|stopped)."""
+    endpoint_id = args.endpoint_id or cfg("VAST_ENDPOINT_ID")
+    if not endpoint_id:
+        existing = find_endpoint_by_name()
+        endpoint_id = str(existing.get("id")) if existing else ""
+    if not endpoint_id:
+        fail("endpoint tidak ditemukan. Buat dulu: python scripts/vastai-setup.py create")
+
+    state = "stopped" if args.stop else "active"
+    cmd = ["vastai", "update", "endpoint", str(endpoint_id), "--endpoint_state", state]
+    print(f"\n=== Set endpoint {endpoint_id} -> {state} ===")
+    if args.dry_run:
+        show(cmd)
+        return
+    run(cmd)
+    print(f"Endpoint {endpoint_id} sekarang: {state}")
+
+
 def cmd_create(args) -> None:
-    print(f"\n=== Membuat endpoint '{cfg('VAST_ENDPOINT_NAME', 'clipzi-processing')}' ===")
-    endpoint_cmd = endpoint_create_cmd()
-    workergroup_cmd = workergroup_create_cmd()
+    name = cfg("VAST_ENDPOINT_NAME", "clipzi-processing")
+    print(f"\n=== Endpoint '{name}' ===")
 
     if args.dry_run:
-        show(endpoint_cmd)
-        show(workergroup_cmd)
+        show(endpoint_create_cmd())
+        show(workergroup_create_cmd())
         return
 
-    run(endpoint_cmd)
-    print("\n=== Membuat workergroup (worker GPU) ===")
-    run(workergroup_cmd)
-    print("\nSelesai. Jalankan `python scripts/vastai-setup.py status` untuk melihat URL")
-    print("endpoint, lalu isi VAST_ENDPOINT_URL (atau VAST_API_KEY + VAST_ENDPOINT_NAME)")
+    # Idempotent: jangan buat endpoint baru kalau namanya sudah ada.
+    existing = find_endpoint_by_name()
+    if existing:
+        print(
+            f"Endpoint sudah ada: id={existing.get('id')} "
+            f"state={existing.get('endpoint_state')} "
+            f"max_workers={existing.get('max_workers')}"
+        )
+        print("Melewati pembuatan endpoint. (ubah parameter pakai: ... update)")
+    else:
+        run(endpoint_create_cmd())
+
+    print("\n=== Workergroup (worker GPU) ===")
+    run(workergroup_create_cmd())
+    print("\nSelesai. Jalankan `python scripts/vastai-setup.py status` untuk melihat")
+    print("URL endpoint, lalu isi VAST_ENDPOINT_URL (atau VAST_API_KEY + VAST_ENDPOINT_NAME)")
+    print("Kalau endpoint berstatus 'stopped', aktifkan: python scripts/vastai-setup.py activate")
 
 
 def cmd_template(args) -> None:
@@ -261,6 +302,8 @@ def cmd_status(args) -> None:
             if item.get(key):
                 print(f"    URL endpoint: {item[key]}")
                 print(f"    -> set VAST_ENDPOINT_URL={item[key]} di backend/.env")
+        if str(item.get("endpoint_state") or "") == "stopped":
+            print("    -> endpoint STOPPED; aktifkan: python scripts/vastai-setup.py activate")
 
     print("\n=== Workergroups ===")
     raw = run(["vastai", "show", "workergroups", "--raw"])
@@ -361,6 +404,11 @@ def main() -> int:
     p_down.add_argument("--workergroup-id", help="id workergroup")
     p_down.add_argument("-y", "--yes", action="store_true", help="tanpa konfirmasi")
     p_down.set_defaults(func=cmd_teardown)
+
+    p_state = sub.add_parser("activate", help="aktifkan endpoint (endpoint_state=active)")
+    p_state.add_argument("--endpoint-id", help="id endpoint")
+    p_state.add_argument("--stop", action="store_true", help="hentikan endpoint (stopped)")
+    p_state.set_defaults(func=cmd_activate)
 
     args = parser.parse_args()
 

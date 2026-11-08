@@ -111,7 +111,11 @@ class Settings(BaseSettings):
     VAST_API_KEY: Optional[str] = None
     VAST_ENDPOINT_NAME: str = "clipzi-processing"
     VAST_TEMPLATE_HASH: Optional[str] = None
+    VAST_TEMPLATE_NAME: str = "clipzi-worker"
+    VAST_TEMPLATE_PUBLIC: bool = False
     VAST_WORKER_IMAGE: Optional[str] = None
+    VAST_WORKER_DISK: int = 40
+    VAST_WORKER_ONSTART: Optional[str] = None
     VAST_GPU_FILTER: str = "gpu_ram>=16 disk_space>=40 inet_down>200"
     VAST_MIN_WORKERS: int = 0
     VAST_MAX_WORKERS: int = 4

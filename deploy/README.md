@@ -251,10 +251,31 @@ python scripts/vastai-setup.py template
 ### 8.4 Buat endpoint + workergroup
 
 ```bash
-python scripts/vastai-setup.py create     # endpoint + workergroup
-python scripts/vastai-setup.py status     # lihat URL endpoint & jumlah worker
+python scripts/vastai-setup.py create     # idempotent: lewati endpoint yang sudah ada
+python scripts/vastai-setup.py status     # lihat URL endpoint, state, jumlah worker
+python scripts/vastai-setup.py activate   # kalau state=stopped -> aktifkan
 python scripts/vastai-setup.py logs       # log endpoint
 ```
+
+> `activate` menjalankan `vastai update endpoint <id> --endpoint_state active`.
+> Gunakan `--stop` untuk menghentikan lagi (worker jadi inactive, GPU tidak ditagih).
+
+### 8.4b Alternatif: Vast Deployments (`@remote`)
+
+Selain worker HTTP, tersedia jalur **Vast Deployments** di
+`backend/deployments/app.py`. SDK mem-package kode, membuat endpoint+workergroup
+otomatis, lalu memanggil fungsi Python remote:
+
+```bash
+pip install vastai
+export VAST_API_KEY=...
+python -m deployments.app          # siapkan/selaraskan deployment
+```
+
+API yang dipakai di file itu sudah diverifikasi terhadap SDK `vastai` asli
+(`Deployment.remote`, `.context`, `.image`, `.configure_autoscaling`,
+`.async_ensure_ready`). Untuk produksi sehari-hari, **worker HTTP lebih sederhana**
+dan sudah diuji end-to-end.
 
 ### 8.5 Ringkasan variabel Vast.ai
 

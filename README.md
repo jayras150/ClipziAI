@@ -932,6 +932,7 @@ python scripts/vastai-setup.py status       # lihat URL endpoint -> isi VAST_END
 | `... logs --tail 200` | 200 baris log endpoint (`vastai get endpt-logs`) |
 | `... benchmark --gpus RTX_4090,RTX_3090` | cari GPU dengan perf/$ terbaik (`vastai run benchmarks`) |
 | `... teardown` | hapus workergroup + endpoint (billing worker berhenti) |
+| `... activate` | aktifkan endpoint yang berstatus `stopped` (`--stop` untuk menghentikan lagi) |
 | `python scripts/vastai-setup.py --dry-run create` | lihat perintah `vastai` tanpa menjalankan |
 
 Parameter autoscale yang dipakai (dari `backend/.env`):
