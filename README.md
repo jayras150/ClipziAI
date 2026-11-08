@@ -2,6 +2,8 @@
 
 **Ubah Video Panjang → Shorts Viral dalam 1 Klik**
 
+🇮🇩 **Bahasa Indonesia** · [🇬🇧 English](README.en.md)
+
 Full-stack platform: FastAPI (backend) + Next.js 14 (frontend), dengan AI untuk
 viral scoring, auto subtitle, smart crop 9:16, dan auto-upload ke YouTube.
 
@@ -966,8 +968,9 @@ Checklist sebelum produksi:
 
 ---
 
-## 📱 Integrasi Android (Kotlin/Retrofit)
+## 📱 Integrasi Android
 
+Contoh pemanggilan API dari aplikasi Android (Kotlin + Retrofit):
 ```kotlin
 // Buat task
 val response = apiService.createTask(
