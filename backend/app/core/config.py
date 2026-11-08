@@ -80,6 +80,20 @@ class Settings(BaseSettings):
     OUTPUT_FPS: int = 30
     OUTPUT_RESOLUTION: str = "1080x1920"
 
+    # yt-dlp (download video dari YouTube/TikTok/IG/FB/Vimeo)
+    # Cookies OPSIONAL. Isi salah satu saja:
+    #   YTDLP_COOKIES_FILE   -> path file cookies.txt (format Netscape)
+    #   YTDLP_COOKIES_BASE64 -> isi cookies.txt yang di-encode base64 (untuk Docker)
+    # Kosong = download tanpa cookies (cukup untuk video publik dari IP residensial).
+    YTDLP_COOKIES_FILE: Optional[str] = None
+    YTDLP_COOKIES_BASE64: Optional[str] = None
+    # Lokasi hasil decode base64 (dibuat otomatis saat runtime).
+    YTDLP_COOKIES_CACHE_PATH: Optional[str] = None
+    # Proxy opsional untuk melewati blokir IP datacenter, mis. http://user:pass@host:port
+    YTDLP_PROXY: Optional[str] = None
+    # Opsional, mis. "youtube:player_client=web_safari,android"
+    YTDLP_EXTRACTOR_ARGS: Optional[str] = None
+
     # Email SMTP
     SMTP_HOST: Optional[str] = None
     SMTP_PORT: int = 587

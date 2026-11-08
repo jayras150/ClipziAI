@@ -52,9 +52,15 @@ volumes/
 Thumbs.db
 Desktop.ini
 
-# --- Logs ---
+# --- Runtime artifacts ---
 *.log
 dev-log*.txt
+
+# --- yt-dlp / unduhan sementara ---
+.cache/
+downloads/
+tmp_dl/
+cookies.txt
 
 # --- Temp ---
 tmp/

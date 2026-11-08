@@ -186,6 +186,65 @@ Untuk provider custom, gunakan `TRANSCRIPTION_PROVIDER=custom`, isi `TRANSCRIPTI
 
 ---
 
+## 🍪 Cookies yt-dlp (OPSIONAL)
+
+yt-dlp **tidak** memakai cookies secara otomatis. Tanpa cookies, download tetap
+jalan untuk **video publik dari IP residensial**, tetapi akan gagal di IP
+datacenter (Vast.ai / VPS / cloud) dengan pesan:
+
+```
+Sign in to confirm you're not a bot
+```
+
+Isi cookies **hanya jika** menemui error tersebut, atau butuh video
+age-restricted / private / member-only. Ada dua cara:
+
+#### Cara 1 — base64 (paling praktis untuk Docker)
+
+```bash
+# 1. Login YouTube di browser, pasang ekstensi "Get cookies.txt LOCALLY"
+# 2. Export cookies -> simpan cookies.txt
+# 3. Encode jadi base64
+python scripts/encode_cookies.py cookies.txt
+```
+
+Tempel hasilnya ke `backend/.env`:
+
+```env
+YTDLP_COOKIES_BASE64=H4sIAAAA...   # satu baris panjang
+```
+
+Backend akan men-decode-nya ke `.cache/ytdlp_cookies.txt` saat pertama kali
+dipakai (tidak ikut masuk image).
+
+#### Cara 2 — file langsung
+
+```env
+YTDLP_COOKIES_FILE=/app/cookies.txt
+```
+
+Jalankan container dengan file di-mount:
+
+```bash
+docker run -d --name clipzi-api -p 8000:8000 \
+  -v "$PWD/cookies.txt:/app/cookies.txt:ro" \
+  --env-file backend/.env <user>/clipzi-backend:1.0.0
+```
+
+#### Opsi tambahan bila cookies masih kurang
+
+| Variabel | Fungsi |
+|----------|--------|
+| `YTDLP_PROXY` | Proxy residensial, mis. `http://user:pass@ip:port` |
+| `YTDLP_EXTRACTOR_ARGS` | Mis. `youtube:player_client=web_safari,android` |
+
+> ⚠️ **Cookies = kredensial login.** Gunakan akun khusus (bukan akun utama),
+> jangan commit `cookies.txt`, dan logout/rotate bila file bocor.
+> `cookies.txt`, `.cache/`, dan `downloads/` sudah masuk `.gitignore` dan
+> `.dockerignore`.
+
+---
+
 ## ⚡ Konfigurasi Redis (Upstash)
 
 Redis dipakai untuk antrean job (ARQ), rate limiting, cache, dan progress task. Data permanen tetap di PostgreSQL/Supabase, dan file video di Cloudflare R2.

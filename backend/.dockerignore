@@ -30,6 +30,11 @@ Dockerfile
 # Runtime artifacts
 *.log
 tmp/
+tmp_dl/
 media/
 uploads/
 outputs/
+downloads/
+.cache/
+# Cookies YouTube jangan pernah masuk image
+cookies.txt
