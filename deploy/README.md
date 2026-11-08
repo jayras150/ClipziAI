@@ -289,7 +289,80 @@ API yang dipakai di file itu sudah diverifikasi terhadap SDK `vastai` asli
 `.async_ensure_ready`). Untuk produksi sehari-hari, **worker HTTP lebih sederhana**
 dan sudah diuji end-to-end.
 
-### 8.5 Ringkasan variabel Vast.ai
+### 8.4c Mode "satu task satu instance" (create → run → destroy)
+
+Selain endpoint serverless (8.4), ada pola **ephemeral instance**: satu instance
+dibuat untuk satu task, lalu **dihapus** begitu task selesai sehingga tagihan GPU
+berhenti total. Skripnya: `scripts/vastai-run-once.py`.
+
+> 💡 Pola ini juga bisa dijalankan **otomatis oleh API** tanpa skrip:
+> set `VAST_DISPATCH_MODE=oneshot` di `backend/.env` (lihat tabel dispatch di
+> akhir bagian 8.5). Skrip di bawah cocok untuk task manual/batch.
+
+```bash
+# 1) sekali saja: dorong secret ke Environment Variables akun Vast
+#    (JANGAN lewat --env di CLI: argumen terlihat di process list)
+python scripts/vastai-run-once.py --task-id <UUID> --push-env --dry-run   # lihat dulu
+python scripts/vastai-run-once.py --task-id <UUID> --push-env
+
+# 2) jalankan satu task
+python scripts/vastai-run-once.py --task-id <UUID>
+python scripts/vastai-run-once.py --task-id <UUID> --max-price 0.40   # batas $/jam
+python scripts/vastai-run-once.py --task-id <UUID> --keep             # jangan dihapus
+```
+
+Alur yang dijalankan skrip:
+
+```
+vastai search offers --raw "<VAST_GPU_FILTER>"      # pilih offer termurah
+   ↓
+vastai create instance <OFFER> --image <VAST_WORKER_IMAGE> \
+        --env '-e CLIPZI_ROLE=worker' --onstart <script> --disk 40
+   ↓  (onstart: cd /app && python -c "... run_video_pipeline(UUID) ...")
+polling tabel tasks di PostgreSQL sampai status completed / error
+   ↓
+vastai destroy instance <ID> -y        # GPU berhenti ditagih
+```
+
+Bandingkan tiga mode:
+
+| Mode | Siapa yang membuat/menghapus worker | Cold start | Biaya idle GPU | Cocok untuk |
+|------|-------------------------------------|------------|----------------|-------------|
+| **Endpoint + scale-to-zero** (8.4, default) | engine Vast otomatis | ~1–3 menit | 0 (setelah `inactivity_timeout`) | produksi: banyak user, antrean |
+| **One-shot instance** (8.4c) | `vastai-run-once.py` | ~2–5 menit | 0 | task besar/langka, batch harian, eksperimen |
+| **Inline** (dev) | — | 0 | — | lokal, tanpa GPU |
+
+> **Penting:** menghapus instance setelah selesai **bisa** dilakukan, tapi jangan
+> membuat instance baru di dalam request HTTP "start clip". `create instance`
+> butuh ~2–5 menit (scheduling + pull image 2–3 GB) sehingga request user akan
+> timeout. Karena itu:
+> - **produksi** → pakai endpoint scale-to-zero; atur
+>   `VAST_INACTIVITY_TIMEOUT=60` agar worker hilang ~1 menit setelah job terakhir;
+> - **one-shot** → dipicu manual/cron dari luar API (skrip di atas), task-nya
+>   sudah ada di DB sehingga user boleh menutup browser.
+
+Perintah manual yang setara (tanpa skrip):
+
+```bash
+vastai search offers --raw "gpu_ram>=16 disk_space>=40 rentable=true num_gpus=1" | head -40
+vastai create instance <OFFER_ID> --image budi/clipzi-backend:1.0.0 --disk 40 \
+        --env '-e CLIPZI_ROLE=worker' --label clipzi-manual --cancel-unavail
+vastai show instances                      # tunggu status "running"
+vastai destroy instance <INSTANCE_ID> -y   # setelah selesai
+```
+
+**Wajib: reaper.** Kalau skrip/backend mati di tengah jalan, instance bisa
+tertinggal hidup dan terus ditagih. Cek berkala:
+
+```bash
+vastai show instances --raw | grep -o '"label": "clipzi-[^"]*"'   # instance Clipzi
+# hapus semua yang labelnya clipzi-* dan sudah tidak dipakai:
+vastai destroy instance <ID> -y
+```
+
+Atau jadwalkan cron harian di VPS untuk memeriksa instance berlabel `clipzi-*`
+yang `uptime` > 2 jam.
+
 
 | Variabel | Wajib? | Contoh | Fungsi |
 |----------|--------|--------|--------|
@@ -332,7 +405,39 @@ docker logs clipzi-api --tail 50 | grep -i dispatch
 |-----|------|
 | `mode dispatch=http` | API mengirim job ke `VAST_ENDPOINT_URL` |
 | `mode dispatch=sdk` | API memakai SDK Vast (`queue_endpoint_request`) |
+| `mode dispatch=oneshot` | API **membuat instance GPU** untuk task ini lalu **menghapusnya** setelah selesai |
 | `mode dispatch=inline` | Tidak ada konfigurasi Vast → pipeline jalan di proses API (hanya untuk dev) |
+
+#### Mode `oneshot` (instance dibuat & dihapus otomatis per task)
+
+Skenario "user klik start → backend menyalakan GPU → selesai → instance dihapus"
+tersedia langsung dari API. Aktifkan:
+
+```env
+# backend/.env
+VAST_DISPATCH_MODE=oneshot
+VAST_API_KEY=...
+VAST_WORKER_IMAGE=budi/clipzi-backend:1.0.0     # atau VAST_TEMPLATE_HASH
+VAST_ONESHOT_MAX_PRICE=0.40                     # 0 = tanpa batas ($/jam)
+VAST_ONESHOT_TIMEOUT=3600                       # umur maksimum instance
+VAST_ONESHOT_BOOT_TIMEOUT=900                   # gagal boot -> task error + instance dihapus
+```
+
+Alur: `POST /api/tasks` → API memilih offer termurah (`search_offers`) →
+`create_instance(onstart_cmd=run_video_pipeline(task_id))` → API langsung membalas
+`202/data task` (tidak menunggu GPU) → reaper memantau tabel `tasks` → begitu
+status `completed`/`error`/`cancelled` (atau timeout) → `destroy_instance`.
+
+Yang perlu diperhatikan:
+
+| Hal | Detail |
+|-----|--------|
+| Waktu tunggu user | ~2–5 menit sebelum worker mulai memproses (scheduling + pull image) |
+| Isolasi data | secret dibaca dari **Environment Variables akun Vast**, tidak lewat argumen |
+| Biaya | GPU ditagih per detik selama instance hidup; setelah `destroy` = 0 |
+| Risiko | API mati total → instance bisa yatim; cek berkala `vastai show instances` (label `clipzi-*`) |
+| Kapan dipakai | task besar/langka, batch malam, demo. Untuk trafik ramai pakai endpoint scale-to-zero |
+
 
 > **Catatan `inline`:** di VPS 1 GB, mode ini akan memproses video memakai CPU
 > VPS (lambat) dan berisiko OOM. Untuk production selalu isi `VAST_ENDPOINT_URL`

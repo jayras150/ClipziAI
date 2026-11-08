@@ -132,6 +132,17 @@ class Settings(BaseSettings):
     # Folder kerja sementara untuk unduh/render di worker
     WORKER_WORK_DIR: str = "./work"
 
+    # Paksa mode dispatch: http | sdk | oneshot | inline.
+    # Kosong = otomatis (http kalau ada URL, lalu sdk, lalu inline).
+    VAST_DISPATCH_MODE: Optional[str] = None
+    # Mode `oneshot`: satu instance dibuat per task lalu DIHAPUS setelah selesai.
+    # Membutuhkan VAST_API_KEY + VAST_WORKER_IMAGE (atau VAST_TEMPLATE_HASH) dan
+    # secret pipeline sudah diset sebagai Environment Variables akun Vast.
+    VAST_ONESHOT_MAX_PRICE: float = 0.0     # 0 = tanpa batas harga ($/jam)
+    VAST_ONESHOT_TIMEOUT: int = 3600        # detik sebelum instance dipaksa dihapus
+    VAST_ONESHOT_BOOT_TIMEOUT: int = 900    # detik menunggu worker mulai memproses
+    VAST_ONESHOT_REAP_INTERVAL: int = 20    # detik antar polling status task
+
     # Email SMTP
     SMTP_HOST: Optional[str] = None
     SMTP_PORT: int = 587

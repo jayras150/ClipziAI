@@ -935,6 +935,28 @@ python scripts/vastai-setup.py status       # lihat URL endpoint -> isi VAST_END
 | `... activate` | aktifkan endpoint (`--stop` untuk menghentikan GPU, `--suspend` untuk berhenti mengelola) |
 | `... update --max-workers 0` | paksa nol worker tanpa mematikan endpoint |
 | `python scripts/vastai-setup.py --dry-run create` | lihat perintah `vastai` tanpa menjalankan |
+| `python scripts/vastai-run-once.py --task-id <UUID>` | **one-shot**: buat instance → jalankan 1 task → `destroy instance` otomatis |
+
+### Satu task satu instance (ephemeral)
+
+Selain endpoint scale-to-zero, ada pola *one-shot*: instance dibuat khusus untuk
+satu task lalu **dihapus** setelah selesai (biaya GPU benar-benar berhenti).
+
+```bash
+python scripts/vastai-run-once.py --task-id <UUID> --push-env   # sekali: dorong secret ke akun Vast
+python scripts/vastai-run-once.py --task-id <UUID>              # create → run → destroy
+```
+
+Yang terjadi: `search offers` → `create instance --image <VAST_WORKER_IMAGE>
+--onstart <run_video_pipeline>` → polling tabel `tasks` di PostgreSQL →
+`destroy instance -y`.
+
+> ⚠️ Jangan panggil pembuatan instance di dalam request HTTP "start clip":
+> scheduling + pull image butuh ~2–5 menit sehingga request user timeout.
+> Untuk produksi pakai endpoint scale-to-zero (`VAST_INACTIVITY_TIMEOUT=60`),
+> untuk task besar/langka pakai `vastai-run-once.py` dari cron/ops.
+> Detail + tabel perbandingan: [`deploy/README.md` § 8.4c](deploy/README.md).
+
 
 Parameter autoscale yang dipakai (dari `backend/.env`):
 
@@ -950,6 +972,30 @@ Parameter autoscale yang dipakai (dari `backend/.env`):
 > `Inactive` (cold) hanya ditagih storage + bandwidth; endpoint `Destroyed`
 > tidak menagih apa pun. Karena itu `VAST_MIN_WORKERS=0` + `inactivity_timeout`
 > adalah kombinasi termurah.
+
+### Mode dispatch (siapa yang menjalankan pipeline)
+
+| `VAST_DISPATCH_MODE` | Mekanisme | Instance GPU dibuat/dihapus oleh | Cold start |
+|----------------------|-----------|----------------------------------|------------|
+| *(kosong)* | auto: `http` → `sdk` → `inline` | engine endpoint | ~1–3 menit |
+| `http` | `POST {VAST_ENDPOINT_URL}/process` | engine endpoint (scale-to-zero) | ~1–3 menit |
+| `sdk` | `Serverless.queue_endpoint_request` | engine endpoint (scale-to-zero) | ~1–3 menit |
+| **`oneshot`** | `create_instance` per task + reaper `destroy_instance` | **backend Clipzi** | ~2–5 menit |
+| `inline` | pipeline di proses API | — (tanpa GPU) | 0 |
+
+Mode `oneshot` = "user klik start → GPU menyala → selesai → instance dihapus":
+
+```env
+VAST_DISPATCH_MODE=oneshot
+VAST_API_KEY=...
+VAST_WORKER_IMAGE=budi/clipzi-backend:1.0.0
+VAST_ONESHOT_MAX_PRICE=0.40     # 0 = bebas
+VAST_ONESHOT_TIMEOUT=3600       # umur maksimum instance (detik)
+VAST_ONESHOT_BOOT_TIMEOUT=900   # worker tak kunjung memproses -> task error + destroy
+```
+
+Reaper memantau tabel `tasks`; setelah `completed`/`error`/`cancelled` (atau
+timeout) instance **selalu** dihapus lewat `finally`, jadi GPU berhenti ditagih.
 
 ### Satu image, dua peran
 

@@ -78,9 +78,22 @@ async def create_task(
     await db.refresh(task)
 
     # Kirim job ke worker GPU (Vast.ai serverless) — tidak memblokir respons.
-    # Bila dispatch gagal, task tetap tersimpan (status queued) dan error hanya
-    # dicatat di log agar bisa di-retry manual.
+    # Task sudah tersimpan lebih dulu, jadi user tetap bisa melihatnya walaupun
+    # dispatch gagal.
     dispatch = await submit_task(task.id)
+    if not dispatch.get("queued"):
+        # Job tidak pernah sampai ke worker. Tandai error supaya frontend tidak
+        # menampilkan "queued" selamanya (tidak ada scheduler yang me-retry
+        # otomatis), dan pesan penyebabnya tersimpan untuk ditampilkan.
+        task.status = TaskStatus.ERROR
+        task.error_message = (
+            f"Gagal mengirim task ke worker (mode {dispatch_mode()}): "
+            f"{dispatch.get('error') or 'tanpa keterangan'}"
+        )
+        await db.commit()
+        await db.refresh(task)
+        logger.error("Task %s gagal didispatch: %s", task.id, task.error_message)
+
     logger.info(
         "Task %s dibuat (mode dispatch=%s, queued=%s)",
         task.id,
