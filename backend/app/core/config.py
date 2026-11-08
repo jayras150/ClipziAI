@@ -102,6 +102,22 @@ class Settings(BaseSettings):
     # Folder cache file cookies (hasil decrypt). Kosong = ./.cache/ytdlp_cookies
     YTDLP_COOKIE_CACHE_DIR: Optional[str] = None
 
+    # URL API yang dipakai frontend. Tidak dipakai backend, tetapi dibaca di sini
+    # agar satu file .env bisa dipakai bersama (Docker compose) tanpa error
+    # "extra inputs are not permitted".
+    NEXT_PUBLIC_API_URL: Optional[str] = None
+
+    # Deployment hybrid: Vast.ai Serverless (worker GPU untuk proses video)
+    VAST_API_KEY: Optional[str] = None
+    VAST_ENDPOINT_NAME: str = "clipzi-processing"
+    VAST_TEMPLATE_HASH: Optional[str] = None
+    VAST_WORKER_IMAGE: Optional[str] = None
+    VAST_GPU_FILTER: str = "gpu_ram>=16 disk_space>=40 inet_down>200"
+    VAST_MIN_WORKERS: int = 0
+    VAST_MAX_WORKERS: int = 4
+    VAST_TARGET_UTIL: float = 0.9
+    VAST_INACTIVITY_TIMEOUT: int = 300
+
     # Email SMTP
     SMTP_HOST: Optional[str] = None
     SMTP_PORT: int = 587

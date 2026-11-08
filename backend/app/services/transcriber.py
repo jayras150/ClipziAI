@@ -35,9 +35,17 @@ class AudioTranscriber:
         )
     
     def _get_model(self):
-        """Lazy load whisper model."""
+        """Lazy load whisper model (hanya untuk TRANSCRIPTION_PROVIDER=local)."""
         if self._model is None:
-            from faster_whisper import WhisperModel
+            try:
+                from faster_whisper import WhisperModel
+            except ImportError as exc:
+                raise RuntimeError(
+                    "Transkripsi lokal butuh paket faster-whisper yang tidak dipasang "
+                    "secara default. Jalankan: "
+                    "pip install -r requirements-whisper-local.txt — atau pakai "
+                    "TRANSCRIPTION_PROVIDER berbasis API (groq/openai/openrouter)."
+                ) from exc
             self._model = WhisperModel(self.model_size, device="cpu", compute_type="int8")
         return self._model
     

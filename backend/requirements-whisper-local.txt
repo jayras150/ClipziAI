@@ -1,0 +1,13 @@
+# =============================================================================
+# OPSIONAL — hanya untuk transkripsi LOKAL (tanpa API provider).
+# Install:  pip install -r requirements-whisper-local.txt
+#
+# Menambah ±700 MB ke image/venv (ctranslate2, onnxruntime, av, tokenizers).
+# Tidak dipasang default karena default Clipzi memakai TRANSCRIPTION_PROVIDER
+# berbasis API (Groq / OpenRouter / OpenAI).
+#
+# Setelah dipasang, set di .env:
+#   TRANSCRIPTION_PROVIDER=local
+#   WHISPER_MODEL=small        # tiny | base | small | medium | large-v3
+# =============================================================================
+faster-whisper>=0.9.0

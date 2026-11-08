@@ -19,7 +19,10 @@ python-dotenv>=1.0.0
 cryptography>=41.0.0
 pyotp>=2.9.0
 yt-dlp
-faster-whisper>=0.9.0
+# CATATAN: faster-whisper (+ ctranslate2/onnxruntime/av/tokenizers ±700 MB) TIDAK
+# lagi dipasang default, karena transkripsi memakai API provider (lihat
+# TRANSCRIPTION_PROVIDER di .env). Kalau ingin transkripsi lokal, install paket
+# tambahan:  pip install -r requirements-whisper-local.txt
 opencv-python>=4.8.0
 scenedetect>=0.6.0
 moviepy>=1.0.3
