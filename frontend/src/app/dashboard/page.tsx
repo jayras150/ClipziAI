@@ -216,6 +216,7 @@ export default function DashboardPage() {
     } finally {
       setYoutubeLoading(false)
     }
+  }
 
   const submitUrl = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -684,5 +685,3 @@ export default function DashboardPage() {
     </div>
   )
 }
-
-  }
