@@ -2,6 +2,7 @@
 YouTube Service - OAuth2, Data API v3 upload
 """
 import asyncio
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional
 from urllib.parse import urlencode
@@ -12,6 +13,10 @@ from fastapi import HTTPException, status
 from app.core.config import get_settings
 
 settings = get_settings()
+
+# Cache hasil preflight OAuth (redirect URI terdaftar atau tidak) selama 5 menit.
+PREFLIGHT_TTL_SECONDS = 300
+_PREFLIGHT_CACHE: Dict[str, Any] = {}
 
 
 class YouTubeService:
@@ -57,11 +62,19 @@ class YouTubeService:
         ("Error 400: redirect_uri_mismatch") tanpa tahu penyebabnya.
         Mengembalikan None bila OK, atau kode masalah:
         "redirect_uri_mismatch" / "invalid_client" / "network".
+
+        Hasil di-cache 5 menit supaya klik berikutnya tidak menunggu Google.
         """
+        global _PREFLIGHT_CACHE
+        now = time.monotonic()
+        cached = _PREFLIGHT_CACHE.get("value")
+        if cached and now - _PREFLIGHT_CACHE.get("at", 0) < PREFLIGHT_TTL_SECONDS:
+            return cached
+
         try:
             response = requests.get(
                 auth_url,
-                timeout=12,
+                timeout=8,
                 allow_redirects=True,
                 headers={"User-Agent": "Mozilla/5.0 (ClipzyAI preflight)"},
             )
@@ -69,11 +82,15 @@ class YouTubeService:
             return "network"
 
         body = response.text or ""
+        problem: Optional[str] = None
         if "redirect_uri_mismatch" in body:
-            return "redirect_uri_mismatch"
-        if "invalid_client" in body or "unauthorized_client" in body:
-            return "invalid_client"
-        return None
+            problem = "redirect_uri_mismatch"
+        elif "invalid_client" in body or "unauthorized_client" in body:
+            problem = "invalid_client"
+
+        _PREFLIGHT_CACHE = {"value": problem, "at": now}
+        return problem
+
 
     
     async def exchange_code_for_tokens(self, code: str) -> Dict[str, Any]:
