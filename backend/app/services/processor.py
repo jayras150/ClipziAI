@@ -62,29 +62,29 @@ class VideoProcessor:
             width, height = 1080, 1920
         return width - (width % 2), height - (height % 2)
 
-    async def smart_crop_9x16(
+    async def smart_crop_aspect(
         self,
         input_path: str,
         output_path: str,
         start_time: float = 0,
         duration: float = 60,
+        aspect_ratio: str = "9:16",
         face_detect: bool = True,
     ) -> str:
+        """
+        Potong ke aspect ratio yang diinginkan (9:16, 1:1, 16:9) lalu scale ke
+        resolusi target. Untuk sumber portrait/landscape/square apa pun hasilnya
+        selalu rasio yang diminta, tidak pernah terpotong sempit aneh.
+        """
         width, height = self._target_dimensions()
+        num, den = aspect_ratio.replace(" ", "").split(":", 1)
+        target_ratio = float(num) / float(den)
 
-        # Crop 9:16 yang benar untuk SEMUA bentuk sumber.
-        #
-        # Versi lama memakai "crop=iw*9/16:ih" yang hanya benar bila sumbernya
-        # 16:9. Untuk video vertikal (mis. YouTube Shorts 1080x1920) ekspresi itu
-        # memotong frame jadi ~607x1920 (rasio 0.32, bukan 0.5625) sehingga klip
-        # keluar sangat sempit (pernah terlihat 202x640).
-        #
-        # Di sini: ambil area 9:16 TERBESAR yang muat di dalam frame (center),
-        # dibulatkan ke angka genap, lalu scale ke resolusi target.
+        # Ambil area dengan rasio target yang TERBESAR muat di frame (center).
         filter_chain = (
             "crop="
-            "w='2*trunc(min(iw,ih*9/16)/2)':"
-            "h='2*trunc(min(ih,iw*16/9)/2)':"
+            f"w='2*trunc(min(iw,ih*{target_ratio})/2)':"
+            f"h='2*trunc(min(ih,iw/{target_ratio})/2)':"
             "x='(iw-ow)/2':"
             "y='(ih-oh)/2',"
             f"scale={width}:{height}:flags=lanczos,"
@@ -103,20 +103,120 @@ class VideoProcessor:
             "-movflags", "+faststart",
             output_path,
         ]
-        
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._run_ffmpeg, cmd)
+        return output_path
+
+    async def smart_crop_9x16(
+        self,
+        input_path: str,
+        output_path: str,
+        start_time: float = 0,
+        duration: float = 60,
+        face_detect: bool = True,
+    ) -> str:
+        """Wrapper kompatibel dengan lama (aspect 9:16)."""
+        return await self.smart_crop_aspect(input_path, output_path, start_time, duration, "9:16", face_detect)
+
+    async def add_text_overlay(
+        self,
+        input_path: str,
+        output_path: str,
+        text: str,
+        font_size: int = 24,
+        font_color: str = "white",
+        x: str = "(w-text_w)/2",
+        y: str = "(h-text_h)/2",
+        box: bool = True,
+        box_color: str = "black@0.6",
+    ) -> str:
+        """Bakar teks ke video dengan ffmpeg drawtext. Font sistem dilema dulu."""
+        font_paths = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+            "/Windows/Fonts/arialbd.ttf",
+        ]
+        font_file = next((p for p in font_paths if os.path.exists(p)), None)
+        if not font_file:
+            raise RuntimeError("Tidak ditemukan font TTF di container untuk caption.")
+
+        drawtext = (
+            f"drawtext=fontfile={self._escape_filter_path(font_file)}:"
+            f"text='{self._escape_filter_text(text)}':"
+            f"fontsize={font_size}:"
+            f"fontcolor={font_color}:"
+            f"x={x}:"
+            f"y={y}"
+        )
+        if box:
+            drawtext += f":box=1:boxcolor={box_color}:boxborderw=8"
+
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
+            "-i", input_path,
+            "-vf", drawtext,
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            "-c:a", "copy",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._run_ffmpeg, cmd)
+        return output_path
+
+    @staticmethod
+    def _escape_filter_text(text: str) -> str:
+        """Escape teks untuk filter drawtext ffmpeg (backslash, petik, %)."""
+        return text.replace("\\", "\\\\").replace("'", "\\'").replace("%", "%%")
+
+    async def change_speed(
+        self,
+        input_path: str,
+        output_path: str,
+        speed: float = 1.0,
+    ) -> str:
+        """
+        Ubah kecepatan pemutaran (0.25x - 4x).
+        Video: setpts=PTS/speed.  Audio: atempo (rentang 0.5-2.0, dirantai bila di luar).
+        """
+        if speed == 1.0:
+            import shutil as _shutil
+            _shutil.copyfile(input_path, output_path)
+            return output_path
+
+        vf = f"setpts=PTS/{speed}"
+        atempo_chain = []
+        remaining = speed
+        while remaining > 2.0:
+            atempo_chain.append("atempo=2.0")
+            remaining /= 2.0
+        while remaining < 0.5:
+            atempo_chain.append("atempo=0.5")
+            remaining /= 0.5
+        atempo_chain.append(f"atempo={remaining}")
+        af = ",".join(atempo_chain)
+
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
+            "-i", input_path,
+            "-vf", vf,
+            "-af", af,
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            "-c:a", "aac", "-b:a", "128k",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, self._run_ffmpeg, cmd)
         return output_path
 
     @staticmethod
     def _escape_filter_path(path: str) -> str:
-        r"""Escape path agar aman sebagai opsi filter ffmpeg.
-
-        Filter ffmpeg memakai ``:`` sebagai pemisah opsi dan ``\`` sebagai escape.
-        Path Windows seperti ``C:\app\tmp\clip.srt`` karena itu rusak menjadi
-        ``Capptmpclip.srt`` sehingga ffmpeg gagal ("Unable to open ..."). Solusi:
-        pakai garis miring, escape ``:`` dan ``'``, lalu bungkus kutip tunggal.
-        """
+        """Escape path agar aman sebagai opsi filter ffmpeg."""
         text = str(path).replace("\\", "/")
         text = text.replace(":", r"\:").replace("'", r"\'")
         return f"'{text}'"

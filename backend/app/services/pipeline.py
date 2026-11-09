@@ -144,6 +144,12 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
         max_clips = int(options.get("max_clips", 3) or 3)
         min_duration = float(task.target_duration_min or 30)
         max_duration = float(task.target_duration_max or 60)
+        # ---------- Fase 1: editing manual ----------
+        manual_start = options.get("start_time")
+        manual_end = options.get("end_time")
+        aspect_ratio = str(options.get("aspect_ratio", "9:16"))
+        caption_text = options.get("caption_text")
+        speed = float(options.get("speed", 1.0) or 1.0)
 
         try:
             # 1) Unduh sumber (memakai cookie pool bila ada)
@@ -188,27 +194,43 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                 logger.warning("Transkripsi gagal untuk task %s: %s", task.id, exc)
             await _set_progress(db, task, 35)
 
-            # 4) Deteksi scene -> tentukan rentang klip
-            scenes = await processor.detect_scenes(video_path)
-            ranges = _select_clip_ranges(
-                scenes,
-                min_duration,
-                max_duration,
-                max_clips,
-                float(info.get("duration") or 0),
-            )
-            if not ranges:
-                raise RuntimeError(
-                    "Tidak ada rentang klip yang bisa diproses dari video ini"
+            # 4) Tentukan rentang klip — manual trim prioritas atas scene detection
+            total_duration = float(info.get("duration") or 0)
+            if manual_start is not None:
+                start = float(manual_start)
+                end = float(manual_end) if manual_end is not None else total_duration
+                if end <= start:
+                    end = start + min(max_duration, max(total_duration - start, 1))
+                end = min(end, total_duration)
+                ranges = [(round(start, 2), round(end - start, 2))]
+                logger.info(
+                    "Pipeline: trim manual task %s -> %.2f-%.2f detik", task.id, start, end
                 )
+            else:
+                scenes = await processor.detect_scenes(video_path)
+                ranges = _select_clip_ranges(
+                    scenes,
+                    min_duration,
+                    max_duration,
+                    max_clips,
+                    total_duration,
+                )
+                if not ranges:
+                    raise RuntimeError(
+                        "Tidak ada rentang klip yang bisa diproses dari video ini"
+                    )
 
             # 5) Render tiap klip
             rendered: List[Dict[str, Any]] = []
             total = len(ranges)
             for index, (start, duration) in enumerate(ranges, 1):
                 raw_clip = str(work_dir / f"clip_{index:02d}_raw.mp4")
-                await processor.smart_crop_9x16(
-                    video_path, raw_clip, start_time=start, duration=duration
+                await processor.smart_crop_aspect(
+                    video_path,
+                    raw_clip,
+                    start_time=start,
+                    duration=duration,
+                    aspect_ratio=aspect_ratio,
                 )
 
                 final_clip = raw_clip
@@ -248,6 +270,37 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                             logger.warning(
                                 "Upload SRT gagal (task %s klip %s): %s", task.id, index, exc
                             )
+
+                # ---------- Fase 1: caption teks + kecepatan ----------
+                if caption_text:
+                    captioned = str(work_dir / f"clip_{index:02d}_caption.mp4")
+                    try:
+                        await processor.add_text_overlay(
+                            final_clip,
+                            captioned,
+                            caption_text,
+                            font_size=26,
+                            font_color="white",
+                            x="(w-text_w)/2",
+                            y="h-text_h-40",
+                        )
+                        final_clip = captioned
+                    except Exception as exc:
+                        logger.warning(
+                            "Caption gagal (task %s klip %s): %s", task.id, index, exc
+                        )
+                if speed != 1.0:
+                    sped = str(work_dir / f"clip_{index:02d}_speed.mp4")
+                    try:
+                        await processor.change_speed(final_clip, sped, speed)
+                        final_clip = sped
+                    except Exception as exc:
+                        logger.warning(
+                            "Ubah kecepatan gagal (task %s klip %s): %s",
+                            task.id,
+                            index,
+                            exc,
+                        )
 
                 clip_key = storage.generate_object_key(
                     str(task.user_id), f"clip_{index:02d}.mp4", folder=f"clips/{task.id}"

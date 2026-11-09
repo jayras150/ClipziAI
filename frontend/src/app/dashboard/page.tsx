@@ -91,6 +91,11 @@ export default function DashboardPage() {
   const [tasks, setTasks] = useState<TaskData[]>([])
   const [tasksLoading, setTasksLoading] = useState(true)
   const [urlValue, setUrlValue] = useState("")
+  const [startTimeValue, setStartTimeValue] = useState("")
+  const [endTimeValue, setEndTimeValue] = useState("")
+  const [aspectRatioValue, setAspectRatioValue] = useState("9:16")
+  const [captionTextValue, setCaptionTextValue] = useState("")
+  const [speedValue, setSpeedValue] = useState("1.0")
   const [submitting, setSubmitting] = useState(false)
   const [taskError, setTaskError] = useState("")
   const [notice, setNotice] = useState("")
@@ -240,7 +245,18 @@ export default function DashboardPage() {
     setTaskError("")
     setNotice("")
     try {
-      const task = await api.createTask(stored, url)
+      const editingOptions: Record<string, any> = {}
+      const startTime = parseFloat(startTimeValue)
+      const endTime = parseFloat(endTimeValue)
+      const caption = captionTextValue.trim()
+      const speed = parseFloat(speedValue)
+      if (!Number.isNaN(startTime)) editingOptions.start_time = startTime
+      if (!Number.isNaN(endTime)) editingOptions.end_time = endTime
+      if (aspectRatioValue) editingOptions.aspect_ratio = aspectRatioValue
+      if (caption) editingOptions.caption_text = caption
+      if (!Number.isNaN(speed) && speed !== 1) editingOptions.speed = speed
+
+      const task = await api.createTask(stored, url, editingOptions)
       setUrlValue("")
       if (task.status === "error") {
         setTaskError(task.error_message || "The task was created but could not be sent to a GPU worker.")
@@ -413,6 +429,70 @@ export default function DashboardPage() {
                   className="ui-input"
                   style={{ flex: "1 1 260px" }}
                 />
+                {/* Opsi editing manual (Fase 1) */}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
+                  <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa", whiteSpace: "nowrap" }}>Mulai detik</label>
+                  <input
+                    id="start-time"
+                    type="number"
+                    min="0"
+                    step="any"
+                    placeholder="0"
+                    value={startTimeValue}
+                    onChange={(e) => setStartTimeValue(e.target.value)}
+                    className="ui-input"
+                    style={{ width: 80, padding: "6px 8px", fontSize: 13 }}
+                  />
+                  <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa", whiteSpace: "nowrap" }}>Akhir detik</label>
+                  <input
+                    id="end-time"
+                    type="number"
+                    min="0"
+                    step="any"
+                    placeholder="kosong"
+                    value={endTimeValue}
+                    onChange={(e) => setEndTimeValue(e.target.value)}
+                    className="ui-input"
+                    style={{ width: 80, padding: "6px 8px", fontSize: 13 }}
+                  />
+                  <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa", whiteSpace: "nowrap" }}>Rasio</label>
+                  <select
+                    id="aspect-ratio"
+                    value={aspectRatioValue}
+                    onChange={(e) => setAspectRatioValue(e.target.value)}
+                    className="ui-input"
+                    style={{ width: 90, padding: "6px 8px", fontSize: 13, background: "#171a22", color: "#f5f5f2", border: "1px solid var(--ui-line)" }}
+                  >
+                    <option value="9:16">9:16 vertikal</option>
+                    <option value="1:1">1:1 persegi</option>
+                    <option value="16:9">16:9 landskap</option>
+                  </select>
+                  <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa", whiteSpace: "nowrap" }}>Caption</label>
+                  <input
+                    id="caption-text"
+                    type="text"
+                    placeholder="teks overlay"
+                    value={captionTextValue}
+                    onChange={(e) => setCaptionTextValue(e.target.value)}
+                    className="ui-input"
+                    style={{ width: 140, padding: "6px 8px", fontSize: 13 }}
+                  />
+                  <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa", whiteSpace: "nowrap" }}>Kecepatan</label>
+                  <select
+                    id="speed"
+                    value={speedValue}
+                    onChange={(e) => setSpeedValue(e.target.value)}
+                    className="ui-input"
+                    style={{ width: 80, padding: "6px 8px", fontSize: 13, background: "#171a22", color: "#f5f5f2", border: "1px solid var(--ui-line)" }}
+                  >
+                    <option value="0.25">0.25×</option>
+                    <option value="0.5">0.5×</option>
+                    <option value="1">1×</option>
+                    <option value="1.5">1.5×</option>
+                    <option value="2">2×</option>
+                    <option value="4">4×</option>
+                  </select>
+                </div>
                 <button type="submit" className="ui-btn ui-btn-gold" disabled={submitting}>
                   {submitting ? <LoaderCircle size={15} className="animate-spin" /> : <Play size={15} />}
                   {submitting ? "Starting…" : "Process"}

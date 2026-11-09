@@ -59,6 +59,19 @@ async def create_task(
             detail="Insufficient credits. Please upgrade your plan or purchase more credits.",
         )
     
+    # Kumpulkan opsi editing ke JSONB (tidak perlu migrasi DB)
+    editing_options = dict(task_data.editing_options or {})
+    if task_data.start_time is not None:
+        editing_options["start_time"] = task_data.start_time
+    if task_data.end_time is not None:
+        editing_options["end_time"] = task_data.end_time
+    if task_data.aspect_ratio:
+        editing_options["aspect_ratio"] = task_data.aspect_ratio
+    if task_data.caption_text:
+        editing_options["caption_text"] = task_data.caption_text
+    if task_data.speed != 1.0:
+        editing_options["speed"] = task_data.speed
+
     # Create task
     task = Task(
         user_id=current_user.id,
@@ -71,7 +84,7 @@ async def create_task(
         output_format=task_data.output_format,
         output_resolution=task_data.output_resolution,
         fps=task_data.fps,
-        editing_options=task_data.editing_options,
+        editing_options=editing_options,
         auto_upload_youtube=task_data.auto_upload_youtube,
         plan_at_time=profile.plan_type.value,
     )

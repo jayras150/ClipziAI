@@ -203,10 +203,18 @@ export class ApiClient {
     return response.data
   }
 
-  async createTask(token: string, sourceUrl: string): Promise<TaskData> {
+  async createTask(
+    token: string,
+    sourceUrl: string,
+    editingOptions?: Record<string, any>
+  ): Promise<TaskData> {
     const response = await this.client.post<TaskData>(
       "/api/tasks/",
-      { source_url: sourceUrl, source_type: detectSourceType(sourceUrl) },
+      {
+        source_url: sourceUrl,
+        source_type: detectSourceType(sourceUrl),
+        ...editingOptions,
+      },
       { headers: { Authorization: `Bearer ${token}` } },
     )
     return response.data

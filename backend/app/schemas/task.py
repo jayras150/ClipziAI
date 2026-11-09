@@ -19,6 +19,22 @@ class TaskCreate(BaseModel):
     fps: int = 30
     editing_options: Optional[dict] = None
     auto_upload_youtube: bool = False
+    # ---------- Fase 1: editing manual ----------
+    start_time: Optional[float] = Field(
+        None, ge=0, description="Memulai klip dari detik ke-berapa (0 = awal video)"
+    )
+    end_time: Optional[float] = Field(
+        None, ge=0, description="Akhir klip pada detik ke-berapa (kosong = sampai akhir)"
+    )
+    aspect_ratio: str = Field(
+        "9:16", description="9:16 (vertikal), 1:1 (persegi), atau 16:9 (landskap)"
+    )
+    caption_text: Optional[str] = Field(
+        None, max_length=200, description="Teks caption yang dibakar ke setiap klip"
+    )
+    speed: Optional[float] = Field(
+        1.0, ge=0.25, le=4.0, description="Kecepatan pemutaran (0.25x - 4x)"
+    )
 
 
 class TaskResponse(BaseModel):
