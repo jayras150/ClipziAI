@@ -39,9 +39,14 @@ if [ "$ROLE" = "worker" ]; then
     # Harus bisa DIBACA oleh PyWorker (deteksi "Application startup complete.").
     # /app/tmp sudah ada dan dimiliki user non-root image ini.
     export MODEL_LOG_FILE="${MODEL_LOG_FILE:-/app/tmp/model-server.log}"
+    # PENTING: `python` di PATH runtime adalah /usr/local/bin/python (python
+    # sistem) sedangkan dependency dipasang di /opt/venv. Tanpa path eksplisit,
+    # PyWorker gagal: "ModuleNotFoundError: No module named 'vastai'".
+    PYTHON_BIN="${PYTHON_BIN:-/opt/venv/bin/python}"
+    [ -x "$PYTHON_BIN" ] || PYTHON_BIN="python"
     echo "[entrypoint] GPU worker (PyWorker) di port ${WORKER_PORT};" \
-         "pipeline di 127.0.0.1:${MODEL_SERVER_PORT}"
-    exec python -u -m deployments.pyworker_main
+         "pipeline di 127.0.0.1:${MODEL_SERVER_PORT} (python: ${PYTHON_BIN})"
+    exec "$PYTHON_BIN" -u -m deployments.pyworker_main
 fi
 
 echo "[entrypoint] menjalankan REST API di port ${PORT_TO_USE}"

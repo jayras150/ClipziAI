@@ -318,6 +318,10 @@ def test_pyworker_config():
     entry = pathlib.Path("docker-entrypoint.sh").read_text(encoding="utf-8")
     assert "deployments.pyworker_main" in entry, "entrypoint belum memakai PyWorker"
     assert "CLIPZI_WORKER_MODE" in entry, "mode api tanpa PyWorker harus tersedia"
+    # PATH runtime menaruh /usr/local/bin di depan /opt/venv (agar yt-dlp standalone
+    # menang), jadi `python` = python sistem tanpa dependency -> entrypoint WAJIB
+    # memakai python venv secara eksplisit, kalau tidak: ModuleNotFoundError vastai.
+    assert "/opt/venv/bin/python" in entry, "entrypoint harus memakai python venv"
     return "PyWorker: route /process, model server 127.0.0.1:18000, entrypoint OK"
 
 
