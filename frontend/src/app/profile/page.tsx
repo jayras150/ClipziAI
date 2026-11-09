@@ -5,6 +5,7 @@ import Link from "next/link"
 import { Mail, ShieldCheck, Youtube, Unlink, LoaderCircle, Save, LogOut, Check } from "lucide-react"
 
 import Navbar from "@/components/Navbar"
+import ConfirmDialog from "@/components/ConfirmDialog"
 import SiteFooter from "@/components/SiteFooter"
 import { api, UserProfileData, YouTubeDiagnostics } from "@/lib/api"
 import { readApiError } from "@/lib/api-errors"
@@ -29,6 +30,8 @@ export default function ProfilePage() {
   const [youtube, setYoutube] = useState<{ connected: boolean; channel_name?: string }>({ connected: false })
   const [diagnostics, setDiagnostics] = useState<YouTubeDiagnostics | null>(null)
   const [youtubeBusy, setYoutubeBusy] = useState(false)
+  // Konfirmasi wajib sebelum memutus koneksi YouTube (menghapus token).
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false)
   const [notice, setNotice] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(true)
@@ -132,25 +135,28 @@ export default function ProfilePage() {
       window.location.href = await api.getYouTubeAuthUrl(token)
     } catch (err: any) {
       const detail = String(err.response?.data?.detail || "")
-      const needsFallback =
-        err.response?.status === 409 && /redirect[ _]uri/i.test(detail) && /mismatch|terdaftar/i.test(detail)
+      const originalMessage = readApiError(err.response?.data, "Could not start the YouTube connection.")
 
-      if (!needsFallback) {
-        setError(readApiError(err.response?.data, "Could not start the YouTube connection."))
+      // 409 = konfigurasi OAuth server belum lengkap (mis. redirect URI belum
+      // terdaftar). Pakai alur token Google Identity Services sebagai fallback.
+      if (err.response?.status !== 409) {
+        setError(originalMessage)
         setYoutubeBusy(false)
         return
       }
 
-      // Redirect URI belum terdaftar di Google Console → pakai alur token Google
-      // Identity Services yang tidak memerlukan redirect URI.
       try {
         const diagnostics = await api.getYouTubeDiagnostics(token)
-        const accessToken = await requestYouTubeAccessToken(diagnostics.client_id || "")
+        const accessToken = await requestYouTubeAccessToken(
+          diagnostics.gis_client_id || diagnostics.client_id || "",
+        )
         const connected = await api.setYouTubeAccessToken(token, accessToken)
         setYoutube({ connected: true, channel_name: connected.channel_name })
         flash(connected.message || "YouTube connected.")
       } catch (fallbackError: any) {
-        setError(fallbackError?.message || "Could not connect YouTube.")
+        setError(
+          [fallbackError?.message || "Could not connect YouTube.", detail].filter(Boolean).join(" "),
+        )
       } finally {
         setYoutubeBusy(false)
       }
@@ -378,7 +384,7 @@ export default function ProfilePage() {
             </div>
             <button
               type="button"
-              onClick={youtube.connected ? disconnectYouTube : connectYouTube}
+              onClick={youtube.connected ? () => setConfirmDisconnect(true) : connectYouTube}
               disabled={youtubeBusy}
               className={youtube.connected ? "ui-btn ui-btn-ghost" : "ui-btn ui-btn-gold"}
             >
@@ -458,6 +464,27 @@ export default function ProfilePage() {
       </main>
 
       <SiteFooter />
+
+      <ConfirmDialog
+        open={confirmDisconnect}
+        title="Disconnect YouTube?"
+        description={
+          <>
+            Clipzy AI will stop auto-uploading clips to{" "}
+            <strong>{youtube.channel_name || "your YouTube channel"}</strong> and the stored access token will be
+            removed. You can reconnect anytime.
+          </>
+        }
+        confirmLabel="Yes, disconnect"
+        cancelLabel="Keep connected"
+        danger
+        busy={youtubeBusy}
+        onCancel={() => setConfirmDisconnect(false)}
+        onConfirm={() => {
+          setConfirmDisconnect(false)
+          void disconnectYouTube()
+        }}
+      />
     </div>
   )
 }

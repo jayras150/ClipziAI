@@ -247,6 +247,168 @@
   color: #f8c9c1;
 }
 
+/* ---------- Avatar & dropdown akun ---------- */
+.ui-menu {
+  position: relative;
+}
+.ui-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid rgba(244, 199, 107, 0.45);
+  background: linear-gradient(145deg, #ffe7a8, #d89c39);
+  color: #1b160d;
+  font: 700 13px/1 var(--font-space), "Space Grotesk", sans-serif;
+  letter-spacing: 0.4px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  padding: 0;
+  transition: 0.2s;
+}
+.ui-avatar:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(233, 181, 75, 0.22);
+}
+.ui-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  z-index: 40;
+  min-width: 240px;
+  padding: 8px;
+  display: grid;
+  gap: 2px;
+  background: linear-gradient(160deg, #1a1d25, #12141a);
+  border: 1px solid var(--ui-line);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+.ui-dropdown-head {
+  padding: 10px 10px 12px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--ui-line);
+  display: grid;
+  gap: 3px;
+}
+.ui-dropdown-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ui-text);
+}
+.ui-dropdown-mail {
+  font-size: 12px;
+  color: var(--ui-muted);
+  word-break: break-all;
+}
+.ui-dropdown-credit {
+  font-size: 11px;
+  color: var(--ui-gold);
+  margin-top: 2px;
+}
+.ui-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: #dcdee6;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: 0.15s;
+}
+.ui-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ui-gold);
+}
+.ui-dropdown-item.danger {
+  color: #f0a3a3;
+}
+.ui-dropdown-item.danger:hover {
+  background: rgba(240, 120, 120, 0.12);
+  color: #f7bdbd;
+}
+
+/* ---------- Chip status (mis. YouTube terhubung) ---------- */
+.ui-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 200px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--ui-line);
+  background: rgba(255, 255, 255, 0.04);
+  color: #dcdee6;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ui-chip-success {
+  border-color: rgba(131, 215, 161, 0.35);
+  background: rgba(131, 215, 161, 0.1);
+  color: #b6e7c8;
+}
+
+/* ---------- Modal konfirmasi ---------- */
+.ui-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(5, 6, 9, 0.72);
+  backdrop-filter: blur(4px);
+}
+.ui-modal {
+  width: min(440px, 100%);
+  padding: 24px;
+  border: 1px solid var(--ui-line);
+  border-radius: 20px;
+  background: linear-gradient(160deg, #1a1d25, #10121a);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+}
+.ui-modal-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.ui-modal-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(244, 199, 107, 0.3);
+  background: rgba(244, 199, 107, 0.12);
+  color: var(--ui-gold);
+  flex: 0 0 auto;
+}
+.ui-modal-icon.danger {
+  border-color: rgba(240, 138, 122, 0.35);
+  background: rgba(240, 138, 122, 0.12);
+  color: var(--ui-danger);
+}
+.ui-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+}
+.ui-btn-danger {
+  background: linear-gradient(135deg, #f0928a, #d9645a);
+  color: #22100e;
+  box-shadow: 0 8px 26px rgba(217, 100, 90, 0.18);
+}
+
 /* ---------- Tab, progress, badge ---------- */
 .ui-tabs {
   display: flex;

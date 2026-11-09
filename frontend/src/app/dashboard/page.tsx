@@ -21,7 +21,9 @@ import {
 import { api, ClipData, TaskData } from "@/lib/api"
 import { readApiError } from "@/lib/api-errors"
 import { requestYouTubeAccessToken } from "@/lib/social"
+import ConfirmDialog from "@/components/ConfirmDialog"
 import SiteFooter from "@/components/SiteFooter"
+import UserMenu from "@/components/UserMenu"
 
 const ACTIVE_STATUSES = ["queued", "processing"]
 
@@ -83,6 +85,8 @@ export default function DashboardPage() {
   const [youtube, setYoutube] = useState<{ connected: boolean; channel_name?: string }>({ connected: false })
   const [youtubeLoading, setYoutubeLoading] = useState(false)
   const [youtubeMessage, setYoutubeMessage] = useState("")
+  // Konfirmasi wajib sebelum memutus koneksi YouTube (menghapus token tersimpan).
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false)
 
   const [tasks, setTasks] = useState<TaskData[]>([])
   const [tasksLoading, setTasksLoading] = useState(true)
@@ -298,20 +302,38 @@ export default function DashboardPage() {
           <Link href="/profile">Profile</Link>
         </nav>
         <div className="ui-nav-actions">
-          <button
-            onClick={youtube.connected ? disconnectYouTube : connectYouTube}
-            disabled={youtubeLoading}
-            className="ui-btn ui-btn-ghost"
-          >
-            {youtubeLoading ? (
-              <LoaderCircle size={15} className="animate-spin" />
-            ) : youtube.connected ? (
-              <Unlink size={15} />
-            ) : (
-              <Youtube size={15} />
-            )}
-            {youtube.connected ? `YouTube: ${youtube.channel_name || "Connected"}` : "Connect YouTube"}
-          </button>
+          {youtube.connected ? (
+            <>
+              <span
+                className="ui-chip ui-chip-success"
+                title={`YouTube: ${youtube.channel_name || "connected"}`}
+              >
+                <Youtube size={14} />
+                {youtube.channel_name || "YouTube connected"}
+              </span>
+              {/* Tombol ini TIDAK langsung memutus koneksi: buka konfirmasi dulu. */}
+              <button
+                type="button"
+                onClick={() => setConfirmDisconnect(true)}
+                disabled={youtubeLoading}
+                className="ui-btn ui-btn-ghost"
+              >
+                {youtubeLoading ? <LoaderCircle size={15} className="animate-spin" /> : <Unlink size={15} />}
+                Disconnect
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={connectYouTube}
+              disabled={youtubeLoading}
+              className="ui-btn ui-btn-ghost"
+            >
+              {youtubeLoading ? <LoaderCircle size={15} className="animate-spin" /> : <Youtube size={15} />}
+              Connect YouTube
+            </button>
+          )}
+          <UserMenu />
         </div>
       </div>
 
@@ -686,6 +708,27 @@ export default function DashboardPage() {
         )}
       </main>
       <SiteFooter />
+
+      <ConfirmDialog
+        open={confirmDisconnect}
+        title="Disconnect YouTube?"
+        description={
+          <>
+            Clipzy AI will stop auto-uploading clips to{" "}
+            <strong>{youtube.channel_name || "your YouTube channel"}</strong> and the stored access token will be
+            removed. Your clips and projects stay untouched — you can reconnect anytime.
+          </>
+        }
+        confirmLabel="Yes, disconnect"
+        cancelLabel="Keep connected"
+        danger
+        busy={youtubeLoading}
+        onCancel={() => setConfirmDisconnect(false)}
+        onConfirm={() => {
+          setConfirmDisconnect(false)
+          void disconnectYouTube()
+        }}
+      />
     </div>
   )
 }

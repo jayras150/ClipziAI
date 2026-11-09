@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 
+import UserMenu from "@/components/UserMenu"
+
 export default function Navbar() {
   // Status login dibaca di useEffect, BUKAN saat render: localStorage tidak ada
   // di server sehingga membacanya langsung akan memicu hydration mismatch.
@@ -28,9 +30,7 @@ export default function Navbar() {
       </nav>
       <div className="ui-nav-actions">
         {signedIn ? (
-          <Link className="ui-btn ui-btn-gold" href="/dashboard">
-            Open studio
-          </Link>
+          <UserMenu />
         ) : (
           <>
             <Link className="ui-btn ui-btn-ghost" href="/login">
