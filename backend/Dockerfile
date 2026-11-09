@@ -96,7 +96,10 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
 #   worker        -> PyWorker (port WORKER_PORT) + uvicorn deployments.worker_api:app
 #                    di 127.0.0.1:MODEL_SERVER_PORT (lihat deployments/pyworker_main.py)
 COPY --chown=clipzi:clipzi docker-entrypoint.sh /usr/local/bin/clipzi-entrypoint.sh
-RUN chmod 0755 /usr/local/bin/clipzi-entrypoint.sh
+# Script onstart untuk mode oneshot (Vast mengeksekusi onstart sebagai exec,
+# jadi path script harus executable).
+RUN chmod 0755 /usr/local/bin/clipzi-entrypoint.sh \
+    && chmod 0755 $APP_HOME/deployments/pipeline_onstart.sh
 
 USER clipzi
 ENTRYPOINT ["/usr/local/bin/clipzi-entrypoint.sh"]

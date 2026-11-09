@@ -150,13 +150,15 @@ def test_dispatch_mode():
 # 2. perintah onstart
 # --------------------------------------------------------------------------- #
 def test_onstart_command():
+    """Onstart oneshot = path script di image (Vast mengeksekusi tanpa shell)."""
     cmd = vw._oneshot_onstart(TASK)
-    assert cmd.startswith("cd /app && python -c '"), cmd
-    inner = re.search(r"python -c '(.+)'$", cmd)
-    assert inner is not None, cmd
-    ast.parse(inner.group(1))
-    assert str(TASK) in cmd, "task id tidak tertanam di onstart"
-    return "sintaks python valid, task id tertanam"
+    assert cmd == "/app/deployments/pipeline_onstart.sh", cmd
+    script = pathlib.Path("deployments/pipeline_onstart.sh")
+    assert script.is_file(), "script onstart tidak ada di image"
+    text = script.read_text(encoding="utf-8")
+    assert "CLIPZI_TASK_ID" in text, "task id harus lewat env CLIPZI_TASK_ID"
+    assert "run_video_pipeline" in text, "script harus menjalankan pipeline"
+    return "path /app/deployments/pipeline_onstart.sh (exec-safe, task id via env)"
 
 
 # --------------------------------------------------------------------------- #
@@ -205,7 +207,8 @@ def test_dispatch_and_reaper():
     # Instance bisa dibuat dari --image langsung atau dari --template_hash
     # (template membawa image+port+env), tergantung konfigurasi .env.
     assert kwargs.get("image") or kwargs.get("template_hash"), kwargs
-    assert kwargs.get("env") == {"CLIPZI_ROLE": "worker"}, kwargs
+    assert kwargs.get("env", {}).get("CLIPZI_ROLE") == "worker", kwargs
+    assert kwargs["env"].get("CLIPZI_TASK_ID") == str(TASK), kwargs
     assert client.destroyed == [43832], client.destroyed
     return f"instance {result['instance_id']} dibuat lalu dihapus"
 

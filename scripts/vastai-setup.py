@@ -121,6 +121,10 @@ def template_create_cmd() -> list:
 
     Template menyimpan: image, port yang dibuka, env yang di-set, dan disk.
     Hash hasil pembuatan dipakai di VAST_TEMPLATE_HASH.
+
+    PENTING: workergroup yang memakai `--template_hash` mengambil filter offer
+    DARI TEMPLATE (bukan dari workergroup), sehingga tanpa `--search_params` di
+    sini engine bisa memilih GPU mahal (pernah kejadian: RTX 5090/3090).
     """
     cmd = [
         "vastai", "create", "template",
@@ -130,6 +134,9 @@ def template_create_cmd() -> list:
         "--disk_space", cfg("VAST_WORKER_DISK", "40"),
         "--desc", "Clipzi AI GPU worker (FastAPI + ffmpeg + yt-dlp)",
     ]
+    search_params = cfg("VAST_GPU_FILTER")
+    if search_params:
+        cmd += ["--search_params", search_params]
     onstart = cfg("VAST_WORKER_ONSTART")
     if onstart:
         cmd += ["--onstart-cmd", onstart]
@@ -356,6 +363,10 @@ def repoint_workergroup(template_hash: str) -> None:
     ada di workergroup. Tanpa langkah ini, workergroup tetap memakai template
     lama sehingga worker yang boot bukan image yang kita harapkan (penyebab
     worker tidak pernah `ready`).
+
+    PENTING: `--template_hash` membuat Vast meng-infer search query dari template,
+    sehingga filter GPU/harga dari VAST_GPU_FILTER HILANG (worker bisa jatuh di
+    GPU mahal). Karena itu filter selalu dikirim ulang di sini.
     """
     endpoint_id = cfg("VAST_ENDPOINT_ID")
     workergroup_id = cfg("VAST_WORKERGROUP_ID")
@@ -371,11 +382,85 @@ def repoint_workergroup(template_hash: str) -> None:
         "--template_hash", template_hash,
         "--launch_args", f"--disk {cfg('VAST_WORKER_DISK', '40')}",
     ]
+    search_params = cfg("VAST_GPU_FILTER")
+    if search_params:
+        cmd += ["--search_params", search_params]
     if endpoint_id:
         cmd += ["--endpoint_id", str(endpoint_id)]
     run(cmd)
     print(f"Workergroup {workergroup_id} sekarang memakai template {template_hash}.")
-    print("Catatan: template_hash juga menentukan search query (image_tag) worker.")
+    print("Filter GPU/harga diterapkan ulang dari VAST_GPU_FILTER:")
+    print(f"  {search_params or '(kosong — worker bisa jatuh di GPU mahal!)'}")
+
+
+def cmd_cheapest(args) -> None:
+    """Pakai offer TERMURAH saat ini: hitung harga minimum lalu paku cap-nya.
+
+    Autoscaler Vast TIDAK mengurutkan offer berdasarkan harga, jadi filter
+    `dph_total<X` yang longgar bisa menghasilkan instance mahal. Perintah ini
+    mencari harga minimum pasar untuk filter yang dipakai, lalu menulis filter
+    dengan `dph_total<=<min+margin>` sehingga hanya offer termurah yang lolos.
+    """
+    base_filter = cfg("VAST_GPU_FILTER")
+    parts = [p for p in base_filter.split() if not p.startswith("dph_total")]
+    query = " ".join(parts)
+    if not query:
+        fail("VAST_GPU_FILTER kosong; isi dulu filter GPU Anda di backend/.env")
+
+    print("\n=== Mencari offer termurah ===")
+    print(f"> filter: {query}")
+    raw = run(["vastai", "search", "offers", query, "--raw"])
+    try:
+        offers = json.loads(raw) if raw else []
+    except json.JSONDecodeError:
+        fail(f"keluaran search offers tidak bisa dibaca: {raw[:200]}")
+
+    if not offers:
+        fail(
+            "tidak ada offer yang cocok dengan filter:\n"
+            f"  {query}\n"
+            "Catatan: `gpu_ram` di Vast memakai satuan GB (mis. gpu_ram>=4),\n"
+            "bukan MB (gpu_ram>=4000 menghasilkan 0 offer)."
+        )
+
+    offers = [o for o in offers if float(o.get("dph_total") or 0) > 0]
+    offers.sort(key=lambda o: float(o["dph_total"]))
+    best = offers[0]
+    price = float(best["dph_total"])
+    cap = round(price + float(args.margin), 4)
+    print(
+        f"termurah: {best.get('gpu_name')} ${price:.4f}/jam "
+        f"(vram {round(float(best.get('gpu_ram') or 0) / 1024)} GB) -> cap ${cap:.4f}"
+    )
+
+    search_params = f"{query} dph_total<={cap}"
+    endpoint_id = cfg("VAST_ENDPOINT_ID")
+    workergroup_id = cfg("VAST_WORKERGROUP_ID")
+    if not endpoint_id or not workergroup_id:
+        found_endpoint, found_group = find_ids()
+        endpoint_id = endpoint_id or (str(found_endpoint) if found_endpoint else "")
+        workergroup_id = workergroup_id or (str(found_group) if found_group else "")
+    if not workergroup_id:
+        fail("workergroup tidak ditemukan. Buat dulu: python scripts/vastai-setup.py create")
+
+    cmd = [
+        "vastai", "update", "workergroup", str(workergroup_id),
+        "--search_params", search_params,
+        "--launch_args", f"--disk {cfg('VAST_WORKER_DISK', '40')}",
+    ]
+    template_hash = cfg("VAST_TEMPLATE_HASH")
+    if template_hash:
+        cmd += ["--template_hash", template_hash]
+    if endpoint_id:
+        cmd += ["--endpoint_id", str(endpoint_id)]
+
+    if args.dry_run:
+        show(cmd)
+    else:
+        run(cmd)
+        print(f"Workergroup {workergroup_id} dipaku ke offer termurah (cap ${cap:.4f}/jam).")
+    print("\nAgar konsisten saat template dibuat ulang, set di backend/.env:")
+    print(f"  VAST_GPU_FILTER={search_params}")
 
 
 def cmd_retemplate(args) -> None:
@@ -529,6 +614,14 @@ def main() -> int:
     )
     p_retpl.add_argument("--hash", help="hash template (default: VAST_TEMPLATE_HASH)")
     p_retpl.set_defaults(func=cmd_retemplate)
+
+    p_cheap = sub.add_parser(
+        "cheapest", help="paku workergroup ke offer TERMURAH saat ini (hitung cap harga)"
+    )
+    p_cheap.add_argument(
+        "--margin", type=float, default=0.001, help="toleransi di atas harga termurah (default 0.001)"
+    )
+    p_cheap.set_defaults(func=cmd_cheapest)
 
     p_update = sub.add_parser("update", help="perbarui parameter autoscaling")
     p_update.add_argument("--endpoint-id", help="id endpoint (default dari env/API)")

@@ -155,15 +155,14 @@ def _get_vast_client():
 
 
 def _oneshot_onstart(task_id: UUID) -> str:
-    """Perintah yang dijalankan di dalam container worker saat instance boot."""
-    return (
-        "cd /app && python -c "
-        "'import asyncio; from uuid import UUID; "
-        "from app.services.pipeline import run_video_pipeline; "
-        f'r = asyncio.run(run_video_pipeline(UUID("{task_id}"))); '
-        'print("PIPELINE_RESULT", r); '
-        "raise SystemExit(0 if r.get(\"ok\") else 1)'"
-    )
+    """Path script onstart di dalam image (task id dikirim lewat env).
+
+    Penting: Vast mengeksekusi `onstart` sebagai exec (tanpa shell), jadi
+    perintah panjang seperti `cd /app && python -c '...'` GAGAL dengan
+    "no such file or directory". Karena itu kita hanya mengirim path script
+    (`/app/deployments/pipeline_onstart.sh`) dan task id lewat `CLIPZI_TASK_ID`.
+    """
+    return "/app/deployments/pipeline_onstart.sh"
 
 
 async def _pick_offer(client: Any) -> Dict[str, Any]:
@@ -289,7 +288,8 @@ async def _dispatch_oneshot(task_id: UUID) -> Dict[str, Any]:
 
     kwargs: Dict[str, Any] = {
         "disk": settings.VAST_WORKER_DISK,
-        "env": {"CLIPZI_ROLE": "worker"},
+        # CLIPZI_TASK_ID dibaca script onstart di dalam image.
+        "env": {"CLIPZI_ROLE": "worker", "CLIPZI_TASK_ID": str(task_id)},
         "label": f"clipzi-{str(task_id)[:8]}",
         "onstart_cmd": _oneshot_onstart(task_id),
         "cancel_unavail": True,
