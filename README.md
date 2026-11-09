@@ -939,6 +939,7 @@ python scripts/vastai-setup.py status       # lihat URL endpoint -> isi VAST_END
 | `python scripts/vastai-run-once.py --task-id <UUID>` | **one-shot**: buat instance → jalankan 1 task → `destroy instance` otomatis |
 | `python scripts/vastai-smoke-test.py` | cek endpoint + worker (`ready`?) tanpa biaya; `--send` mengirim 1 request `/health` untuk uji cold start |
 | `python scripts/test-oneshot-offline.py` | validasi logika oneshot (offer, dispatch, reaper, orphan cleanup) tanpa GPU/jaringan |
+| `python scripts/e2e-pipeline-check.py` | uji pipeline sungguhan (DB + yt-dlp + transkripsi + R2): bikin user/task, jalankan, laporkan klip & URL |
 
 ### Satu task satu instance (ephemeral)
 
