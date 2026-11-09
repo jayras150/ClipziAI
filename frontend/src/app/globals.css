@@ -5,6 +5,7 @@
 @layer base {
   body {
     @apply bg-[#0F172A] text-white min-h-screen;
+    font-family: var(--font-dm), "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   }
 }
 

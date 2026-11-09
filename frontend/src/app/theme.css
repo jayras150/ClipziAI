@@ -5,6 +5,10 @@
    ============================================================================= */
 :root {
   --ui-bg: #090a0d;
+  /* Font di-load lewat <link> Google Fonts di layout.tsx; ini nilai default
+     agar var() tetap valid (fallback system-ui menyusul di setiap aturan). */
+  --font-dm: "DM Sans";
+  --font-space: "Space Grotesk";
   --ui-panel: #111319;
   --ui-panel-2: #171a22;
   --ui-gold: #f4c76b;
