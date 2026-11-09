@@ -1,5 +1,34 @@
 # 🚀 Deploy Clipzi AI ke VPS (Hybrid: VPS + Vast.ai Serverless)
 
+> ## Status deployment aktif (production)
+>
+> | Item | Nilai |
+> |------|-------|
+> | Domain | `https://proxyai.live` (DNS A → `43.167.162.69`) |
+> | VPS | Ubuntu 22.04, 2 vCPU, 3.7 GB RAM, 50 GB disk (+ swap 2 GB) |
+> | Folder app | `/opt/clipzi/app` (symlink `/root/ClipziAI`) |
+> | Compose | `/opt/clipzi/app/docker-compose.vps.yml` |
+> | Container | `clipzi-api` (backend), `clipzi-web` (frontend), `clipzi-caddy` |
+> | Image | backend dari Docker Hub `sujinwo555/clipzi-backend:1.5.0`; **frontend dibangun di VPS** |
+> | Secrets | `/opt/clipzi/app/backend/.env` (chmod 600) |
+>
+> ```bash
+> cd /opt/clipzi/app
+> git pull
+> docker compose -f docker-compose.vps.yml pull backend      # backend dari registry
+> docker compose -f docker-compose.vps.yml build frontend    # frontend build lokal (±5-10 mnt)
+> docker compose -f docker-compose.vps.yml up -d
+> docker compose -f docker-compose.vps.yml ps
+> docker logs --tail 50 clipzi-api
+> curl -fsS https://proxyai.live/api/health
+> ```
+>
+> Catatan: build frontend di 2 vCPU sebaiknya di `tmux`
+> (`tmux new -d -s build 'docker compose -f docker-compose.vps.yml build frontend > /root/build.log 2>&1'`);
+> `NEXT_PUBLIC_API_URL` di-inject saat container start, jadi ganti domain cukup
+> ubah `environment:` di compose lalu `up -d` (tanpa rebuild).
+
+
 Panduan ini memasang **API (FastAPI) + frontend (Next.js) di satu VPS**, dengan
 proses video berat dijalankan di **Vast.ai serverless GPU** (bayar per detik,
 scale-to-zero).

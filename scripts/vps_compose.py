@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import os
+
+DOCKERHUB = os.environ.get("VPS_DOCKERHUB", "sujinwo555")
+TAG = os.environ.get("VPS_TAG", "1.5.0")
+PUBLIC_URL = os.environ.get("VPS_PUBLIC_URL", "https://proxyai.live")
+
 COMPOSE_TEMPLATE = """# Deployment Clipzi di VPS (satu origin lewat Caddy)
 name: clipzi
 
