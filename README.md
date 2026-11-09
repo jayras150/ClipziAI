@@ -1024,8 +1024,17 @@ Image backend yang sama dipakai untuk API dan worker; peran dipilih lewat env:
 > `failed to find rdy worker`. Untuk uji lokal tanpa Vast pakai
 > `CLIPZI_WORKER_MODE=api` (uvicorn langsung, tanpa PyWorker).
 >
-> Karena itu template worker harus mengekspos port PyWorker:
-> `-p 8000:8000 -e CLIPZI_ROLE=worker -e WORKER_PORT=8000 -e MODEL_SERVER_PORT=18000`
+> Karena itu template worker harus mengekspos port PyWorker **persis**:
+> `-p 8000:8000 -e CLIPZI_ROLE=worker -e WORKER_PORT=8000 -e MODEL_SERVER_PORT=18000`.
+> Pemetaan port itu penting bukan hanya untuk koneksi: Vast membuat env
+> `VAST_TCP_PORT_8000` yang dibaca PyWorker untuk melaporkan diri. PyWorker juga
+> memakai `CONTAINER_ID`, `REPORT_ADDR`, `PUBLIC_IPADDR` (semua otomatis dari Vast).
+>
+> PyWorker mewajibkan **tepat satu** handler punya `BenchmarkConfig`; itu dipenuhi
+> oleh route murah `POST /ping` di worker (tanpa DB/GPU), sedangkan job asli tetap
+> di `POST /process`. Log pipeline ditulis ke `/app/tmp/model-server.log`
+> (`MODEL_LOG_FILE`) — jangan `/var/log` karena container jalan sebagai non-root.
+
 
 
 ### Migrasi / upgrade VPS

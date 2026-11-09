@@ -61,6 +61,17 @@ async def process(payload: ProcessRequest, background: BackgroundTasks) -> dict:
     return {"accepted": True, "task_id": str(payload.task_id)}
 
 
+@app.post("/ping")
+async def ping() -> dict:
+    """Route super ringan untuk benchmark PyWorker (tanpa DB/GPU).
+
+    PyWorker mewajibkan tepat satu handler punya `BenchmarkConfig`. Benchmark
+    tidak boleh menjalankan pipeline sungguhan (mahal & butuh task nyata), jadi
+    kapasitas worker diukur lewat route ini.
+    """
+    return {"ok": True, "service": "clipzi-worker"}
+
+
 @app.post("/process-sync")
 async def process_sync(payload: ProcessRequest) -> dict:
     """Jalankan pipeline dan tunggu hasilnya (untuk uji lokal/debug)."""

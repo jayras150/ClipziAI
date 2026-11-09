@@ -453,6 +453,9 @@ request menggantung lalu timeout. Penyebab yang sudah terbukti di Clipzi:
 | Workergroup masih memakai template lama (image `clipzy-worker`, port 8080) | `vastai show workergroups --raw` → lihat `template_hash`, `template_id`, `search_query.image_tag` | buat template baru + `python scripts/vastai-setup.py retemplate --hash <hash>` |
 | Worker tidak memakai **PyWorker** | worker berhenti di `model_loading` walau container `running` | image worker harus `python -m deployments.pyworker_main` (`CLIPZI_ROLE=worker`) |
 | Port PyWorker tidak diekspos | template env bukan `-p 8000:8000` | template env: `-p 8000:8000 -e CLIPZI_ROLE=worker -e WORKER_PORT=8000 -e MODEL_SERVER_PORT=18000` |
+| `KeyError: VAST_TCP_PORT_8000` / `CONTAINER_ID` / `REPORT_ADDR` di log worker | port 8000 tidak dipetakan, atau worker dijalankan di luar instance Vast | pastikan template memetakan 8000→8000 (Vast lalu membuat env `VAST_TCP_PORT_8000` dkk) |
+| `Missing EndpointHandler with BenchmarkConfig` | log worker saat start | harus ada tepat satu `HandlerConfig(benchmark_config=...)`; Clipzi memakai route murah `/ping` |
+| PyWorker tidak pernah mendeteksi model siap | `MODEL_LOG_FILE` tidak bisa dibaca user container | gunakan default `/app/tmp/model-server.log` (dimiliki user non-root `clipzi`) |
 | Template privat dibuat tapi hash tidak tercatat | `VAST_TEMPLATE_HASH` kosong | pakai hash dari keluaran `vastai-setup.py template` (kini dibaca dari keluaran `create`, bukan dari pencarian publik) |
 
 Alur perbaikan lengkap:

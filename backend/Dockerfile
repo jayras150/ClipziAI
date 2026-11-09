@@ -77,13 +77,24 @@ RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin clipzi \
 
 EXPOSE 8000
 
-# /api/health selalu balas 200 (status healthy/degraded), cocok untuk liveness.
+# Healthcheck harus sadar peran:
+#   api                     -> /api/health di PORT (8000)
+#   worker (PyWorker)       -> /health di MODEL_SERVER_PORT (pipeline), karena
+#                              port WORKER_PORT dipakai PyWorker (tanpa /api/health)
+#   worker (mode api lokal) -> /health di WORKER_PORT
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-    CMD curl -fsS http://127.0.0.1:${PORT:-8000}/api/health || exit 1
+    CMD if [ "${CLIPZI_ROLE:-api}" != "worker" ]; then \
+          curl -fsS "http://127.0.0.1:${PORT:-8000}/api/health"; \
+        elif [ "${CLIPZI_WORKER_MODE:-pyworker}" = "api" ]; then \
+          curl -fsS "http://127.0.0.1:${WORKER_PORT:-8000}/health"; \
+        else \
+          curl -fsS "http://127.0.0.1:${MODEL_SERVER_PORT:-18000}/health"; \
+        fi
 
 # Entrypoint memilih peran berdasarkan CLIPZI_ROLE:
 #   api (default) -> uvicorn app.main:app
-#   worker        -> uvicorn deployments.worker_api:app   (GPU worker Vast.ai)
+#   worker        -> PyWorker (port WORKER_PORT) + uvicorn deployments.worker_api:app
+#                    di 127.0.0.1:MODEL_SERVER_PORT (lihat deployments/pyworker_main.py)
 COPY --chown=clipzi:clipzi docker-entrypoint.sh /usr/local/bin/clipzi-entrypoint.sh
 RUN chmod 0755 /usr/local/bin/clipzi-entrypoint.sh
 

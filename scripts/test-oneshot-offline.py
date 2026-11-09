@@ -287,10 +287,30 @@ def test_pyworker_config():
     assert config.model_server_port == 18000, config.model_server_port
     assert config.model_server_url == "http://127.0.0.1", config.model_server_url
     routes = [handler.route for handler in config.handlers]
-    assert routes == ["/process"], routes
+    assert routes == ["/process", "/ping"], routes
     handler = config.handlers[0]
     assert handler.allow_parallel_requests is False, handler
     assert handler.workload_calculator({}) == 100.0, handler.workload_calculator
+    # PyWorker menolak start bila tidak ada tepat satu handler ber-BenchmarkConfig.
+    benchmarks = [h for h in config.handlers if h.benchmark_config is not None]
+    assert len(benchmarks) == 1, benchmarks
+    assert benchmarks[0].route == "/ping", benchmarks[0].route
+    assert benchmarks[0].benchmark_config.generator() == {}, benchmarks[0]
+
+    # Env yang di instance Vast disediakan otomatis; di sini dummy.
+    for name, value in (
+        ("CONTAINER_ID", "1"),
+        ("REPORT_ADDR", "https://run.vast.ai"),
+        ("PUBLIC_IPADDR", "127.0.0.1"),
+        ("VAST_TCP_PORT_8000", "8000"),
+    ):
+        os.environ.setdefault(name, value)
+
+    # Konstruksi Worker = validasi konfigurasi oleh PyWorker itu sendiri.
+    # (Tanpa handler ber-BenchmarkConfig, PyWorker langsung melempar exception.)
+    from vastai import Worker
+
+    assert Worker(config) is not None
 
     # PyWorker membaca WORKER_PORT dari environment saat start_server().
     src = pathlib.Path("deployments/pyworker_main.py").read_text(encoding="utf-8")

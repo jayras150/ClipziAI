@@ -36,7 +36,9 @@ if [ "$ROLE" = "worker" ]; then
 
     export WORKER_PORT="${WORKER_PORT:-8000}"
     export MODEL_SERVER_PORT="${MODEL_SERVER_PORT:-18000}"
-    export MODEL_LOG_FILE="${MODEL_LOG_FILE:-/var/log/model/server.log}"
+    # Harus bisa DIBACA oleh PyWorker (deteksi "Application startup complete.").
+    # /app/tmp sudah ada dan dimiliki user non-root image ini.
+    export MODEL_LOG_FILE="${MODEL_LOG_FILE:-/app/tmp/model-server.log}"
     echo "[entrypoint] GPU worker (PyWorker) di port ${WORKER_PORT};" \
          "pipeline di 127.0.0.1:${MODEL_SERVER_PORT}"
     exec python -u -m deployments.pyworker_main
