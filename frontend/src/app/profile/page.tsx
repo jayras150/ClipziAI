@@ -202,7 +202,7 @@ export default function ProfilePage() {
     <div className="ui-shell">
       <Navbar />
 
-      <main className="ui-container" style={{ padding: "38px 0 70px" }}>
+      <main className="ui-container ui-container-wide" style={{ padding: "38px 0 70px" }}>
         <div
           style={{
             display: "flex",

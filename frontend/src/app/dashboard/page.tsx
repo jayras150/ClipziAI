@@ -420,7 +420,7 @@ export default function DashboardPage() {
 
   return (
     <div className="ui-shell">
-      <div className="ui-container ui-nav">
+      <header className="ui-container ui-container-wide ui-nav">
         <Link className="ui-brand" href="/">
           <span className="ui-brand-mark">▶</span>
           <span>
@@ -465,9 +465,9 @@ export default function DashboardPage() {
           )}
           <UserMenu />
         </div>
-      </div>
+      </header>
 
-      <main className="ui-container" style={{ padding: "38px 0 70px" }}>
+      <main className="ui-container ui-container-wide" style={{ padding: "38px 0 70px" }}>
         <div
           style={{
             display: "flex",
