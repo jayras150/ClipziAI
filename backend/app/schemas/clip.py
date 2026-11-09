@@ -2,13 +2,16 @@
 Clip schemas - Clip details
 """
 from typing import Optional, List
+from uuid import UUID
+
 from pydantic import BaseModel
 from datetime import datetime
 
 
 class ClipResponse(BaseModel):
-    id: str
-    task_id: str
+    # Sama seperti TaskResponse: kolomnya UUID, jadi tipenya UUID (JSON tetap string).
+    id: UUID
+    task_id: UUID
     clip_index: int
     start_time: str
     end_time: str

@@ -2,6 +2,8 @@
 Task schemas - Task CRUD
 """
 from typing import Optional, List, Any
+from uuid import UUID
+
 from pydantic import BaseModel, Field, HttpUrl
 from datetime import datetime
 
@@ -20,8 +22,12 @@ class TaskCreate(BaseModel):
 
 
 class TaskResponse(BaseModel):
-    id: str
-    user_id: str
+    # id/user_id bertipe UUID, bukan str: kolom DB-nya UUID dan Pydantic v2 tidak
+    # meng-coerce UUID -> str secara implisit. Kalau ditulis `str`, endpoint
+    # gagal dengan ResponseValidationError (HTTP 500) padahal data tersimpan.
+    # Serialisasi JSON tetap berupa string.
+    id: UUID
+    user_id: UUID
     source_url: str
     source_type: str
     status: str
