@@ -261,12 +261,234 @@ class VideoProcessor:
         await loop.run_in_executor(None, self._run_ffmpeg, cmd)
         return output_path
 
+    # =====================================================================
+    # Fase 2: filter warna, blur-fill, watermark, audio enhance, concat
+    # =====================================================================
+    FILTER_PRESETS = {
+        "none": "",
+        "warm": "eq=saturation=1.15:gamma_r=1.05:gamma_b=0.95",
+        "cool": "eq=saturation=1.05:gamma_r=0.95:gamma_b=1.08",
+        "cinematic": "curves=preset=medium_contrast,eq=saturation=0.9:contrast=1.05",
+        "bw": "hue=s=0,eq=contrast=1.08",
+        "vibrant": "eq=saturation=1.35:contrast=1.06",
+        "vintage": "curves=vintage,noise=alls=6:allf=t+u",
+    }
+
+    @classmethod
+    def filter_chain_for_preset(cls, preset: Optional[str]) -> str:
+        """Nama preset -> potongan filter ffmpeg (string kosong bila tidak dikenal)."""
+        return cls.FILTER_PRESETS.get((preset or "none").strip().lower(), "")
+
+    async def render_clip(
+        self,
+        input_path: str,
+        output_path: str,
+        start_time: float = 0,
+        duration: float = 60,
+        aspect_ratio: str = "9:16",
+        filter_preset: Optional[str] = None,
+        blur_fill: bool = False,
+    ) -> str:
+        """
+        Render satu klip: potong rentang, reframe ke rasio target, opsional
+        blur-fill (background blur untuk sumber landscape -> vertikal) dan
+        opsional filter warna.
+
+        `blur_fill` memakai filter_complex (split -> bg blur + video utama di
+        tengah) sehingga sumber lebar tidak perlu dipotong habis.
+        """
+        width, height = self._dimensions_for_ratio(aspect_ratio)
+        preset_chain = self.filter_chain_for_preset(filter_preset)
+
+        cmd_base = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
+            "-ss", str(start_time),
+            "-i", input_path,
+            "-t", str(duration),
+        ]
+        tail = [
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            "-r", str(settings.OUTPUT_FPS),
+            "-c:a", "aac", "-b:a", "128k",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+
+        if blur_fill:
+            chain = (
+                f"[0:v]split=2[s0][s1];"
+                f"[s0]scale={width}:{height}:force_original_aspect_ratio=increase,"
+                f"crop={width}:{height},gblur=sigma=28[bg];"
+                f"[s1]scale={width}:{height}:force_original_aspect_ratio=decrease[fg];"
+                f"[bg][fg]overlay=(W-w)/2:(H-h)/2"
+                + (f",{preset_chain}" if preset_chain else "")
+                + "[v]"
+            )
+            cmd = cmd_base + ["-filter_complex", chain, "-map", "[v]", "-map", "0:a?"] + tail
+        else:
+            num, den = aspect_ratio.replace(" ", "").split(":", 1)
+            target_ratio = float(num) / float(den)
+            chain = (
+                "crop="
+                f"w='2*trunc(min(iw,ih*{target_ratio})/2)':"
+                f"h='2*trunc(min(ih,iw/{target_ratio})/2)':"
+                "x='(iw-ow)/2':"
+                "y='(ih-oh)/2',"
+                f"scale={width}:{height}:flags=lanczos,"
+                "setsar=1"
+            )
+            if preset_chain:
+                chain = f"{chain},{preset_chain}"
+            cmd = cmd_base + ["-vf", chain] + tail
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._run_ffmpeg, cmd)
+        return output_path
+
     @staticmethod
     def _escape_filter_path(path: str) -> str:
         """Escape path agar aman sebagai opsi filter ffmpeg."""
         text = str(path).replace("\\", "/")
         text = text.replace(":", r"\:").replace("'", r"\'")
         return f"'{text}'"
+
+    async def overlay_image(
+        self,
+        input_path: str,
+        image_path: str,
+        output_path: str,
+        position: str = "bottom-right",
+        scale: float = 0.16,
+        opacity: float = 0.85,
+        start: Optional[float] = None,
+        end: Optional[float] = None,
+        margin: int = 24,
+    ) -> str:
+        """
+        Tempel PNG (logo/watermark/sticker) di atas video.
+
+        `scale` = lebar watermark relatif lebar video (0.16 = 16%).
+        `start`/`end` membatasi kapan watermark tampil (detik).
+        """
+        positions = {
+            "top-left": f"{margin}:{margin}",
+            "top-right": f"main_w-overlay_w-{margin}:{margin}",
+            "bottom-left": f"{margin}:main_h-overlay_h-{margin}",
+            "bottom-right": f"main_w-overlay_w-{margin}:main_h-overlay_h-{margin}",
+            "center": "(main_w-overlay_w)/2:(main_h-overlay_h)/2",
+        }
+        pos = positions.get((position or "bottom-right").lower(), positions["bottom-right"])
+
+        enable = ""
+        if start is not None and end is not None:
+            enable = f":enable='between(t,{float(start)},{float(end)})'"
+        elif start is not None:
+            enable = f":enable='gte(t,{float(start)})'"
+        elif end is not None:
+            enable = f":enable='lte(t,{float(end)})'"
+
+        alpha = max(0.0, min(1.0, float(opacity)))
+        filter_complex = (
+            f"[1:v]format=rgba,colorchannelmixer=aa={alpha}[wm];"
+            f"[0:v][wm]scale2ref=w=main_w*{float(scale)}:h=ow/mdar[wm2][base];"
+            f"[base][wm2]overlay={pos}{enable}[v]"
+        )
+
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
+            "-i", input_path,
+            "-i", image_path,
+            "-filter_complex", filter_complex,
+            "-map", "[v]", "-map", "0:a?",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            "-c:a", "copy",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._run_ffmpeg, cmd)
+        return output_path
+
+    async def enhance_audio(
+        self,
+        input_path: str,
+        output_path: str,
+        denoise: bool = True,
+        normalize: bool = True,
+        highpass_hz: int = 80,
+    ) -> str:
+        """
+        Perbaiki audio: buang noise (afftdn), potong frekuensi rendah (highpass),
+        dan normalisasi kenyaringan ke standar media sosial (loudnorm -14 LUFS).
+        """
+        filters: List[str] = []
+        if denoise:
+            filters.append("afftdn=nf=-25")
+        if highpass_hz:
+            filters.append(f"highpass=f={highpass_hz}")
+        if normalize:
+            filters.append("loudnorm=I=-14:TP=-1.5:LRA=11")
+
+        if not filters:
+            import shutil as _shutil
+            _shutil.copyfile(input_path, output_path)
+            return output_path
+
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
+            "-i", input_path,
+            "-af", ",".join(filters),
+            "-c:v", "copy",
+            "-c:a", "aac", "-b:a", "160k",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._run_ffmpeg, cmd)
+        return output_path
+
+    async def concat_videos(
+        self,
+        input_paths: List[str],
+        output_path: str,
+        width: int = 1080,
+        height: int = 1920,
+    ) -> str:
+        """
+        Gabungkan beberapa video berurutan (intro + klip + outro) dengan
+        menyeragamkan resolusi, fps, dan sampling audio lebih dulu.
+        """
+        if not input_paths:
+            raise ValueError("concat_videos butuh minimal satu input")
+
+        cmd = ["ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y"]
+        for path in input_paths:
+            cmd += ["-i", path]
+
+        parts = []
+        for index in range(len(input_paths)):
+            parts.append(
+                f"[{index}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,"
+                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={settings.OUTPUT_FPS}[v{index}];"
+                f"[{index}:a]aresample=async=1:first_pts=0[a{index}]"
+            )
+        concat_inputs = "".join(f"[v{i}][a{i}]" for i in range(len(input_paths)))
+        filter_complex = ";".join(parts) + f";{concat_inputs}concat=n={len(input_paths)}:v=1:a=1[v][a]"
+
+        cmd += [
+            "-filter_complex", filter_complex,
+            "-map", "[v]", "-map", "[a]",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            "-c:a", "aac", "-b:a", "160k",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._run_ffmpeg, cmd)
+        return output_path
 
     async def burn_subtitle(
         self,
