@@ -435,7 +435,7 @@ Yang perlu diperhatikan:
 | Waktu tunggu user | ~2–5 menit sebelum worker mulai memproses (scheduling + pull image) |
 | Isolasi data | secret dibaca dari **Environment Variables akun Vast**, tidak lewat argumen |
 | Biaya | GPU ditagih per detik selama instance hidup; setelah `destroy` = 0 |
-| Risiko | API mati total → instance bisa yatim; cek berkala `vastai show instances` (label `clipzi-*`) |
+| Risiko | API mati total → instance bisa yatim. Mitigasi: saat API start, `cleanup_orphan_instances()` menghapus instance `clipzi-*` yang task-nya sudah terminal/hilang. Cek manual: `vastai show instances` |
 | Kapan dipakai | task besar/langka, batch malam, demo. Untuk trafik ramai pakai endpoint scale-to-zero |
 
 

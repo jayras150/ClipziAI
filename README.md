@@ -936,6 +936,7 @@ python scripts/vastai-setup.py status       # lihat URL endpoint -> isi VAST_END
 | `... update --max-workers 0` | paksa nol worker tanpa mematikan endpoint |
 | `python scripts/vastai-setup.py --dry-run create` | lihat perintah `vastai` tanpa menjalankan |
 | `python scripts/vastai-run-once.py --task-id <UUID>` | **one-shot**: buat instance → jalankan 1 task → `destroy instance` otomatis |
+| `python scripts/test-oneshot-offline.py` | validasi logika oneshot (offer, dispatch, reaper, orphan cleanup) tanpa GPU/jaringan |
 
 ### Satu task satu instance (ephemeral)
 
@@ -996,6 +997,14 @@ VAST_ONESHOT_BOOT_TIMEOUT=900   # worker tak kunjung memproses -> task error + d
 
 Reaper memantau tabel `tasks`; setelah `completed`/`error`/`cancelled` (atau
 timeout) instance **selalu** dihapus lewat `finally`, jadi GPU berhenti ditagih.
+Kalau API sempat mati, `cleanup_orphan_instances()` saat startup menghapus
+instance `clipzi-*` yang task-nya sudah terminal/hilang.
+
+Uji logika ini tanpa GPU/API key (fake SDK + fake DB):
+
+```bash
+python scripts/test-oneshot-offline.py     # 7 cek: offer, dispatch, reaper, boot timeout, orphan cleanup
+```
 
 ### Satu image, dua peran
 
