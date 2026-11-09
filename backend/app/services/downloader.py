@@ -210,7 +210,10 @@ class VideoDownloader:
             {
                 "format": f"bestvideo[height<={quality}]+bestaudio/best",
                 "merge_output_format": "mp4",
-                "outtmpl": output_path,
+                # WAJIB pakai %(ext)s: untuk URL file langsung (mis. .mp4 di R2/CDN)
+                # yt-dlp menyimpan dengan nama apa adanya TANPA ekstensi, sehingga
+                # pencarian `source.mp4` gagal dan langkah ffprobe berikutnya error.
+                "outtmpl": f"{output_path}.%(ext)s",
                 "retries": 3,
                 "fragment_retries": 3,
             }
@@ -219,12 +222,32 @@ class VideoDownloader:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, self._download, url, ydl_opts)
 
-        # Find the downloaded file
-        for ext in ["mp4", "mkv", "webm"]:
-            path = f"{self.download_dir / output_filename}.{ext}"
-            if os.path.exists(path):
+        # Cari file hasil unduhan: nama dengan ekstensi, atau nama tanpa ekstensi
+        # (kasus URL file langsung).
+        candidates = [f"{self.download_dir / output_filename}.{ext}" for ext in ("mp4", "mkv", "webm")]
+        candidates.append(str(self.download_dir / output_filename))
+        for path in candidates:
+            if os.path.exists(path) and os.path.getsize(path) > 0:
+                if not Path(path).suffix:
+                    # Beri ekstensi .mp4 agar konsisten untuk langkah berikutnya.
+                    renamed = f"{path}.mp4"
+                    try:
+                        os.replace(path, renamed)
+                        return renamed
+                    except OSError:
+                        return path
                 return path
-        return f"{output_path}.mp4"
+        # Jangan kembalikan path yang belum tentu ada: kegagalan unduh harus
+        # terlihat jelas di sini, bukan muncul sebagai error ffprobe di langkah
+        # berikutnya.
+        try:
+            files = sorted(os.listdir(self.download_dir))[:10]
+        except OSError:
+            files = []
+        raise RuntimeError(
+            "unduhan tidak menghasilkan file video "
+            f"(url={url}, folder={self.download_dir}, isi={files})"
+        )
 
     def _extract_info(self, url: str, ydl_opts: dict) -> Dict[str, Any]:
         import yt_dlp

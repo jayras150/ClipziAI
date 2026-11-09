@@ -104,17 +104,26 @@ def fail(message: str) -> "None":
     raise SystemExit(1)
 
 
-def run(cmd: List[str], capture: bool = True) -> str:
-    print("> " + shlex.join(cmd), flush=True)
+def run(cmd: List[str], capture: bool = True, echo: bool = True) -> str:
+    """Jalankan perintah. `echo=False` untuk perintah yang memuat secret.
+
+    Nilai rahasia (API key, cookie, DSN) TIDAK boleh tercetak ke terminal/log:
+    terminal bisa direkam, dan log Vast/CI bisa dibaca orang lain.
+    """
+    if echo:
+        print("> " + shlex.join(cmd), flush=True)
     result = subprocess.run(cmd, capture_output=capture, text=True)
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "").strip()
+        if not echo:  # jangan bocorkan nilai secret lewat pesan error
+            detail = detail.replace(cmd[-1], "********") if cmd else detail
         fail(f"perintah gagal (exit {result.returncode})\n{detail}")
     return (result.stdout or "").strip() if capture else ""
 
 
 def show(cmd: List[str]) -> None:
     print("> " + shlex.join(cmd), flush=True)
+
 
 def push_env_vars(dry_run: bool) -> None:
     """Dorong variabel whitelist dari backend/.env ke Environment Variables akun Vast."""
@@ -124,10 +133,10 @@ def push_env_vars(dry_run: bool) -> None:
         value = cfg(name)
         if not value:
             continue
-        if dry_run:
-            show(["vastai", "create", "env-var", name, "********"])
-        else:
-            run(["vastai", "create", "env-var", name, value])
+        # Tampilkan perintah dengan nilai tersamar; jalankan tanpa echo.
+        show(["vastai", "create", "env-var", name, "********"])
+        if not dry_run:
+            run(["vastai", "create", "env-var", name, value], echo=False)
         pushed += 1
     print(f"{pushed} variabel diproses.")
 

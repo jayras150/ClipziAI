@@ -194,15 +194,37 @@ class VideoProcessor:
             return None
 
     def _probe_sync(self, cmd: List[str]) -> str:
-        """Jalankan ffprobe (sync) dan kembalikan stdout JSON."""
+        """Jalankan ffprobe (sync) dan kembalikan stdout JSON.
+
+        `-v quiet` membuat stderr kosong saat gagal sehingga pesan error tidak
+        informatif ("ffprobe gagal:"). Pakai `-v error` dan sertakan path +
+        returncode agar kegagalan bisa didiagnosa dari log worker.
+        """
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            raise RuntimeError(f"ffprobe gagal: {result.stderr}")
+            target = cmd[-1] if cmd else "?"
+            detail = (result.stderr or result.stdout or "").strip()
+            exists = os.path.exists(target) if isinstance(target, str) else False
+            size = os.path.getsize(target) if exists else -1
+            raise RuntimeError(
+                f"ffprobe gagal (exit {result.returncode}) untuk {target} "
+                f"(ada={exists}, ukuran={size} B): {detail[:500] or '(tanpa pesan)'}"
+            )
         return result.stdout
 
     async def get_video_info(self, video_path: str) -> Dict[str, Any]:
+        if not os.path.exists(video_path):
+            parent = os.path.dirname(video_path) or "."
+            try:
+                siblings = sorted(os.listdir(parent))[:10]
+            except OSError:
+                siblings = []
+            raise RuntimeError(
+                f"file video tidak ditemukan: {video_path} "
+                f"(isi folder {parent}: {siblings})"
+            )
         cmd = [
-            "ffprobe", "-v", "quiet", "-print_format", "json",
+            "ffprobe", "-v", "error", "-print_format", "json",
             "-show_format", "-show_streams", video_path,
         ]
         loop = asyncio.get_event_loop()

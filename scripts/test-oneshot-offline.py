@@ -201,8 +201,11 @@ def test_dispatch_and_reaper():
     assert result["mode"] == "oneshot", result
     assert result["instance_id"] == 43832, result
     assert client.created[0][0] == 2, client.created
-    assert client.created[0][1]["image"], client.created
-    assert client.created[0][1]["env"] == {"CLIPZI_ROLE": "worker"}, client.created
+    kwargs = client.created[0][1]
+    # Instance bisa dibuat dari --image langsung atau dari --template_hash
+    # (template membawa image+port+env), tergantung konfigurasi .env.
+    assert kwargs.get("image") or kwargs.get("template_hash"), kwargs
+    assert kwargs.get("env") == {"CLIPZI_ROLE": "worker"}, kwargs
     assert client.destroyed == [43832], client.destroyed
     return f"instance {result['instance_id']} dibuat lalu dihapus"
 
