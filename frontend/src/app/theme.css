@@ -1060,6 +1060,7 @@ select.ui-input option:hover {
     width: 100%;
     gap: 16px;
     font-size: 12.5px;
+    flex-wrap: nowrap;
     overflow-x: auto;
     white-space: nowrap;
     padding-bottom: 2px;
