@@ -321,6 +321,45 @@ def test_pyworker_config():
     return "PyWorker: route /process, model server 127.0.0.1:18000, entrypoint OK"
 
 
+def test_transcriber_model_choice():
+    """Model API (TRANSCRIPTION_MODEL) tidak boleh dipakai faster-whisper lokal."""
+    import importlib
+
+    import app.core.config as config_mod
+
+    original = {
+        key: os.environ.get(key)
+        for key in ("TRANSCRIPTION_PROVIDER", "TRANSCRIPTION_MODEL", "WHISPER_MODEL")
+    }
+    os.environ["TRANSCRIPTION_PROVIDER"] = "local"
+    os.environ["TRANSCRIPTION_MODEL"] = "openai/whisper-large-v3-turbo"
+    os.environ["WHISPER_MODEL"] = "small"
+    try:
+        config_mod.get_settings.cache_clear()
+        import app.services.transcriber as transcriber_mod
+
+        transcriber_mod = importlib.reload(transcriber_mod)
+        local = transcriber_mod.AudioTranscriber()
+        assert local.model_size == "small", local.model_size
+
+        os.environ["TRANSCRIPTION_PROVIDER"] = "groq"
+        config_mod.get_settings.cache_clear()
+        transcriber_mod = importlib.reload(transcriber_mod)
+        remote = transcriber_mod.AudioTranscriber()
+        assert remote.model_size == "openai/whisper-large-v3-turbo", remote.model_size
+    finally:
+        for key, value in original.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        config_mod.get_settings.cache_clear()
+        import app.services.transcriber as transcriber_mod
+
+        importlib.reload(transcriber_mod)
+    return "lokal pakai WHISPER_MODEL (small), remote pakai TRANSCRIPTION_MODEL"
+
+
 def main() -> int:
     # API key wajib ada agar cleanup_orphan_instances mau berjalan.
     if not (vw.settings.VAST_API_KEY or "").strip():
@@ -334,6 +373,7 @@ def main() -> int:
     check("boot timeout", test_boot_timeout)
     check("instance yatim dibersihkan", test_cleanup_orphans)
     check("konfigurasi PyWorker", test_pyworker_config)
+    check("model transkripsi per provider", test_transcriber_model_choice)
 
     print()
     for label, ok, detail in results:

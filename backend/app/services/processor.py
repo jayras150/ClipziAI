@@ -73,6 +73,19 @@ class VideoProcessor:
         await loop.run_in_executor(None, self._run_ffmpeg, cmd)
         return output_path
 
+    @staticmethod
+    def _escape_filter_path(path: str) -> str:
+        r"""Escape path agar aman sebagai opsi filter ffmpeg.
+
+        Filter ffmpeg memakai ``:`` sebagai pemisah opsi dan ``\`` sebagai escape.
+        Path Windows seperti ``C:\app\tmp\clip.srt`` karena itu rusak menjadi
+        ``Capptmpclip.srt`` sehingga ffmpeg gagal ("Unable to open ..."). Solusi:
+        pakai garis miring, escape ``:`` dan ``'``, lalu bungkus kutip tunggal.
+        """
+        text = str(path).replace("\\", "/")
+        text = text.replace(":", r"\:").replace("'", r"\'")
+        return f"'{text}'"
+
     async def burn_subtitle(
         self,
         input_path: str,
@@ -80,8 +93,8 @@ class VideoProcessor:
         output_path: str,
         style: str = "default",
     ) -> str:
-        vf_filter = f"subtitles={subtitle_path}"
-        
+        vf_filter = f"subtitles=filename={self._escape_filter_path(subtitle_path)}"
+
         cmd = [
             "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
             "-i", input_path,
@@ -91,7 +104,7 @@ class VideoProcessor:
             "-movflags", "+faststart",
             output_path,
         ]
-        
+
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, self._run_ffmpeg, cmd)
         return output_path

@@ -11,11 +11,27 @@ settings = get_settings()
 
 class AudioTranscriber:
     """Transcribe audio locally or through an OpenAI-compatible API."""
-    
+
     def __init__(self, model_size: Optional[str] = None):
         self.provider = (settings.TRANSCRIPTION_PROVIDER or "local").strip().lower()
-        self.model_size = model_size or settings.TRANSCRIPTION_MODEL or settings.WHISPER_MODEL
+        self.model_size = self._pick_model(model_size)
         self._model: Optional[Any] = None
+
+    def _pick_model(self, override: Optional[str]) -> str:
+        """Pilih nama model yang cocok dengan provider.
+
+        `TRANSCRIPTION_MODEL` adalah nama model **API** (mis.
+        `openai/whisper-large-v3-turbo`). Nama itu TIDAK bisa dipakai
+        faster-whisper lokal karena repo HF-nya tidak berisi `model.bin`
+        (error: "Unable to open file 'model.bin'"). Untuk provider lokal pakai
+        `WHISPER_MODEL` (nama faster-whisper: tiny/base/small/medium/large-v3).
+        """
+        fallback = settings.WHISPER_MODEL or "small"
+        if override:
+            return override
+        if self._is_local():
+            return fallback
+        return settings.TRANSCRIPTION_MODEL or fallback
 
     def _is_local(self) -> bool:
         return self.provider in {"local", "faster-whisper", "faster_whisper"}

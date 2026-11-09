@@ -218,18 +218,36 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                     if sliced:
                         srt_path = str(work_dir / f"clip_{index:02d}.srt")
                         transcriber.generate_srt(sliced, srt_path)
-                        burned = str(work_dir / f"clip_{index:02d}_sub.mp4")
-                        await processor.burn_subtitle(raw_clip, srt_path, burned)
-                        final_clip = burned
 
-                        srt_key = storage.generate_object_key(
-                            str(task.user_id),
-                            f"clip_{index:02d}.srt",
-                            folder=f"clips/{task.id}",
-                        )
-                        subtitle_url = storage.upload_bytes(
-                            Path(srt_path).read_bytes(), srt_key, "text/plain"
-                        )
+                        # Burn subtitle bersifat opsional: kalau ffmpeg gagal
+                        # (font/filter/path), klip tetap dikirim tanpa subtitle
+                        # alih-alih menggagalkan seluruh task.
+                        burned = str(work_dir / f"clip_{index:02d}_sub.mp4")
+                        try:
+                            await processor.burn_subtitle(raw_clip, srt_path, burned)
+                            final_clip = burned
+                        except Exception as exc:
+                            logger.warning(
+                                "Burn subtitle gagal (task %s klip %s): %s — "
+                                "klip dikirim tanpa subtitle",
+                                task.id,
+                                index,
+                                exc,
+                            )
+
+                        try:
+                            srt_key = storage.generate_object_key(
+                                str(task.user_id),
+                                f"clip_{index:02d}.srt",
+                                folder=f"clips/{task.id}",
+                            )
+                            subtitle_url = storage.upload_bytes(
+                                Path(srt_path).read_bytes(), srt_key, "text/plain"
+                            )
+                        except Exception as exc:
+                            logger.warning(
+                                "Upload SRT gagal (task %s klip %s): %s", task.id, index, exc
+                            )
 
                 clip_key = storage.generate_object_key(
                     str(task.user_id), f"clip_{index:02d}.mp4", folder=f"clips/{task.id}"

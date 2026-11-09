@@ -11,3 +11,11 @@
 #   WHISPER_MODEL=small        # tiny | base | small | medium | large-v3
 # =============================================================================
 faster-whisper>=0.9.0
+# PyAV WAJIB <15: mulai av 15 parameter `metadata_errors` dihapus, sedangkan
+# faster-whisper masih memanggil av.open(..., metadata_errors="ignore") sehingga
+# transkripsi gagal dengan "open() got an unexpected keyword argument
+# 'metadata_errors'". Catatan: wheel Windows untuk av 14.x tidak selalu tersedia
+# (pip akan mencoba build dari source dan butuh FFmpeg dev), jadi untuk mesin
+# Windows lebih praktis memakai TRANSCRIPTION_PROVIDER berbasis API (Groq /
+# OpenRouter / OpenAI) — sudah diverifikasi jalan (OpenRouter /audio/transcriptions).
+av<15
