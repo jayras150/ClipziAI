@@ -46,6 +46,22 @@ class VideoProcessor:
             }
             for start_time, end_time in scenes
         ]
+    @staticmethod
+    def _target_dimensions() -> tuple[int, int]:
+        """Resolusi output (lebar, tinggi) dari settings.OUTPUT_RESOLUTION.
+
+        Nilai dipaksa genap karena libx264 dengan yuv420p menolak dimensi ganjil.
+        """
+        raw = (settings.OUTPUT_RESOLUTION or "1080x1920").lower().replace(" ", "")
+        try:
+            width_str, height_str = raw.split("x", 1)
+            width, height = int(width_str), int(height_str)
+        except (ValueError, AttributeError):
+            width, height = 1080, 1920
+        if width <= 0 or height <= 0:
+            width, height = 1080, 1920
+        return width - (width % 2), height - (height % 2)
+
     async def smart_crop_9x16(
         self,
         input_path: str,
@@ -54,14 +70,33 @@ class VideoProcessor:
         duration: float = 60,
         face_detect: bool = True,
     ) -> str:
-        filter_complex = "crop=iw*9/16:ih"
-        
+        width, height = self._target_dimensions()
+
+        # Crop 9:16 yang benar untuk SEMUA bentuk sumber.
+        #
+        # Versi lama memakai "crop=iw*9/16:ih" yang hanya benar bila sumbernya
+        # 16:9. Untuk video vertikal (mis. YouTube Shorts 1080x1920) ekspresi itu
+        # memotong frame jadi ~607x1920 (rasio 0.32, bukan 0.5625) sehingga klip
+        # keluar sangat sempit (pernah terlihat 202x640).
+        #
+        # Di sini: ambil area 9:16 TERBESAR yang muat di dalam frame (center),
+        # dibulatkan ke angka genap, lalu scale ke resolusi target.
+        filter_chain = (
+            "crop="
+            "w='2*trunc(min(iw,ih*9/16)/2)':"
+            "h='2*trunc(min(ih,iw*16/9)/2)':"
+            "x='(iw-ow)/2':"
+            "y='(ih-oh)/2',"
+            f"scale={width}:{height}:flags=lanczos,"
+            "setsar=1"
+        )
+
         cmd = [
             "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
             "-ss", str(start_time),
             "-i", input_path,
             "-t", str(duration),
-            "-vf", filter_complex,
+            "-vf", filter_chain,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
             "-r", str(settings.OUTPUT_FPS),
             "-c:a", "aac", "-b:a", "128k",
