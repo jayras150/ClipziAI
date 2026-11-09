@@ -36,5 +36,6 @@
     "frontend/.next": true,
     "frontend/node_modules": true,
     "backend/.venv": true
-  }
+  },
+  "python.terminal.useEnvFile": true
 }

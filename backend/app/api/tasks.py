@@ -12,8 +12,10 @@ from uuid import UUID
 from app.api.deps import get_db_session, get_current_user
 from app.models.user import User
 from app.models.task import Task, TaskStatus
+from app.models.clip import Clip
 from app.models.user_profile import UserProfile
 from app.schemas.task import TaskCreate, TaskResponse, TaskListResponse
+from app.schemas.clip import ClipResponse
 from app.schemas.common import MessageResponse
 from app.services.vast_worker import dispatch_mode, submit_task
 
@@ -117,6 +119,48 @@ async def get_task(
         raise HTTPException(status_code=404, detail="Task not found")
     
     return task
+
+
+@router.get("/{task_id}/clips", response_model=List[ClipResponse])
+async def list_task_clips(
+    task_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Klip hasil pemrosesan sebuah task — dipakai dashboard untuk menampilkan hasil."""
+    result = await db.execute(select(Task).where(Task.id == task_id, Task.user_id == current_user.id))
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    clips_result = await db.execute(select(Clip).where(Clip.task_id == task.id).order_by(Clip.clip_index))
+    clips = clips_result.scalars().all()
+
+    return [
+        ClipResponse(
+            id=str(clip.id),
+            task_id=str(clip.task_id),
+            clip_index=clip.clip_index,
+            start_time=clip.start_time,
+            end_time=clip.end_time,
+            duration=clip.duration,
+            title=clip.title,
+            download_url=clip.download_url,
+            subtitle_url=clip.subtitle_url,
+            thumbnail_url=clip.thumbnail_url,
+            file_size=clip.file_size,
+            viral_score=clip.viral_score,
+            viral_factors=clip.viral_factors,
+            ai_suggested_title=clip.ai_suggested_title,
+            ai_suggested_description=clip.ai_suggested_description,
+            ai_suggested_tags=clip.ai_suggested_tags,
+            youtube_uploaded=clip.youtube_uploaded,
+            youtube_video_id=clip.youtube_video_id,
+            editing_applied=clip.editing_applied,
+            created_at=clip.created_at,
+        )
+        for clip in clips
+    ]
 
 
 @router.get("/", response_model=TaskListResponse)

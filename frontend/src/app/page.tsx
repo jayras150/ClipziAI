@@ -59,9 +59,28 @@ const STEPS = [
   },
 ]
 
+const CLIP_SAMPLES = [
+  { platform: "YouTube", mark: "YT", color: "#ff4632", score: 97, time: "0:42", gradient: "linear-gradient(160deg,#3a2b12,#141821 62%)" },
+  { platform: "Instagram", mark: "IG", color: "#e0508b", score: 99, time: "0:38", gradient: "linear-gradient(160deg,#2c1430,#141821 62%)" },
+  { platform: "LinkedIn", mark: "IN", color: "#3b8fd6", score: 97, time: "0:51", gradient: "linear-gradient(160deg,#10263a,#141821 62%)" },
+  { platform: "TikTok", mark: "TT", color: "#3ee0e0", score: 98, time: "0:29", gradient: "linear-gradient(160deg,#0e2a2e,#141821 62%)" },
+  { platform: "Facebook", mark: "FB", color: "#4a8ef0", score: 94, time: "0:47", gradient: "linear-gradient(160deg,#122036,#141821 62%)" },
+  { platform: "X", mark: "X", color: "#e7e9ee", score: 92, time: "0:33", gradient: "linear-gradient(160deg,#1d1f26,#141821 62%)" },
+]
+
+const STUDIO_PILLS = [
+  "✂ AI clipping",
+  "▤ AI captioning",
+  "▣ AI reframe 9:16",
+  "◉ Speaker focus",
+  "⌁ AI hook titles",
+  "↗ One-click export",
+]
+
 export default function LandingPage() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [fileName, setFileName] = useState("")
+  const [videoUrl, setVideoUrl] = useState("")
   const [year, setYear] = useState<number | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -78,6 +97,17 @@ export default function LandingPage() {
   }
 
   const closeMenu = () => setMenuOpen(false)
+
+  // Tombol "Get clips": kirim user ke dashboard (sudah login) atau register,
+  // sekalian membawa link yang ditempel agar dashboard bisa prefil.
+  const submitVideo = (event: React.FormEvent) => {
+    event.preventDefault()
+    const loggedIn = typeof window !== "undefined" && Boolean(localStorage.getItem("token"))
+    const target = loggedIn ? "/dashboard" : "/register"
+    const trimmed = videoUrl.trim()
+    const query = trimmed ? `?video_url=${encodeURIComponent(trimmed)}` : ""
+    window.location.href = `${target}${query}`
+  }
 
   return (
     <div className="landing">
@@ -110,22 +140,91 @@ export default function LandingPage() {
       </header>
 
       <main>
-        <section className="container hero" id="home">
-          <div>
-            <div className="eyebrow">
-              <span className="pulse" /> AI-powered video creation
+        <section className="container hero hero-v2" id="home">
+          <div className="studio-panel">
+            <div className="studio-top">
+              <span className="studio-badge">
+                <span className="pulse" /> AI clipping studio
+              </span>
+              <span className="studio-top-note">10s preview · real Clipzy AI output</span>
             </div>
+
+            {/* 1. VIDEO DI PALING ATAS */}
+            <div className="studio-video-frame">
+              <video
+                className="studio-video"
+                src="/media/hook.mp4"
+                autoPlay
+                muted
+                loop
+                playsInline
+                preload="auto"
+                aria-label="Clipzy AI preview clip"
+              />
+              <span className="studio-tag">
+                <strong>Your next viral moment</strong>
+                AI-selected highlight · 00:42
+              </span>
+              <span className="studio-score">SCORE 94.8</span>
+            </div>
+
+            {/* 2. INPUT BAR */}
+            <form className="studio-bar" onSubmit={submitVideo}>
+              <span className="studio-bar-icon" aria-hidden="true">
+                🔗
+              </span>
+              <input
+                className="studio-bar-input"
+                value={videoUrl}
+                onChange={(event) => setVideoUrl(event.target.value)}
+                placeholder="Drop a long video link and…"
+                aria-label="Video link"
+              />
+              <button type="submit" className="btn btn-gold studio-cta">
+                Get clips <span>→</span>
+              </button>
+            </form>
+            <p className="studio-bar-help">
+              Paste a YouTube, TikTok or Instagram link — clips come back captioned, scored and
+              reframed for every feed.
+            </p>
+
+            {/* 3. HASIL KLIP 9:16 */}
+            <div className="studio-clips">
+              {CLIP_SAMPLES.map((clip) => (
+                <div className="studio-clip" key={clip.platform}>
+                  <div className="studio-clip-thumb" style={{ backgroundImage: clip.gradient }}>
+                    <span className="studio-clip-badge" style={{ background: clip.color }}>
+                      {clip.mark}
+                    </span>
+                    <span className="studio-clip-time">{clip.time}</span>
+                    <span className="studio-clip-score">SCORE {clip.score}</span>
+                  </div>
+                  <span className="studio-clip-platform">{clip.platform}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* 4. PILLS FITUR */}
+            <div className="studio-pills">
+              {STUDIO_PILLS.map((pill) => (
+                <span className="studio-pill" key={pill}>
+                  {pill}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="hero-copy-block">
             <h1>
-              Long videos.
-              <br />
-              <span className="shine">Short moments.</span>
+              Long videos. <span className="shine">Short moments.</span>
               <br />
               Big impact.
             </h1>
             <p className="hero-copy">
-              Turn long videos into Shorts, Reels, and TikToks automatically. Clipzy AI finds the
-              best moments, writes the subtitles, and prepares every clip for publishing — in
-              minutes, not hours.
+              Turn long videos into Shorts, Reels, and TikToks automatically. Clipzy AI finds the best
+              moments, writes the subtitles, and prepares every clip for publishing — in minutes,
+              not hours.
             </p>
             <div className="hero-buttons">
               <Link href="/register" className="btn btn-gold">
@@ -142,56 +241,6 @@ export default function LandingPage() {
                 <i className="avatar" />
               </div>
               <span>5 free credits. No credit card required.</span>
-            </div>
-          </div>
-
-          <div className="hero-visual">
-            <div className="glow" />
-            <div className="app-window">
-              <div className="window-top">
-                <div className="dots">
-                  <i />
-                  <i />
-                  <i />
-                </div>
-                <span>CLIPZY STUDIO / PREVIEW</span>
-                <span>•••</span>
-              </div>
-          <div className="preview">
-                  <video
-                    className="preview-video"
-                    src="/media/hook.mp4"
-                    autoPlay
-                    muted
-                    loop
-                    playsInline
-                    preload="metadata"
-                    aria-label="Clipzy AI preview clip"
-                  />
-                  <div className="preview-label">
-                    <strong>Your next viral moment</strong>
-                    AI-selected highlight · 00:42
-                  </div>
-                </div>
-              <div className="timeline">
-                <div className="timeline-head">
-                  <span>GENERATED CLIPS</span>
-                  <span>4 clips found</span>
-                </div>
-                <div className="tracks">
-                  <div className="track" />
-                  <div className="track" />
-                  <div className="track" />
-                  <div className="track" />
-                </div>
-                <div className="progress">
-                  <span />
-                </div>
-              </div>
-            </div>
-            <div className="float-card">
-              AI HIGHLIGHT SCORE
-              <strong>94.8 / 100</strong>
             </div>
           </div>
         </section>
@@ -219,29 +268,7 @@ export default function LandingPage() {
 
 
 
-        <section className="section container showcase">
-          <div className="section-head center">
-            <div className="kicker">See it in action</div>
-            <h2>
-              One long video in.
-              <br />
-              Ready-to-post clips out.
-            </h2>
-            <p>A real Clipzy AI output: captions burned in, reframed to 9:16, ready to publish.</p>
-          </div>
-          <div className="showcase-frame">
-            <video
-              className="showcase-video"
-              src="/media/hook.mp4"
-              autoPlay
-              muted
-              loop
-              playsInline
-              preload="metadata"
-              aria-label="Clipzy AI result preview"
-            />
-          </div>
-        </section>
+        
 
         <section className="section container how" id="how">
           <div className="section-head">

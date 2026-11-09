@@ -920,3 +920,258 @@
   background: #0b0c10;
 }
 
+/* =============================================================================
+   Hero v2 — video di paling atas, input bar, grid klip 9:16, pills fitur.
+   Struktur mengikuti pola landing page OpusClip.
+   ============================================================================= */
+.landing .hero-v2 {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 56px;
+  padding: 44px 0 92px;
+}
+.landing .studio-panel {
+  width: 100%;
+  max-width: 1040px;
+  border-radius: 28px;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(244, 199, 107, 0.07), transparent 55%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.012));
+  box-shadow: 0 40px 120px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  padding: 18px 18px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.landing .studio-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11.5px;
+  color: #8d909c;
+  padding: 2px 6px;
+}
+.landing .studio-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(244, 199, 107, 0.28);
+  background: rgba(244, 199, 107, 0.07);
+  color: #f4d99a;
+}
+.landing .studio-top-note {
+  color: #7d818d;
+}
+.landing .studio-video-frame {
+  position: relative;
+  width: min(720px, 100%);
+  margin: 4px auto 0;
+  aspect-ratio: 16 / 9;
+  border-radius: 20px;
+  overflow: hidden;
+  background: #0b0c10;
+  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(244, 199, 107, 0.12);
+}
+.landing .studio-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.landing .studio-tag {
+  position: absolute;
+  left: 14px;
+  bottom: 12px;
+  font-size: 11px;
+  color: #fff;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.8);
+}
+.landing .studio-tag strong {
+  display: block;
+  font-size: 13.5px;
+  margin-bottom: 2px;
+}
+.landing .studio-score {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(9, 10, 13, 0.66);
+  border: 1px solid rgba(244, 199, 107, 0.4);
+  color: #f4d99a;
+}
+.landing .studio-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(720px, 100%);
+  margin: 0 auto;
+  padding: 7px 7px 7px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(10, 11, 15, 0.9);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.landing .studio-bar-icon {
+  font-size: 14px;
+  opacity: 0.75;
+}
+.landing .studio-bar-input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  outline: none;
+  color: var(--text);
+  font-size: 14px;
+  padding: 10px 0;
+  font-family: inherit;
+}
+.landing .studio-bar-input::placeholder {
+  color: #787c88;
+}
+.landing .studio-cta {
+  border-radius: 999px;
+  padding: 11px 22px;
+  flex: 0 0 auto;
+}
+.landing .studio-bar-help {
+  text-align: center;
+  font-size: 12px;
+  color: #7c808c;
+  margin-top: -6px;
+}
+.landing .studio-clips {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  width: min(880px, 100%);
+  margin: 0 auto;
+}
+.landing .studio-clip {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.landing .studio-clip-thumb {
+  position: relative;
+  aspect-ratio: 9 / 16;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+}
+.landing .studio-clip-badge {
+  position: absolute;
+  left: 7px;
+  top: 7px;
+  width: 20px;
+  height: 20px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  font: 700 9px/1 var(--font-space), "Space Grotesk", sans-serif;
+  color: #0b0c10;
+  letter-spacing: 0.02em;
+}
+.landing .studio-clip-time {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  font-size: 9.5px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #e9eaf0;
+}
+.landing .studio-clip-score {
+  position: absolute;
+  left: 7px;
+  bottom: 7px;
+  font-size: 9px;
+  letter-spacing: 0.03em;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(244, 199, 107, 0.16);
+  color: #f4d99a;
+}
+.landing .studio-clip-platform {
+  text-align: center;
+  font-size: 10.5px;
+  color: #84889a;
+}
+.landing .studio-pills {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 2px;
+}
+.landing .studio-pill {
+  font-size: 12px;
+  color: #d8dae1;
+  padding: 8px 15px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+}
+.landing .hero-copy-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 18px;
+  max-width: 800px;
+}
+.landing .hero-copy-block h1 {
+  font-size: clamp(30px, 4.4vw, 52px);
+  line-height: 1.07;
+  letter-spacing: -0.02em;
+}
+.landing .hero-copy-block .hero-copy {
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.7;
+  max-width: 620px;
+}
+.landing .hero-copy-block .hero-buttons {
+  justify-content: center;
+}
+.landing .hero-copy-block .hero-note {
+  justify-content: center;
+}
+@media (max-width: 900px) {
+  .landing .studio-clips {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .landing .studio-top-note {
+    display: none;
+  }
+}
+@media (max-width: 560px) {
+  .landing .studio-clips {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .landing .studio-bar {
+    flex-wrap: wrap;
+    border-radius: 22px;
+    padding: 12px;
+  }
+  .landing .studio-cta {
+    width: 100%;
+  }
+  .landing .hero-v2 {
+    gap: 40px;
+    padding: 28px 0 70px;
+  }
+}
+
+

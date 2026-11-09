@@ -28,6 +28,62 @@ export interface YouTubeDiagnostics {
   hint: string | null
 }
 
+export interface TaskData {
+  id: string
+  user_id: string
+  source_url: string
+  source_type: string
+  status: string
+  progress: number
+  total_clips: number | null
+  error_message: string | null
+  auto_upload_youtube: boolean
+  youtube_upload_status: string | null
+  youtube_video_id: string | null
+  youtube_video_url: string | null
+  credits_spent: number
+  created_at: string
+  completed_at: string | null
+}
+
+export interface TaskListData {
+  tasks: TaskData[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface ClipData {
+  id: string
+  task_id: string
+  clip_index: number
+  start_time: string
+  end_time: string
+  duration: number
+  title: string
+  download_url: string | null
+  subtitle_url: string | null
+  thumbnail_url: string | null
+  file_size: number | null
+  viral_score: number | null
+  ai_suggested_title: string | null
+  ai_suggested_description: string | null
+  ai_suggested_tags: string[] | null
+  youtube_uploaded: boolean
+  youtube_video_id: string | null
+}
+
+/** Tebak jenis sumber dari URL agar backend menyiapkan pipeline yang tepat. */
+export function detectSourceType(url: string): string {
+  const lower = url.toLowerCase()
+  if (lower.includes("youtube.com") || lower.includes("youtu.be")) return "youtube"
+  if (lower.includes("tiktok.com")) return "tiktok"
+  if (lower.includes("instagram.com")) return "instagram"
+  if (lower.includes("facebook.com") || lower.includes("fb.watch")) return "facebook"
+  if (lower.includes("twitter.com") || lower.includes("x.com")) return "twitter"
+  return "direct"
+}
+
 export class ApiClient {
   private client: AxiosInstance
 
@@ -119,6 +175,43 @@ export class ApiClient {
     payload: { new_password: string; current_password?: string },
   ): Promise<{ message: string }> {
     const response = await this.client.put<{ message: string }>("/api/users/password", payload, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return response.data
+  }
+
+  async createTask(token: string, sourceUrl: string): Promise<TaskData> {
+    const response = await this.client.post<TaskData>(
+      "/api/tasks/",
+      { source_url: sourceUrl, source_type: detectSourceType(sourceUrl) },
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    return response.data
+  }
+
+  async listTasks(token: string, pageSize = 20): Promise<TaskListData> {
+    const response = await this.client.get<TaskListData>(`/api/tasks/?page=1&page_size=${pageSize}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return response.data
+  }
+
+  async getTask(token: string, taskId: string): Promise<TaskData> {
+    const response = await this.client.get<TaskData>(`/api/tasks/${taskId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return response.data
+  }
+
+  async getTaskClips(token: string, taskId: string): Promise<ClipData[]> {
+    const response = await this.client.get<ClipData[]>(`/api/tasks/${taskId}/clips`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return response.data
+  }
+
+  async deleteTask(token: string, taskId: string): Promise<{ message: string }> {
+    const response = await this.client.delete<{ message: string }>(`/api/tasks/${taskId}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
     return response.data
