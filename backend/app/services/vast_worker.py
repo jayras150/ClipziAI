@@ -166,9 +166,17 @@ def _oneshot_onstart(task_id: UUID) -> str:
 
 
 async def _pick_offer(client: Any) -> Dict[str, Any]:
-    """Cari offer GPU termurah yang memenuhi filter & batas harga."""
+    """Cari offer GPU termurah yang memenuhi filter & batas harga.
+
+    Penting: `search_offers` mengembalikan offer sesuai urutan yang diminta.
+    Dengan urutan "score-" hanya 20 offer teratas yang dinilai bagus — offer
+    termurah bisa TIDAK ikut terbawa. Karena itu kita minta urutan harga naik
+    (`dph_total+`) dan ambil lebih banyak, lalu tetap sortir lokal.
+    """
     query = (settings.VAST_GPU_FILTER or "").strip()
-    offers = await asyncio.to_thread(client.search_offers, query, "on-demand", "score-", 20)
+    offers = await asyncio.to_thread(client.search_offers, query, "on-demand", "dph_total+", 100)
+    if not offers:  # fallback: sebagian versi SDK memakai nama urutan lain
+        offers = await asyncio.to_thread(client.search_offers, query, "on-demand", "score-", 100)
     if not offers:
         raise RuntimeError(f"tidak ada offer GPU untuk filter: {query}")
 

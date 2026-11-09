@@ -191,6 +191,9 @@ def test_dispatch_and_reaper():
     client = FakeClient(OFFERS)
     vw._get_vast_client = lambda: client
     vw.settings.VAST_ONESHOT_REAP_INTERVAL = 0
+    # Uji harus mandiri dari isi backend/.env: matikan plafon harga sementara.
+    original_cap = vw.settings.VAST_ONESHOT_MAX_PRICE
+    vw.settings.VAST_ONESHOT_MAX_PRICE = 0
     dbs.AsyncSessionLocal = lambda: FakeSession("COMPLETED")
 
     async def flow():
@@ -199,7 +202,10 @@ def test_dispatch_and_reaper():
             await asyncio.sleep(0.02)
         return result
 
-    result = asyncio.run(flow())
+    try:
+        result = asyncio.run(flow())
+    finally:
+        vw.settings.VAST_ONESHOT_MAX_PRICE = original_cap
     assert result["mode"] == "oneshot", result
     assert result["instance_id"] == 43832, result
     assert client.created[0][0] == 2, client.created
