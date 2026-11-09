@@ -375,7 +375,9 @@ export default function DashboardPage() {
               Paste a video link and Clipzy AI will pick the best moments, caption them, and crop to 9:16.
             </p>
 
-            <form onSubmit={submitUrl}>
+            {/* noValidate: validasi dilakukan sendiri di submitUrl supaya pesan
+                error konsisten berbahasa Inggris (bukan tooltip bawaan browser). */}
+            <form onSubmit={submitUrl} noValidate>
               <label className="ui-label" htmlFor="video-url">
                 Video URL
               </label>
