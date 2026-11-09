@@ -96,6 +96,15 @@ export default function DashboardPage() {
   const [aspectRatioValue, setAspectRatioValue] = useState("9:16")
   const [captionTextValue, setCaptionTextValue] = useState("")
   const [speedValue, setSpeedValue] = useState("1.0")
+  // Fase 2: gaya & polish
+  const [filterPreset, setFilterPreset] = useState("none")
+  const [blurFill, setBlurFill] = useState(false)
+  const [trimSilence, setTrimSilence] = useState(false)
+  const [cleanAudio, setCleanAudio] = useState(false)
+  const [watermarkUrl, setWatermarkUrl] = useState("")
+  const [watermarkPosition, setWatermarkPosition] = useState("bottom-right")
+  const [introUrl, setIntroUrl] = useState("")
+  const [outroUrl, setOutroUrl] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [taskError, setTaskError] = useState("")
   const [notice, setNotice] = useState("")
@@ -255,6 +264,21 @@ export default function DashboardPage() {
       if (aspectRatioValue) editingOptions.aspect_ratio = aspectRatioValue
       if (caption) editingOptions.caption_text = caption
       if (!Number.isNaN(speed) && speed !== 1) editingOptions.speed = speed
+
+      // Fase 2: gaya & polish
+      if (filterPreset && filterPreset !== "none") editingOptions.filter_preset = filterPreset
+      if (blurFill) editingOptions.blur_fill = true
+      if (trimSilence) editingOptions.remove_silence = true
+      if (cleanAudio) editingOptions.enhance_audio = true
+      const watermark = watermarkUrl.trim()
+      if (watermark) {
+        editingOptions.watermark_url = watermark
+        editingOptions.watermark_position = watermarkPosition
+      }
+      const intro = introUrl.trim()
+      if (intro) editingOptions.intro_url = intro
+      const outro = outroUrl.trim()
+      if (outro) editingOptions.outro_url = outro
 
       const task = await api.createTask(stored, url, editingOptions)
       setUrlValue("")
@@ -493,6 +517,85 @@ export default function DashboardPage() {
                     <option value="4">4×</option>
                   </select>
                 </div>
+                {/* Opsi lanjutan (Fase 2) */}
+                <details style={{ marginBottom: 10 }}>
+                  <summary style={{ cursor: "pointer", fontSize: 13, color: "#9b9eaa", marginBottom: 8 }}>
+                    Opsi editing lanjutan
+                  </summary>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa" }}>Filter</label>
+                    <select
+                      id="filter-preset"
+                      value={filterPreset}
+                      onChange={(e) => setFilterPreset(e.target.value)}
+                      className="ui-input"
+                      style={{ width: 110, padding: "6px 8px", fontSize: 13, background: "#171a22", color: "#f5f5f2", border: "1px solid var(--ui-line)" }}
+                    >
+                      <option value="none">none</option>
+                      <option value="warm">warm</option>
+                      <option value="cool">cool</option>
+                      <option value="cinematic">cinematic</option>
+                      <option value="bw">b&amp;w</option>
+                      <option value="vibrant">vibrant</option>
+                      <option value="vintage">vintage</option>
+                    </select>
+                    <label style={{ fontSize: 12, color: "#c9cbd4", display: "flex", gap: 6, alignItems: "center" }}>
+                      <input type="checkbox" id="blur-fill" checked={blurFill} onChange={(e) => setBlurFill(e.target.checked)} />
+                      Blur-fill background
+                    </label>
+                    <label style={{ fontSize: 12, color: "#c9cbd4", display: "flex", gap: 6, alignItems: "center" }}>
+                      <input type="checkbox" id="trim-silence" checked={trimSilence} onChange={(e) => setTrimSilence(e.target.checked)} />
+                      Buang jeda (jump cuts)
+                    </label>
+                    <label style={{ fontSize: 12, color: "#c9cbd4", display: "flex", gap: 6, alignItems: "center" }}>
+                      <input type="checkbox" id="clean-audio" checked={cleanAudio} onChange={(e) => setCleanAudio(e.target.checked)} />
+                      Perbaiki audio
+                    </label>
+                    <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa" }}>Watermark PNG</label>
+                    <input
+                      id="watermark-url"
+                      type="url"
+                      placeholder="https://.../logo.png"
+                      value={watermarkUrl}
+                      onChange={(e) => setWatermarkUrl(e.target.value)}
+                      className="ui-input"
+                      style={{ width: 180, padding: "6px 8px", fontSize: 13 }}
+                    />
+                    <select
+                      id="watermark-position"
+                      value={watermarkPosition}
+                      onChange={(e) => setWatermarkPosition(e.target.value)}
+                      className="ui-input"
+                      style={{ width: 120, padding: "6px 8px", fontSize: 13, background: "#171a22", color: "#f5f5f2", border: "1px solid var(--ui-line)" }}
+                    >
+                      <option value="top-left">kiri atas</option>
+                      <option value="top-right">kanan atas</option>
+                      <option value="bottom-left">kiri bawah</option>
+                      <option value="bottom-right">kanan bawah</option>
+                      <option value="center">tengah</option>
+                    </select>
+                    <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa" }}>Intro URL</label>
+                    <input
+                      id="intro-url"
+                      type="url"
+                      placeholder="https://.../intro.mp4"
+                      value={introUrl}
+                      onChange={(e) => setIntroUrl(e.target.value)}
+                      className="ui-input"
+                      style={{ width: 160, padding: "6px 8px", fontSize: 13 }}
+                    />
+                    <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa" }}>Outro URL</label>
+                    <input
+                      id="outro-url"
+                      type="url"
+                      placeholder="https://.../outro.mp4"
+                      value={outroUrl}
+                      onChange={(e) => setOutroUrl(e.target.value)}
+                      className="ui-input"
+                      style={{ width: 160, padding: "6px 8px", fontSize: 13 }}
+                    />
+                  </div>
+                </details>
                 <button type="submit" className="ui-btn ui-btn-gold" disabled={submitting}>
                   {submitting ? <LoaderCircle size={15} className="animate-spin" /> : <Play size={15} />}
                   {submitting ? "Starting…" : "Process"}

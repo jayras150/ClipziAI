@@ -42,6 +42,24 @@ def _fmt_hms(seconds: float) -> str:
     return f"{total // 3600:02d}:{(total % 3600) // 60:02d}:{total % 60:02d}"
 
 
+async def _download_asset(url: str, dest: str) -> str:
+    """Unduh aset pendukung (logo/intro/outro/musik) ke folder kerja."""
+    import httpx
+
+    async with httpx.AsyncClient(timeout=180, follow_redirects=True) as client:
+        response = await client.get(url)
+        response.raise_for_status()
+        Path(dest).write_bytes(response.content)
+    return dest
+
+
+def _ext_from_url(url: str, default: str = "mp4") -> str:
+    """Ambil ekstensi file dari URL (untuk penamaan aset sementara)."""
+    path = str(url).split("?")[0].rstrip("/")
+    tail = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+    return tail if tail and len(tail) <= 5 and tail.isalnum() else default
+
+
 async def _set_progress(db, task: Task, percent: int) -> None:
     task.progress = max(0, min(100, int(percent)))
     await db.commit()
@@ -150,6 +168,17 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
         aspect_ratio = str(options.get("aspect_ratio", "9:16"))
         caption_text = options.get("caption_text")
         speed = float(options.get("speed", 1.0) or 1.0)
+        # ---------- Fase 2: gaya & polish ----------
+        filter_preset = options.get("filter_preset")
+        blur_fill = bool(options.get("blur_fill", False))
+        trim_silence = bool(options.get("remove_silence", False))
+        clean_audio = bool(options.get("enhance_audio", False))
+        watermark_url = options.get("watermark_url")
+        watermark_position = str(options.get("watermark_position", "bottom-right"))
+        watermark_opacity = float(options.get("watermark_opacity", 0.85) or 0.85)
+        watermark_scale = float(options.get("watermark_scale", 0.16) or 0.16)
+        intro_url = options.get("intro_url")
+        outro_url = options.get("outro_url")
 
         try:
             # 1) Unduh sumber (memakai cookie pool bila ada)
@@ -225,16 +254,29 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
             total = len(ranges)
             for index, (start, duration) in enumerate(ranges, 1):
                 raw_clip = str(work_dir / f"clip_{index:02d}_raw.mp4")
-                await processor.smart_crop_aspect(
+                await processor.render_clip(
                     video_path,
                     raw_clip,
                     start_time=start,
                     duration=duration,
                     aspect_ratio=aspect_ratio,
+                    filter_preset=filter_preset,
+                    blur_fill=blur_fill,
                 )
 
                 final_clip = raw_clip
                 subtitle_url: Optional[str] = None
+
+                # Buang jeda/senyap (jump cuts) sebelum efek berikutnya.
+                if trim_silence:
+                    silenced = str(work_dir / f"clip_{index:02d}_silence.mp4")
+                    try:
+                        await processor.remove_silence(final_clip, silenced)
+                        final_clip = silenced
+                    except Exception as exc:
+                        logger.warning(
+                            "Remove silence gagal (task %s klip %s): %s", task.id, index, exc
+                        )
                 if burn_subtitle and segments:
                     sliced = _slice_segments(segments, start, start + duration)
                     if sliced:
@@ -300,6 +342,64 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                             task.id,
                             index,
                             exc,
+                        )
+
+                # ---------- Watermark / logo ----------
+                if watermark_url:
+                    try:
+                        wm_path = str(work_dir / f"clip_{index:02d}_wm.{_ext_from_url(watermark_url, 'png')}")
+                        await _download_asset(str(watermark_url), wm_path)
+                        stamped = str(work_dir / f"clip_{index:02d}_wm.mp4")
+                        await processor.overlay_image(
+                            final_clip,
+                            wm_path,
+                            stamped,
+                            position=watermark_position,
+                            scale=watermark_scale,
+                            opacity=watermark_opacity,
+                        )
+                        final_clip = stamped
+                    except Exception as exc:
+                        logger.warning(
+                            "Watermark gagal (task %s klip %s): %s", task.id, index, exc
+                        )
+
+                # ---------- Perbaikan audio (denoise + loudnorm) ----------
+                if clean_audio:
+                    try:
+                        clean_path = str(work_dir / f"clip_{index:02d}_audio.mp4")
+                        await processor.enhance_audio(final_clip, clean_path)
+                        final_clip = clean_path
+                    except Exception as exc:
+                        logger.warning(
+                            "Enhance audio gagal (task %s klip %s): %s", task.id, index, exc
+                        )
+
+                # ---------- Intro / outro ----------
+                if intro_url or outro_url:
+                    try:
+                        pieces: List[str] = []
+                        if intro_url:
+                            intro_path = str(
+                                work_dir / f"intro_{index:02d}.{_ext_from_url(intro_url)}"
+                            )
+                            await _download_asset(str(intro_url), intro_path)
+                            pieces.append(intro_path)
+                        pieces.append(final_clip)
+                        if outro_url:
+                            outro_path = str(
+                                work_dir / f"outro_{index:02d}.{_ext_from_url(outro_url)}"
+                            )
+                            await _download_asset(str(outro_url), outro_path)
+                            pieces.append(outro_path)
+
+                        joined = str(work_dir / f"clip_{index:02d}_joined.mp4")
+                        out_w, out_h = processor._dimensions_for_ratio(aspect_ratio)
+                        await processor.concat_videos(pieces, joined, width=out_w, height=out_h)
+                        final_clip = joined
+                    except Exception as exc:
+                        logger.warning(
+                            "Intro/outro gagal (task %s klip %s): %s", task.id, index, exc
                         )
 
                 clip_key = storage.generate_object_key(

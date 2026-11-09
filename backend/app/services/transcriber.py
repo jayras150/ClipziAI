@@ -124,7 +124,7 @@ class AudioTranscriber:
             "language": info.language,
             "language_probability": info.language_probability,
             "duration": info.duration,
-            "segments": segments,
+            "segments": self._split_long_segments(segments),
             "full_text": " ".join(seg.get("text", "") for seg in segments),
         }
 
@@ -212,9 +212,74 @@ class AudioTranscriber:
             "language": payload.get("language") or language,
             "language_probability": None,
             "duration": payload.get("duration"),
-            "segments": segments,
+            "segments": self._split_long_segments(segments),
             "full_text": full_text.strip(),
         }
+
+    @staticmethod
+    def _split_long_segments(
+        segments: List[Dict[str, Any]],
+        max_chars: int = 42,
+        max_duration: float = 5.0,
+    ) -> List[Dict[str, Any]]:
+        """
+        Pecah segmen yang terlalu panjang agar caption vertikal mudah dibaca.
+
+        Provider kadang mengembalikan satu segmen untuk seluruh audio (12 detik
+        berisi beberapa kalimat). Satu blok besar terlihat buruk saat dibakar ke
+        video, jadi tiap segmen dipecah per ~42 karakter dengan timing
+        proporsional terhadap panjang teks.
+        """
+        output: List[Dict[str, Any]] = []
+
+        for segment in segments:
+            text = (segment.get("text") or "").strip()
+            try:
+                start = float(segment.get("start") or 0)
+                end = float(segment.get("end") or 0)
+            except (TypeError, ValueError):
+                start, end = 0.0, 0.0
+
+            if not text:
+                continue
+
+            duration = max(0.001, end - start)
+            if len(text) <= max_chars and duration <= max_duration:
+                output.append({**segment, "id": len(output), "text": text})
+                continue
+
+            chunks: List[str] = []
+            current: List[str] = []
+            for word in text.split():
+                current.append(word)
+                if len(" ".join(current)) >= max_chars * 0.75:
+                    chunks.append(" ".join(current))
+                    current = []
+            if current:
+                chunks.append(" ".join(current))
+            if not chunks:
+                chunks = [text]
+
+            weights = [max(1, len(chunk)) for chunk in chunks]
+            total_weight = sum(weights)
+            cursor = start
+
+            for chunk, weight in zip(chunks, weights):
+                span = duration * weight / total_weight
+                chunk_start = cursor
+                chunk_end = min(end, cursor + span)
+                output.append(
+                    {
+                        "id": len(output),
+                        "start": round(chunk_start, 3),
+                        "end": round(chunk_end, 3),
+                        "text": chunk,
+                        "words": [],
+                    }
+                )
+                cursor = chunk_end
+
+        return output
 
     @staticmethod
     def _audio_duration(audio_path: str) -> float:

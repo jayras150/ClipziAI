@@ -35,6 +35,21 @@ class TaskCreate(BaseModel):
     speed: Optional[float] = Field(
         1.0, ge=0.25, le=4.0, description="Kecepatan pemutaran (0.25x - 4x)"
     )
+    # ---------- Fase 2: gaya & polish ----------
+    filter_preset: Optional[str] = Field(
+        None, description="warm | cool | cinematic | bw | vibrant | vintage"
+    )
+    blur_fill: bool = Field(
+        False, description="Sumber landscape diisi background blur (tidak dipotong habis)"
+    )
+    remove_silence: bool = Field(False, description="Buang jeda/senyap (jump cuts)")
+    enhance_audio: bool = Field(False, description="Denoise + normalisasi loudness")
+    watermark_url: Optional[str] = Field(None, description="URL PNG logo/watermark")
+    watermark_position: str = Field("bottom-right", description="top-left|top-right|bottom-left|bottom-right|center")
+    watermark_opacity: float = Field(0.85, ge=0.1, le=1.0)
+    watermark_scale: float = Field(0.16, ge=0.05, le=0.6)
+    intro_url: Optional[str] = Field(None, description="Video intro yang ditempel di awal")
+    outro_url: Optional[str] = Field(None, description="Video outro yang ditempel di akhir")
 
 
 class TaskResponse(BaseModel):

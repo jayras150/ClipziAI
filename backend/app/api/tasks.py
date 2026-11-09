@@ -72,6 +72,25 @@ async def create_task(
     if task_data.speed != 1.0:
         editing_options["speed"] = task_data.speed
 
+    # ---------- Fase 2: gaya & polish ----------
+    if task_data.filter_preset:
+        editing_options["filter_preset"] = task_data.filter_preset
+    if task_data.blur_fill:
+        editing_options["blur_fill"] = True
+    if task_data.remove_silence:
+        editing_options["remove_silence"] = True
+    if task_data.enhance_audio:
+        editing_options["enhance_audio"] = True
+    if task_data.watermark_url:
+        editing_options["watermark_url"] = task_data.watermark_url
+        editing_options["watermark_position"] = task_data.watermark_position
+        editing_options["watermark_opacity"] = task_data.watermark_opacity
+        editing_options["watermark_scale"] = task_data.watermark_scale
+    if task_data.intro_url:
+        editing_options["intro_url"] = task_data.intro_url
+    if task_data.outro_url:
+        editing_options["outro_url"] = task_data.outro_url
+
     # Create task
     task = Task(
         user_id=current_user.id,
