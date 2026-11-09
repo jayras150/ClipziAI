@@ -283,7 +283,7 @@ select.ui-input option {
 .ui-opt-grid {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 .ui-opt {
   display: flex;
