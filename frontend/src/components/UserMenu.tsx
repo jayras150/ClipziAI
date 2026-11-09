@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { CreditCard, LayoutDashboard, LogOut, User } from "lucide-react"
+import { CreditCard, LayoutDashboard, LogOut } from "lucide-react"
 
 import { api, UserProfileData } from "@/lib/api"
 
@@ -97,9 +97,6 @@ export default function UserMenu() {
           </div>
           <Link className="ui-dropdown-item" href="/dashboard" role="menuitem" onClick={() => setOpen(false)}>
             <LayoutDashboard size={15} /> Dashboard
-          </Link>
-          <Link className="ui-dropdown-item" href="/profile" role="menuitem" onClick={() => setOpen(false)}>
-            <User size={15} /> Profile
           </Link>
           <Link className="ui-dropdown-item" href="/pricing" role="menuitem" onClick={() => setOpen(false)}>
             <CreditCard size={15} /> Pricing

@@ -265,7 +265,10 @@ export default function ProfilePage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+            // 2 kolom di desktop (kartu kanan mengisi ruang kosong), 1 kolom di
+            // mobile. Sebelumnya minmax(320px) membuat 3 kolom sempit sehingga
+            // kartu "Security" jatuh sendirian dan menyisakan area kosong besar.
+            gridTemplateColumns: "repeat(auto-fit, minmax(430px, 1fr))",
             gap: 16,
             alignItems: "start",
           }}
