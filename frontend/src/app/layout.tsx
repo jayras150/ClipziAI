@@ -2,15 +2,31 @@
 // NEXT_PUBLIC_API_URL dibaca saat runtime oleh klien melalui /runtime-env.js
 // yang ditulis oleh frontend/docker-entrypoint.sh ketika container start.
 import type { Metadata } from "next"
-import { Inter } from "next/font/google"
+import { DM_Sans, Space_Grotesk } from "next/font/google"
 import Script from "next/script"
 import "./globals.css"
+import "./landing.css"
 
-const inter = Inter({ subsets: ["latin"] })
+// Font landing page (desain: DM Sans untuk teks, Space Grotesk untuk judul).
+// Diekspos sebagai CSS variable agar bisa dipakai di landing.css.
+const dmSans = DM_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-dm",
+  display: "swap",
+})
+
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-space",
+  display: "swap",
+})
 
 export const metadata: Metadata = {
-  title: "Clipzi AI - Turn Long Videos into Viral Shorts",
-  description: "Clipzi AI automatically transcribes, detects viral hooks, frames speakers in 9:16, and burns animated captions in seconds.",
+  title: "Clipzy AI — Create More. Edit Less.",
+  description:
+    "Clipzy AI — Ubah video panjang menjadi konten pendek yang siap viral dengan bantuan AI.",
 }
 
 export default function RootLayout({
@@ -19,8 +35,8 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="id">
-      <body className={inter.className}>
+    <html lang="id" className={`${dmSans.variable} ${spaceGrotesk.variable}`}>
+      <body className={dmSans.className}>
         {/* Konfigurasi runtime (NEXT_PUBLIC_API_URL) dimuat sebelum bundle klien */}
         <Script src="/runtime-env.js" strategy="beforeInteractive" />
         {children}
