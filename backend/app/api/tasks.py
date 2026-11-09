@@ -75,6 +75,10 @@ async def create_task(
         editing_options["aspect_ratio"] = task_data.aspect_ratio
     if task_data.caption_text:
         editing_options["caption_text"] = task_data.caption_text
+    # Gaya subtitle juga berguna tanpa caption manual karena ikut menata
+    # subtitle SRT yang dibakar dari transkrip.
+    if task_data.caption_style:
+        editing_options["caption_style"] = task_data.caption_style
     if task_data.speed != 1.0:
         editing_options["speed"] = task_data.speed
 

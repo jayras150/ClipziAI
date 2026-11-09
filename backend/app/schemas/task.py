@@ -32,6 +32,13 @@ class TaskCreate(BaseModel):
     caption_text: Optional[str] = Field(
         None, max_length=200, description="Teks caption yang dibakar ke setiap klip"
     )
+    caption_style: Optional[str] = Field(
+        None,
+        description=(
+            "Gaya subtitle: classic | gold | boxed | neon | top | center "
+            "(lihat CAPTION_STYLES di services/processor.py)"
+        ),
+    )
     speed: Optional[float] = Field(
         1.0, ge=0.25, le=4.0, description="Kecepatan pemutaran (0.25x - 4x)"
     )
