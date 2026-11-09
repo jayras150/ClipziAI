@@ -3,8 +3,10 @@ Video Processor Service - FFmpeg, PySceneDetect, smart crop, burn subtitle
 """
 import os
 import asyncio
+import functools
+import re
 import subprocess
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 from uuid import uuid4
 
@@ -388,10 +390,18 @@ class VideoProcessor:
             enable = f":enable='lte(t,{float(end)})'"
 
         alpha = max(0.0, min(1.0, float(opacity)))
+
+        # Lebar logo dihitung langsung dalam piksel dari ukuran video (dibaca via
+        # ffprobe). Ini lebih deterministik daripada scale2ref: tidak ada
+        # ketergantungan urutan label stream yang mudah tertukar.
+        info = await self.get_video_info(input_path)
+        target_w = max(24, int(round(float(info.get("width") or 1080) * float(scale))))
+        target_w += target_w % 2  # lebar genap agar aman untuk yuv420p
+
         filter_complex = (
-            f"[1:v]format=rgba,colorchannelmixer=aa={alpha}[wm];"
-            f"[0:v][wm]scale2ref=w=main_w*{float(scale)}:h=ow/mdar[wm2][base];"
-            f"[base][wm2]overlay={pos}{enable}[v]"
+            f"[1:v]format=rgba,scale={target_w}:-2,"
+            f"colorchannelmixer=aa={alpha}[wm];"
+            f"[0:v][wm]overlay={pos}{enable}[v]"
         )
 
         cmd = [
@@ -536,17 +546,83 @@ class VideoProcessor:
         self,
         input_path: str,
         output_path: str,
-        min_silence_duration: float = 1.0,
+        min_silence_duration: float = 0.6,
+        noise_db: int = -35,
     ) -> str:
+        """
+        Buang jeda/senyap termasuk di TENGAH klip (jump cuts), video & audio
+        tetap sinkron.
+
+        Implementasi lama memakai `silenceremove` + `-c:v copy`: hanya senyap di
+        awal yang terpotong, dan video tidak ikut dipotong sehingga audio jadi
+        tidak sinkron. Versi ini:
+          1. deteksi interval senyap dengan filter `silencedetect`
+          2. hitung interval yang dipertahankan (komplemen)
+          3. render ulang dengan trim + concat untuk video DAN audio
+        """
+        loop = asyncio.get_event_loop()
+        # capture_output=True wajib: tanpa itu stderr tidak ditangkap sehingga
+        # daftar interval senyap selalu kosong dan fungsi ini tidak memotong apa pun.
+        probe_runner = functools.partial(subprocess.run, capture_output=True, text=True)
+        probe = await loop.run_in_executor(
+            None,
+            probe_runner,
+            [
+                "ffmpeg", "-hide_banner", "-nostdin", "-i", input_path,
+                "-af", f"silencedetect=noise={noise_db}dB:d={min_silence_duration}",
+                "-f", "null", "-",
+            ],
+        )
+        stderr = probe.stderr or ""
+
+        starts = [float(m) for m in re.findall(r"silence_start:\s*(-?[\d.]+)", stderr)]
+        ends = [float(m) for m in re.findall(r"silence_end:\s*(-?[\d.]+)", stderr)]
+
+        info = await self.get_video_info(input_path)
+        total = float(info.get("duration") or 0)
+        if not total or not starts:
+            import shutil as _shutil
+            _shutil.copyfile(input_path, output_path)
+            return output_path
+
+        silence: List[Tuple[float, float]] = []
+        for index, start in enumerate(starts):
+            start = max(0.0, start)
+            end = ends[index] if len(ends) > index else total
+            if end > start:
+                silence.append((start, min(end, total)))
+
+        keep: List[Tuple[float, float]] = []
+        cursor = 0.0
+        for start, end in silence:
+            if start - cursor > 0.2:
+                keep.append((cursor, start))
+            cursor = max(cursor, end)
+        if total - cursor > 0.2:
+            keep.append((cursor, total))
+        if not keep:
+            keep = [(0.0, total)]
+
+        parts: List[str] = []
+        for index, (start, end) in enumerate(keep):
+            parts.append(
+                f"[0:v]trim=start={start:.3f}:end={end:.3f},setpts=PTS-STARTPTS[v{index}];"
+                f"[0:a]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS[a{index}]"
+            )
+        concat_inputs = "".join(f"[v{i}][a{i}]" for i in range(len(keep)))
+        filter_complex = ";".join(parts) + f";{concat_inputs}concat=n={len(keep)}:v=1:a=1[v][a]"
+
         cmd = [
             "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
             "-i", input_path,
-            "-af", f"silenceremove=start_periods=1:start_duration={min_silence_duration}:start_threshold=-50dB:detection=peak",
-            "-c:v", "copy",
+            "-filter_complex", filter_complex,
+            "-map", "[v]", "-map", "[a]",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            "-c:a", "aac", "-b:a", "128k",
+            "-movflags", "+faststart",
             output_path,
         ]
-        
-        loop = asyncio.get_event_loop()
+
         await loop.run_in_executor(None, self._run_ffmpeg, cmd)
         return output_path
 
