@@ -2,6 +2,32 @@ import axios, { AxiosInstance } from "axios"
 
 import { getApiBaseUrl } from "./env"
 
+export interface UserProfileData {
+  id: string
+  email: string | null
+  name: string
+  avatar_url: string | null
+  plan_type: string
+  credits_balance: number
+  credits_total_earned: number
+  credits_total_spent: number
+  language: string
+  timezone: string
+  is_active: boolean
+  email_verified: boolean
+  two_factor_enabled: boolean
+  created_at: string
+}
+
+export interface YouTubeDiagnostics {
+  configured: boolean
+  client_id: string | null
+  redirect_uri: string | null
+  reachable: boolean
+  problem: string | null
+  hint: string | null
+}
+
 export class ApiClient {
   private client: AxiosInstance
 
@@ -59,6 +85,40 @@ export class ApiClient {
 
   async disconnectYouTube(token: string) {
     const response = await this.client.delete("/api/youtube/disconnect", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return response.data
+  }
+
+  async getYouTubeDiagnostics(token: string): Promise<YouTubeDiagnostics> {
+    const response = await this.client.get<YouTubeDiagnostics>("/api/youtube/diagnostics", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return response.data
+  }
+
+  async getProfile(token: string): Promise<UserProfileData> {
+    const response = await this.client.get<UserProfileData>("/api/users/profile", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return response.data
+  }
+
+  async updateProfile(
+    token: string,
+    payload: { name?: string; language?: string; timezone?: string },
+  ): Promise<UserProfileData> {
+    const response = await this.client.put<UserProfileData>("/api/users/profile", payload, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return response.data
+  }
+
+  async changePassword(
+    token: string,
+    payload: { new_password: string; current_password?: string },
+  ): Promise<{ message: string }> {
+    const response = await this.client.put<{ message: string }>("/api/users/password", payload, {
       headers: { Authorization: `Bearer ${token}` },
     })
     return response.data

@@ -14,6 +14,7 @@ export default function Navbar() {
       <nav className="ui-nav-links">
         <Link href="/dashboard">Dashboard</Link>
         <Link href="/pricing">Pricing</Link>
+        <Link href="/profile">Profile</Link>
         <Link href="/contact">Contact</Link>
       </nav>
       <div className="ui-nav-actions">

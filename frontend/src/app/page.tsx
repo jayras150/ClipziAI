@@ -157,13 +157,22 @@ export default function LandingPage() {
                 <span>CLIPZY STUDIO / PREVIEW</span>
                 <span>•••</span>
               </div>
-              <div className="preview">
-                <div className="play">▶</div>
-                <div className="preview-label">
-                  <strong>Your next viral moment</strong>
-                  AI-selected highlight · 00:42
+          <div className="preview">
+                  <video
+                    className="preview-video"
+                    src="/media/hook.mp4"
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    preload="metadata"
+                    aria-label="Clipzy AI preview clip"
+                  />
+                  <div className="preview-label">
+                    <strong>Your next viral moment</strong>
+                    AI-selected highlight · 00:42
+                  </div>
                 </div>
-              </div>
               <div className="timeline">
                 <div className="timeline-head">
                   <span>GENERATED CLIPS</span>
@@ -209,6 +218,30 @@ export default function LandingPage() {
         </section>
 
 
+
+        <section className="section container showcase">
+          <div className="section-head center">
+            <div className="kicker">See it in action</div>
+            <h2>
+              One long video in.
+              <br />
+              Ready-to-post clips out.
+            </h2>
+            <p>A real Clipzy AI output: captions burned in, reframed to 9:16, ready to publish.</p>
+          </div>
+          <div className="showcase-frame">
+            <video
+              className="showcase-video"
+              src="/media/hook.mp4"
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="metadata"
+              aria-label="Clipzy AI result preview"
+            />
+          </div>
+        </section>
 
         <section className="section container how" id="how">
           <div className="section-head">

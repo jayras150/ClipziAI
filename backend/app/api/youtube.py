@@ -55,7 +55,59 @@ def _decode_oauth_state(state: str) -> UUID:
 @router.get("/auth-url", response_model=YouTubeAuthUrl)
 async def get_youtube_auth_url(current_user: User = Depends(get_current_user)):
     state = _create_oauth_state(current_user.id)
-    return YouTubeAuthUrl(auth_url=youtube_service.get_auth_url(state))
+    auth_url = youtube_service.get_auth_url(state)
+
+    # Cek konfigurasi ke Google dulu supaya pengguna tidak diarahkan ke halaman
+    # error "redirect_uri_mismatch" tanpa penjelasan.
+    problem = youtube_service.preflight(auth_url)
+    if problem == "redirect_uri_mismatch":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Google menolak redirect URI "
+                f"'{settings.YOUTUBE_REDIRECT_URI}'. Daftarkan URI tersebut di "
+                "Google Cloud Console -> APIs & Services -> Credentials -> OAuth client "
+                "-> Authorized redirect URIs, lalu coba lagi."
+            ),
+        )
+    if problem == "invalid_client":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Google menolak client OAuth YouTube (invalid_client). Periksa "
+                "YOUTUBE_CLIENT_ID dan YOUTUBE_CLIENT_SECRET di environment server."
+            ),
+        )
+
+    return YouTubeAuthUrl(auth_url=auth_url)
+
+
+@router.get("/diagnostics")
+async def youtube_diagnostics(current_user: User = Depends(get_current_user)):
+    """Ringkasan konfigurasi OAuth YouTube — dipakai halaman profil untuk status."""
+    configured = bool(
+        youtube_service.client_id and youtube_service.client_secret and youtube_service.redirect_uri
+    )
+    problem = None
+    if configured:
+        problem = youtube_service.preflight(youtube_service.get_auth_url("diagnostics"))
+
+    return {
+        "configured": configured,
+        "client_id": youtube_service.client_id,
+        "redirect_uri": youtube_service.redirect_uri,
+        "reachable": problem is None,
+        "problem": problem,
+        "hint": {
+            "redirect_uri_mismatch": (
+                "Redirect URI belum terdaftar di Google Cloud Console "
+                "(Authorized redirect URIs)."
+            ),
+            "invalid_client": "Client ID/secret OAuth Google salah atau sudah dihapus.",
+            "network": "Server tidak bisa menghubungi Google saat memeriksa konfigurasi.",
+        }.get(problem or "", None),
+    }
+
 
 
 @router.get("/callback", include_in_schema=False)

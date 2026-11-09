@@ -6,9 +6,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.api.deps import get_db_session, get_current_user
+from app.core.security import hash_password, verify_password
 from app.models.user import User
 from app.models.user_profile import UserProfile
-from app.schemas.user import UserProfileResponse, UserUpdate, CreditBalanceResponse
+from app.schemas.user import (
+    UserProfileResponse,
+    UserUpdate,
+    PasswordChange,
+    CreditBalanceResponse,
+)
 
 router = APIRouter()
 
@@ -82,7 +88,36 @@ async def update_profile(
     )
 
 
+@router.put("/password")
+async def change_password(
+    payload: PasswordChange,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """
+    Ganti kata sandi akun.
+
+    Akun yang dibuat lewat Google belum punya password, jadi `current_password`
+    hanya diwajibkan bila password sudah pernah diset.
+    """
+    new_password = (payload.new_password or "").strip()
+    if len(new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long.")
+
+    if current_user.password_hash:
+        if not payload.current_password:
+            raise HTTPException(status_code=400, detail="Current password is required.")
+        if not verify_password(payload.current_password, current_user.password_hash):
+            raise HTTPException(status_code=400, detail="Current password is incorrect.")
+
+    current_user.password_hash = hash_password(new_password)
+    await db.commit()
+
+    return {"message": "Password updated successfully."}
+
+
 @router.get("/credits", response_model=CreditBalanceResponse)
+
 async def get_credits(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),

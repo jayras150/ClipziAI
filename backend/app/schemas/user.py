@@ -32,6 +32,13 @@ class UserUpdate(BaseModel):
     timezone: Optional[str] = None
 
 
+class PasswordChange(BaseModel):
+    """Ganti kata sandi. `current_password` wajib bila akun sudah punya password."""
+
+    new_password: str
+    current_password: Optional[str] = None
+
+
 class CreditBalanceResponse(BaseModel):
     credits_balance: int
     credits_total_earned: int

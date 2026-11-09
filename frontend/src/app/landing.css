@@ -876,3 +876,47 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------- Video preview (hero + showcase) ---------- */
+.landing .preview-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  z-index: 0;
+}
+.landing .preview .preview-label {
+  z-index: 2;
+}
+.landing .showcase {
+  text-align: center;
+}
+.landing .showcase-frame {
+  position: relative;
+  margin: 34px auto 0;
+  width: min(360px, 88vw);
+  border-radius: 26px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.015));
+  box-shadow: 0 40px 90px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(244, 199, 107, 0.12);
+}
+.landing .showcase-frame::before {
+  content: "";
+  position: absolute;
+  inset: -18% -30% -30%;
+  background: radial-gradient(ellipse at 50% 40%, rgba(244, 199, 107, 0.16), transparent 62%);
+  z-index: -1;
+  pointer-events: none;
+}
+.landing .showcase-video {
+  width: 100%;
+  display: block;
+  border-radius: 20px;
+  aspect-ratio: 9 / 16;
+  object-fit: cover;
+  background: #0b0c10;
+}
+

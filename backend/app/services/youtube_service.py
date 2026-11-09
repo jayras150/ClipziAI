@@ -48,6 +48,33 @@ class YouTubeService:
             "state": state,
         }
         return f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
+
+    def preflight(self, auth_url: str) -> Optional[str]:
+        """
+        Cek apakah Google menerima konfigurasi OAuth kita SEBELUM user diarahkan.
+
+        Tanpa ini, pengguna hanya melihat halaman error Google
+        ("Error 400: redirect_uri_mismatch") tanpa tahu penyebabnya.
+        Mengembalikan None bila OK, atau kode masalah:
+        "redirect_uri_mismatch" / "invalid_client" / "network".
+        """
+        try:
+            response = requests.get(
+                auth_url,
+                timeout=12,
+                allow_redirects=True,
+                headers={"User-Agent": "Mozilla/5.0 (ClipzyAI preflight)"},
+            )
+        except requests.RequestException:
+            return "network"
+
+        body = response.text or ""
+        if "redirect_uri_mismatch" in body:
+            return "redirect_uri_mismatch"
+        if "invalid_client" in body or "unauthorized_client" in body:
+            return "invalid_client"
+        return None
+
     
     async def exchange_code_for_tokens(self, code: str) -> Dict[str, Any]:
         """Exchange OAuth2 code for access/refresh tokens."""
