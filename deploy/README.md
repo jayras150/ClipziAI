@@ -654,4 +654,36 @@ state ada di Postgres/Redis/R2, tidak ada data yang hilang di kedua arah.
 | RAM penuh | `docker stats`; kalau frontend berat, pertimbangkan static export (`output: 'export'`) |
 | `too many connections` (Supabase) | Kurangi `pool_size` engine, atau gunakan session pooler port 5432 |
 
+---
+
+## 🔐 Mengaktifkan "Continue with Google"
+
+Backend sudah memverifikasi token Google (`POST /api/auth/social-login`, provider
+`google`). Yang perlu disiapkan hanya Client ID publik:
+
+1. Buka **Google Cloud Console → APIs & Services → Credentials**.
+2. **Create credentials → OAuth client ID → Web application**.
+3. Isi **Authorized JavaScript origins**: `https://proxyai.live`
+   (tambahkan `http://localhost:3000` bila ingin mencoba di lokal).
+4. Salin **Client ID** (bentuknya `xxxxx.apps.googleusercontent.com`, tidak ada secret).
+5. Tulis ke compose deployment lalu jalankan ulang frontend:
+
+```bash
+# di VPS, /opt/clipzi/app
+export VPS_GOOGLE_CLIENT_ID="xxxxx.apps.googleusercontent.com"
+python3 -c "import sys; sys.path.insert(0,'scripts'); from vps_compose import compose_text; open('docker-compose.vps.yml','w').write(compose_text())"
+docker compose -f docker-compose.vps.yml up -d frontend   # tanpa rebuild
+```
+
+Tombol **Continue with Google** otomatis muncul di `/login` dan `/register` begitu
+nilai ini terisi (dibaca dari `runtime-env.js`, jadi tidak perlu rebuild image).
+
+Catatan:
+- Login **email + kata sandi** sudah aktif sejak awal dan tidak butuh konfigurasi.
+- Login **X/Twitter** belum diaktifkan: endpoint mengembalikan `501` sampai kredensial
+  OAuth2 X (client id + secret) tersedia untuk penukaran token di backend.
+- "Forgot password" masih stub (belum ada pengiriman email SMTP) — jangan
+  ditampilkan di UI sampai SMTP dikonfigurasi.
+
+
 
