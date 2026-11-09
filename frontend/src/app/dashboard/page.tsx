@@ -534,19 +534,20 @@ export default function DashboardPage() {
               <label className="ui-label" htmlFor="video-url">
                 Video URL
               </label>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <input
-                  id="video-url"
-                  type="url"
-                  value={urlValue}
-                  onChange={(event) => setUrlValue(event.target.value)}
-                  placeholder="https://youtube.com/watch?v=..."
-                  className="ui-input"
-                  style={{ flex: "1 1 260px" }}
-                />
-                {/* Opsi editing manual (Fase 1) */}
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
-                  <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa", whiteSpace: "nowrap" }}>Mulai detik</label>
+              <input
+                id="video-url"
+                type="url"
+                value={urlValue}
+                onChange={(event) => setUrlValue(event.target.value)}
+                placeholder="https://youtube.com/watch?v=..."
+                className="ui-input"
+                style={{ marginBottom: 14 }}
+              />
+
+              {/* Opsi editing manual (Fase 1) — setiap kontrol jadi kartu sendiri. */}
+              <div className="ui-opt-grid">
+                <div className="ui-opt">
+                  <label className="ui-opt-label" htmlFor="start-time">Mulai detik</label>
                   <input
                     id="start-time"
                     type="number"
@@ -556,9 +557,10 @@ export default function DashboardPage() {
                     value={startTimeValue}
                     onChange={(e) => setStartTimeValue(e.target.value)}
                     className="ui-input"
-                    style={{ width: 80, padding: "6px 8px", fontSize: 13 }}
                   />
-                  <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa", whiteSpace: "nowrap" }}>Akhir detik</label>
+                </div>
+                <div className="ui-opt">
+                  <label className="ui-opt-label" htmlFor="end-time">Akhir detik</label>
                   <input
                     id="end-time"
                     type="number"
@@ -568,21 +570,23 @@ export default function DashboardPage() {
                     value={endTimeValue}
                     onChange={(e) => setEndTimeValue(e.target.value)}
                     className="ui-input"
-                    style={{ width: 80, padding: "6px 8px", fontSize: 13 }}
                   />
-                  <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa", whiteSpace: "nowrap" }}>Rasio</label>
+                </div>
+                <div className="ui-opt">
+                  <label className="ui-opt-label" htmlFor="aspect-ratio">Rasio</label>
                   <select
                     id="aspect-ratio"
                     value={aspectRatioValue}
                     onChange={(e) => setAspectRatioValue(e.target.value)}
                     className="ui-input"
-                    style={{ width: 90, padding: "6px 8px", fontSize: 13, background: "#171a22", color: "#f5f5f2", border: "1px solid var(--ui-line)" }}
                   >
                     <option value="9:16">9:16 vertikal</option>
                     <option value="1:1">1:1 persegi</option>
                     <option value="16:9">16:9 landskap</option>
                   </select>
-                  <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa", whiteSpace: "nowrap" }}>Caption</label>
+                </div>
+                <div className="ui-opt">
+                  <label className="ui-opt-label" htmlFor="caption-text">Caption</label>
                   <input
                     id="caption-text"
                     type="text"
@@ -590,15 +594,15 @@ export default function DashboardPage() {
                     value={captionTextValue}
                     onChange={(e) => setCaptionTextValue(e.target.value)}
                     className="ui-input"
-                    style={{ width: 140, padding: "6px 8px", fontSize: 13 }}
                   />
-                  <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa", whiteSpace: "nowrap" }}>Kecepatan</label>
+                </div>
+                <div className="ui-opt">
+                  <label className="ui-opt-label" htmlFor="speed">Kecepatan</label>
                   <select
                     id="speed"
                     value={speedValue}
                     onChange={(e) => setSpeedValue(e.target.value)}
                     className="ui-input"
-                    style={{ width: 80, padding: "6px 8px", fontSize: 13, background: "#171a22", color: "#f5f5f2", border: "1px solid var(--ui-line)" }}
                   >
                     <option value="0.25">0.25×</option>
                     <option value="0.5">0.5×</option>
@@ -608,159 +612,174 @@ export default function DashboardPage() {
                     <option value="4">4×</option>
                   </select>
                 </div>
-                {/* Opsi lanjutan (Fase 2) */}
-                <details style={{ marginBottom: 10 }}>
-                  <summary style={{ cursor: "pointer", fontSize: 13, color: "#9b9eaa", marginBottom: 8 }}>
-                    Opsi editing lanjutan
-                  </summary>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                    <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa" }}>Filter</label>
-                    <select
-                      id="filter-preset"
-                      value={filterPreset}
-                      onChange={(e) => setFilterPreset(e.target.value)}
-                      className="ui-input"
-                      style={{ width: 110, padding: "6px 8px", fontSize: 13, background: "#171a22", color: "#f5f5f2", border: "1px solid var(--ui-line)" }}
-                    >
-                      <option value="none">none</option>
-                      <option value="warm">warm</option>
-                      <option value="cool">cool</option>
-                      <option value="cinematic">cinematic</option>
-                      <option value="bw">b&amp;w</option>
-                      <option value="vibrant">vibrant</option>
-                      <option value="vintage">vintage</option>
-                    </select>
-                    <label style={{ fontSize: 12, color: "#c9cbd4", display: "flex", gap: 6, alignItems: "center" }}>
-                      <input type="checkbox" id="blur-fill" checked={blurFill} onChange={(e) => setBlurFill(e.target.checked)} />
-                      Blur-fill background
-                    </label>
-                    <label style={{ fontSize: 12, color: "#c9cbd4", display: "flex", gap: 6, alignItems: "center" }}>
-                      <input type="checkbox" id="trim-silence" checked={trimSilence} onChange={(e) => setTrimSilence(e.target.checked)} />
-                      Buang jeda (jump cuts)
-                    </label>
-                    <label style={{ fontSize: 12, color: "#c9cbd4", display: "flex", gap: 6, alignItems: "center" }}>
-                      <input type="checkbox" id="clean-audio" checked={cleanAudio} onChange={(e) => setCleanAudio(e.target.checked)} />
-                      Perbaiki audio
-                    </label>
-                    <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa" }}>Watermark PNG</label>
-                    <input
-                      id="watermark-url"
-                      type="url"
-                      placeholder="https://.../logo.png"
-                      value={watermarkUrl}
-                      onChange={(e) => setWatermarkUrl(e.target.value)}
-                      className="ui-input"
-                      style={{ width: 180, padding: "6px 8px", fontSize: 13 }}
-                    />
-                    <select
-                      id="watermark-position"
-                      value={watermarkPosition}
-                      onChange={(e) => setWatermarkPosition(e.target.value)}
-                      className="ui-input"
-                      style={{ width: 120, padding: "6px 8px", fontSize: 13, background: "#171a22", color: "#f5f5f2", border: "1px solid var(--ui-line)" }}
-                    >
-                      <option value="top-left">kiri atas</option>
-                      <option value="top-right">kanan atas</option>
-                      <option value="bottom-left">kiri bawah</option>
-                      <option value="bottom-right">kanan bawah</option>
-                      <option value="center">tengah</option>
-                    </select>
-                    <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa" }}>Auto zoom</label>
-                    <select
-                      id="auto-zoom"
-                      value={autoZoom}
-                      onChange={(e) => setAutoZoom(e.target.value)}
-                      className="ui-input"
-                      style={{ width: 150, padding: "6px 8px", fontSize: 13, background: "#171a22", color: "#f5f5f2", border: "1px solid var(--ui-line)" }}
-                    >
-                      <option value="off">off</option>
-                      <option value="speaker">ikut pembicara</option>
-                    </select>
-                    {autoZoom === "speaker" && (
-                      <>
-                        <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa" }}>Zoom</label>
+              </div>
+                {/* Opsi lanjutan (Fase 2) — kartu per kontrol. */}
+                <details className="ui-opt-details" style={{ marginTop: 14 }}>
+                  <summary>Opsi editing lanjutan</summary>
+                  <div className="ui-opt-panel">
+                    <div className="ui-opt-grid">
+                      <div className="ui-opt">
+                        <label className="ui-opt-label" htmlFor="filter-preset">Filter</label>
                         <select
-                          id="zoom-level"
-                          value={zoomLevel}
-                          onChange={(e) => setZoomLevel(e.target.value)}
+                          id="filter-preset"
+                          value={filterPreset}
+                          onChange={(e) => setFilterPreset(e.target.value)}
                           className="ui-input"
-                          style={{ width: 80, padding: "6px 8px", fontSize: 13, background: "#171a22", color: "#f5f5f2", border: "1px solid var(--ui-line)" }}
                         >
-                          <option value="1">1.0×</option>
-                          <option value="1.3">1.3×</option>
-                          <option value="1.6">1.6×</option>
-                          <option value="2">2.0×</option>
+                          <option value="none">none</option>
+                          <option value="warm">warm</option>
+                          <option value="cool">cool</option>
+                          <option value="cinematic">cinematic</option>
+                          <option value="bw">b&amp;w</option>
+                          <option value="vibrant">vibrant</option>
+                          <option value="vintage">vintage</option>
                         </select>
-                      </>
-                    )}
-                    <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa" }}>Musik</label>
-                    <select
-                      id="music-track"
-                      value={musicUrl}
-                      onChange={(e) => setMusicUrl(e.target.value)}
-                      className="ui-input"
-                      style={{ width: 170, padding: "6px 8px", fontSize: 13, background: "#171a22", color: "#f5f5f2", border: "1px solid var(--ui-line)" }}
-                    >
-                      <option value="">tanpa musik</option>
-                      {musicLibrary.map((track) => (
-                        <option key={track.id} value={track.url}>
-                          {track.name}
-                          {track.mood ? ` · ${track.mood}` : ""}
-                        </option>
-                      ))}
-                    </select>
-                    {musicUrl && (
-                      <>
+                      </div>
+                      <div className="ui-opt">
+                        <label className="ui-opt-label" htmlFor="watermark-url">Watermark PNG</label>
+                        <input
+                          id="watermark-url"
+                          type="url"
+                          placeholder="https://.../logo.png"
+                          value={watermarkUrl}
+                          onChange={(e) => setWatermarkUrl(e.target.value)}
+                          className="ui-input"
+                        />
+                      </div>
+                      <div className="ui-opt">
+                        <label className="ui-opt-label" htmlFor="watermark-position">Posisi watermark</label>
                         <select
-                          id="music-volume"
-                          value={musicVolume}
-                          onChange={(e) => setMusicVolume(e.target.value)}
+                          id="watermark-position"
+                          value={watermarkPosition}
+                          onChange={(e) => setWatermarkPosition(e.target.value)}
                           className="ui-input"
-                          style={{ width: 90, padding: "6px 8px", fontSize: 13, background: "#171a22", color: "#f5f5f2", border: "1px solid var(--ui-line)" }}
                         >
-                          <option value="0.12">volume 12%</option>
-                          <option value="0.22">volume 22%</option>
-                          <option value="0.35">volume 35%</option>
-                          <option value="0.5">volume 50%</option>
+                          <option value="top-left">kiri atas</option>
+                          <option value="top-right">kanan atas</option>
+                          <option value="bottom-left">kiri bawah</option>
+                          <option value="bottom-right">kanan bawah</option>
+                          <option value="center">tengah</option>
                         </select>
-                        <label style={{ fontSize: 12, color: "#c9cbd4", display: "flex", gap: 6, alignItems: "center" }}>
+                      </div>
+                      <div className="ui-opt">
+                        <label className="ui-opt-label" htmlFor="auto-zoom">Auto zoom</label>
+                        <select
+                          id="auto-zoom"
+                          value={autoZoom}
+                          onChange={(e) => setAutoZoom(e.target.value)}
+                          className="ui-input"
+                        >
+                          <option value="off">off</option>
+                          <option value="speaker">ikut pembicara</option>
+                        </select>
+                      </div>
+                      {autoZoom === "speaker" && (
+                        <div className="ui-opt">
+                          <label className="ui-opt-label" htmlFor="zoom-level">Level zoom</label>
+                          <select
+                            id="zoom-level"
+                            value={zoomLevel}
+                            onChange={(e) => setZoomLevel(e.target.value)}
+                            className="ui-input"
+                          >
+                            <option value="1">1.0×</option>
+                            <option value="1.3">1.3×</option>
+                            <option value="1.6">1.6×</option>
+                            <option value="2">2.0×</option>
+                          </select>
+                        </div>
+                      )}
+                      <div className="ui-opt">
+                        <label className="ui-opt-label" htmlFor="music-track">Musik</label>
+                        <select
+                          id="music-track"
+                          value={musicUrl}
+                          onChange={(e) => setMusicUrl(e.target.value)}
+                          className="ui-input"
+                        >
+                          <option value="">tanpa musik</option>
+                          {musicLibrary.map((track) => (
+                            <option key={track.id} value={track.url}>
+                              {track.name}
+                              {track.mood ? ` · ${track.mood}` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      {musicUrl && (
+                        <div className="ui-opt">
+                          <label className="ui-opt-label" htmlFor="music-volume">Volume musik</label>
+                          <select
+                            id="music-volume"
+                            value={musicVolume}
+                            onChange={(e) => setMusicVolume(e.target.value)}
+                            className="ui-input"
+                          >
+                            <option value="0.12">12%</option>
+                            <option value="0.22">22%</option>
+                            <option value="0.35">35%</option>
+                            <option value="0.5">50%</option>
+                          </select>
+                        </div>
+                      )}
+                      <div className="ui-opt">
+                        <label className="ui-opt-label" htmlFor="intro-url">Intro URL</label>
+                        <input
+                          id="intro-url"
+                          type="url"
+                          placeholder="https://.../intro.mp4"
+                          value={introUrl}
+                          onChange={(e) => setIntroUrl(e.target.value)}
+                          className="ui-input"
+                        />
+                      </div>
+                      <div className="ui-opt">
+                        <label className="ui-opt-label" htmlFor="outro-url">Outro URL</label>
+                        <input
+                          id="outro-url"
+                          type="url"
+                          placeholder="https://.../outro.mp4"
+                          value={outroUrl}
+                          onChange={(e) => setOutroUrl(e.target.value)}
+                          className="ui-input"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="ui-switch-list">
+                      <label className="ui-switch">
+                        <input type="checkbox" id="blur-fill" checked={blurFill} onChange={(e) => setBlurFill(e.target.checked)} />
+                        <span>Blur-fill background</span>
+                      </label>
+                      <label className="ui-switch">
+                        <input type="checkbox" id="trim-silence" checked={trimSilence} onChange={(e) => setTrimSilence(e.target.checked)} />
+                        <span>Buang jeda (jump cuts)</span>
+                      </label>
+                      <label className="ui-switch">
+                        <input type="checkbox" id="clean-audio" checked={cleanAudio} onChange={(e) => setCleanAudio(e.target.checked)} />
+                        <span>Perbaiki audio</span>
+                      </label>
+                      {musicUrl && (
+                        <label className="ui-switch">
                           <input
                             type="checkbox"
                             id="music-ducking"
                             checked={musicDucking}
                             onChange={(e) => setMusicDucking(e.target.checked)}
                           />
-                          ducking (musik turun saat bicara)
+                          <span>Ducking musik saat bicara</span>
                         </label>
-                      </>
-                    )}
-                    <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa" }}>Intro URL</label>
-                    <input
-                      id="intro-url"
-                      type="url"
-                      placeholder="https://.../intro.mp4"
-                      value={introUrl}
-                      onChange={(e) => setIntroUrl(e.target.value)}
-                      className="ui-input"
-                      style={{ width: 160, padding: "6px 8px", fontSize: 13 }}
-                    />
-                    <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa" }}>Outro URL</label>
-                    <input
-                      id="outro-url"
-                      type="url"
-                      placeholder="https://.../outro.mp4"
-                      value={outroUrl}
-                      onChange={(e) => setOutroUrl(e.target.value)}
-                      className="ui-input"
-                      style={{ width: 160, padding: "6px 8px", fontSize: 13 }}
-                    />
+                      )}
+                    </div>
                   </div>
                 </details>
-                <button type="submit" className="ui-btn ui-btn-gold" disabled={submitting}>
-                  {submitting ? <LoaderCircle size={15} className="animate-spin" /> : <Play size={15} />}
-                  {submitting ? "Starting…" : "Process"}
-                </button>
-              </div>
+
+                <div style={{ marginTop: 16 }}>
+                  <button type="submit" className="ui-btn ui-btn-gold" disabled={submitting}>
+                    {submitting ? <LoaderCircle size={15} className="animate-spin" /> : <Play size={15} />}
+                    {submitting ? "Starting…" : "Process"}
+                  </button>
+                </div>
               <p className="ui-hint">
                 YouTube, TikTok, Instagram, Facebook and X links are supported. 1 credit per clip.
               </p>
