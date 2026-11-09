@@ -96,6 +96,11 @@ async def youtube_diagnostics(current_user: User = Depends(get_current_user)):
     return {
         "configured": configured,
         "client_id": youtube_service.client_id,
+        # Client ID yang aman dipakai alur Google Identity Services (token flow)
+        # karena origin https://<domain> sudah terdaftar sebagai Authorized
+        # JavaScript origin. Biasanya ini client yang sama dengan tombol
+        # "Continue with Google" (GOOGLE_CLIENT_ID).
+        "gis_client_id": settings.GOOGLE_CLIENT_ID or youtube_service.client_id,
         "redirect_uri": youtube_service.redirect_uri,
         "reachable": problem is None,
         "problem": problem,

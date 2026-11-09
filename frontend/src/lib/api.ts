@@ -22,6 +22,7 @@ export interface UserProfileData {
 export interface YouTubeDiagnostics {
   configured: boolean
   client_id: string | null
+  gis_client_id: string | null
   redirect_uri: string | null
   reachable: boolean
   problem: string | null

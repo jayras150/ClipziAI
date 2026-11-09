@@ -191,7 +191,9 @@ export default function DashboardPage() {
       try {
         setYoutubeMessage("Opening Google consent…")
         const diagnostics = await api.getYouTubeDiagnostics(stored)
-        const accessToken = await requestYouTubeAccessToken(diagnostics.client_id || "")
+        const accessToken = await requestYouTubeAccessToken(
+          diagnostics.gis_client_id || diagnostics.client_id || "",
+        )
         const connected = await api.setYouTubeAccessToken(stored, accessToken)
         setYoutube({ connected: true, channel_name: connected.channel_name })
         setYoutubeMessage(connected.message || "YouTube connected.")

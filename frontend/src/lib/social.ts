@@ -30,6 +30,25 @@ const GOOGLE_SCOPE = "openid email profile"
 const YOUTUBE_SCOPE =
   "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly"
 
+/** Pesan ramah untuk kode error Google Identity Services. */
+function friendlyGoogleError(code: string): string {
+  switch (code) {
+    case "popup_closed":
+    case "popup_closed_by_user":
+      return "Google consent was closed before finishing. Please try again."
+    case "popup_failed_to_open":
+      return "The Google consent window was blocked by the browser. Allow pop-ups for this site and retry."
+    case "access_denied":
+      return "Access was denied. YouTube connection requires permission to upload and read your channel."
+    case "invalid_scope":
+      return "The Google OAuth client is missing the YouTube scopes. Add them in the OAuth consent screen."
+    case "origin_mismatch":
+      return "This domain is not registered as an Authorized JavaScript origin for the Google OAuth client."
+    default:
+      return code
+  }
+}
+
 let scriptPromise: Promise<void> | null = null
 
 function loadGoogleScript(): Promise<void> {
@@ -95,13 +114,13 @@ async function requestTokenWithScope(
       scope,
       callback: (response) => {
         if (response.error || !response.access_token) {
-          reject(new Error(response.error || "Google sign-in was cancelled."))
+          reject(new Error(friendlyGoogleError(response.error || "Google sign-in was cancelled.")))
           return
         }
         resolve(response.access_token)
       },
       error_callback: (error) => {
-        reject(new Error(error.message || error.type || "Google sign-in failed."))
+        reject(new Error(friendlyGoogleError(error.type || error.message || "Google sign-in failed.")))
       },
     })
 
