@@ -1,5 +1,8 @@
 """Audio transcription service for local or OpenAI-compatible providers."""
 import asyncio
+import logging
+import re
+import subprocess
 from typing import Dict, Any, List, Optional
 
 import openai
@@ -7,6 +10,8 @@ import openai
 from app.core.config import get_settings
 
 settings = get_settings()
+
+logger = logging.getLogger(__name__)
 
 
 class AudioTranscriber:
@@ -70,12 +75,42 @@ class AudioTranscriber:
         audio_path: str,
         language: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Transcribe audio and return a normalized subtitle-friendly response."""
-        if not self._is_local():
-            return await self._transcribe_remote(audio_path, language)
+        """
+        Transkripsi audio menjadi segmen siap-subtitle.
 
+        Provider API dicoba lebih dulu (lebih cepat). Bila gagal -- misalnya
+        OpenRouter membalas 402 "maximum cost exceeds your available credits" --
+        otomatis jatuh ke Whisper lokal (faster-whisper) bila paketnya ada di
+        image, sehingga subtitle tetap dihasilkan tanpa kredit API.
+        """
+        if self._is_local():
+            return await self._transcribe_local(audio_path, language)
+
+        try:
+            return await self._transcribe_remote(audio_path, language)
+        except Exception as exc:
+            logger.warning(
+                "Transkripsi via provider '%s' gagal (%s); mencoba Whisper lokal.",
+                self.provider,
+                str(exc)[:300],
+            )
+            try:
+                return await self._transcribe_local(audio_path, language)
+            except Exception as local_exc:
+                raise RuntimeError(
+                    f"Transkripsi gagal: provider '{self.provider}' error "
+                    f"({str(exc)[:200]}) dan fallback lokal juga gagal "
+                    f"({str(local_exc)[:200]})."
+                ) from local_exc
+
+    async def _transcribe_local(
+        self,
+        audio_path: str,
+        language: Optional[str],
+    ) -> Dict[str, Any]:
+        """Transkripsi memakai faster-whisper (CPU, int8)."""
         model = self._get_model()
-        
+
         loop = asyncio.get_event_loop()
         segments, info = await loop.run_in_executor(
             None,
@@ -84,7 +119,7 @@ class AudioTranscriber:
             audio_path,
             language,
         )
-        
+
         return {
             "language": info.language,
             "language_probability": info.language_probability,
@@ -98,29 +133,81 @@ class AudioTranscriber:
         audio_path: str,
         language: Optional[str],
     ) -> Dict[str, Any]:
-        """Call an OpenAI-compatible /audio/transcriptions endpoint."""
+        """
+        Transkripsi via provider OpenAI-compatible dengan strategi berlapis.
+
+        OpenRouter menolak `response_format=verbose_json`/`json` dengan HTTP 402
+        ("maximum cost exceeds your available credits") karena taksiran biayanya
+        jauh lebih tinggi, padahal request TANPA `response_format` sukses dan
+        murah (hanya mengembalikan teks). Karena itu dicoba berurutan:
+          1. verbose_json + timestamp_granularities (segments + words)
+          2. verbose_json (segments)
+          3. json
+          4. default (paling kompatibel)
+        Bila hasil akhir hanya teks, timing subtitle disintesis.
+        """
         client = self._get_remote_client()
-        try:
-            with open(audio_path, "rb") as audio_file:
-                # `language=None` tidak diterima SDK; kirim hanya bila diisi.
-                request_kwargs: Dict[str, Any] = {
-                    "file": audio_file,
-                    "model": self.model_size,
-                    "response_format": "verbose_json",
-                    "timestamp_granularities": ["segment", "word"],
-                }
-                if language:
-                    request_kwargs["language"] = language
+        attempts = [
+            {"response_format": "verbose_json", "timestamp_granularities": ["segment", "word"]},
+            {"response_format": "verbose_json"},
+            {"response_format": "json"},
+            {},
+        ]
 
-                response = await client.audio.transcriptions.create(**request_kwargs)
-        except Exception as exc:
+        errors: List[str] = []
+        payload: Optional[Dict[str, Any]] = None
+        used_attempt = -1
+
+        for index, extra in enumerate(attempts):
+            try:
+                with open(audio_path, "rb") as audio_file:
+                    request_kwargs: Dict[str, Any] = {
+                        "file": audio_file,
+                        "model": self.model_size,
+                        **(extra or {}),
+                    }
+                    if language:
+                        request_kwargs["language"] = language
+                    response = await client.audio.transcriptions.create(**request_kwargs)
+            except Exception as exc:
+                errors.append(f"percobaan {index + 1} ({extra or 'default'}): {exc}")
+                logger.warning("Transkripsi %s gagal: %s", self.provider, errors[-1])
+                continue
+
+            candidate = (
+                response.model_dump() if hasattr(response, "model_dump") else dict(response)
+            )
+            if candidate.get("segments"):
+                payload = candidate
+                used_attempt = index
+                break
+            if candidate.get("text") and payload is None:
+                payload = candidate
+                used_attempt = index
+
+        if payload is None:
             raise RuntimeError(
-                f"Transkripsi melalui provider '{self.provider}' gagal: {exc}"
-            ) from exc
+                f"Transkripsi melalui provider '{self.provider}' gagal di semua format: "
+                + " | ".join(errors[:3])
+            )
 
-        payload = response.model_dump() if hasattr(response, "model_dump") else dict(response)
         segments = self._normalise_remote_segments(payload.get("segments", []))
-        full_text = payload.get("text") or " ".join(segment["text"] for segment in segments)
+        full_text = (payload.get("text") or "").strip()
+
+        if not segments and full_text:
+            duration = payload.get("duration") or self._audio_duration(audio_path)
+            segments = self._synthesize_segments(full_text, float(duration or 0))
+            logger.info(
+                "Provider %s hanya mengembalikan teks (percobaan %s); timing subtitle "
+                "disintesis untuk %s segmen.",
+                self.provider,
+                used_attempt + 1,
+                len(segments),
+            )
+
+        if not full_text:
+            full_text = " ".join(segment["text"] for segment in segments)
+
         return {
             "language": payload.get("language") or language,
             "language_probability": None,
@@ -128,6 +215,79 @@ class AudioTranscriber:
             "segments": segments,
             "full_text": full_text.strip(),
         }
+
+    @staticmethod
+    def _audio_duration(audio_path: str) -> float:
+        """Durasi audio (detik) lewat ffprobe; 0.0 bila gagal."""
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe", "-v", "error",
+                    "-show_entries", "format=duration",
+                    "-of", "default=nw=1:nk=1",
+                    audio_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            return float((result.stdout or "").strip() or 0)
+        except Exception:
+            return 0.0
+
+    @staticmethod
+    def _synthesize_segments(
+        text: str,
+        duration: float,
+        max_words: int = 7,
+    ) -> List[Dict[str, Any]]:
+        """
+        Buat segments ber-timing dari teks polos (provider tanpa timestamp).
+
+        Teks dipecah jadi potongan pendek (maks `max_words` kata) agar enak dibaca
+        sebagai caption vertikal, lalu durasi dialokasikan proporsional terhadap
+        panjang karakter. Timing ini perkiraan — tetapi jauh lebih berguna
+        daripada tidak ada subtitle sama sekali.
+        """
+        clean = " ".join((text or "").split())
+        if not clean or duration <= 0:
+            return []
+
+        pieces: List[str] = []
+        for part in re.split(r"(?<=[.!?])\s+", clean):
+            words = part.split()
+            while len(words) > max_words:
+                pieces.append(" ".join(words[:max_words]))
+                words = words[max_words:]
+            if words:
+                pieces.append(" ".join(words))
+
+        if not pieces:
+            return []
+
+        weights = [max(1, len(piece)) for piece in pieces]
+        total_weight = sum(weights)
+        cursor = 0.0
+        segments: List[Dict[str, Any]] = []
+
+        for index, (piece, weight) in enumerate(zip(pieces, weights)):
+            span = duration * weight / total_weight
+            start = cursor
+            end = min(duration, cursor + span)
+            if end - start < 0.6:
+                end = min(duration, start + 0.6)
+            segments.append(
+                {
+                    "id": index,
+                    "start": round(start, 3),
+                    "end": round(end, 3),
+                    "text": piece,
+                    "words": [],
+                }
+            )
+            cursor = end
+
+        return segments
 
     @staticmethod
     def _normalise_remote_segments(raw_segments: List[Any]) -> List[Dict[str, Any]]:

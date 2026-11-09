@@ -30,6 +30,28 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 # -----------------------------------------------------------------------------
+# Transkripsi lokal (fallback tanpa kredit API)
+#
+# faster-whisper dipasang di image agar subtitle tetap dihasilkan walaupun
+# provider API menolak (mis. OpenRouter 402 "maximum cost exceeds credits")
+# atau sedang offline. Model `small` (int8/CPU) diunduh SAAT BUILD supaya
+# instance Vast (oneshot = filesystem baru) tidak perlu unduh ulang per task.
+#
+# Nonaktifkan: docker build --build-arg INSTALL_LOCAL_WHISPER=0 ...
+# -----------------------------------------------------------------------------
+ARG INSTALL_LOCAL_WHISPER=1
+ARG WHISPER_MODEL_NAME=small
+ENV HF_HOME=/opt/whisper-cache
+
+COPY requirements-whisper-local.txt ./
+RUN if [ "$INSTALL_LOCAL_WHISPER" = "1" ]; then \
+        pip install -r requirements-whisper-local.txt && \
+        python -c "from faster_whisper import WhisperModel; WhisperModel('${WHISPER_MODEL_NAME}', device='cpu', compute_type='int8'); print('whisper siap: ${WHISPER_MODEL_NAME}')"; \
+    else \
+        echo "INSTALL_LOCAL_WHISPER=0 -> transkripsi lokal dilewati"; \
+    fi
+
+# -----------------------------------------------------------------------------
 # Stage 2: runtime image (tanpa toolchain, ukuran lebih kecil)
 # -----------------------------------------------------------------------------
 FROM python:3.11-slim AS runtime
@@ -66,6 +88,10 @@ RUN curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp 
 
 # Ambil virtualenv dari stage builder
 COPY --from=builder /opt/venv /opt/venv
+
+# Cache model Whisper hasil build (dipakai fallback transkripsi lokal).
+ENV HF_HOME=/opt/whisper-cache
+COPY --from=builder /opt/whisper-cache /opt/whisper-cache
 
 WORKDIR $APP_HOME
 COPY . .
