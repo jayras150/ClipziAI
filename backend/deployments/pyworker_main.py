@@ -140,10 +140,24 @@ def main() -> int:
 
     model_proc, _log_path = _spawn_model_server()
 
+    stopping = False
+
     def _stop(signum, _frame) -> None:  # noqa: ANN001 - handler signal
+        """Hentikan model server lalu keluar.
+
+        JANGAN hanya `terminate()` lalu lanjut: itu menelan SIGTERM sehingga
+        `docker stop`/`timeout`/engine Vast harus menunggu grace period sampai
+        proses dibunuh paksa. Dengan `SystemExit`, blok finally di main() tetap
+        membersihkan child lalu proses benar-benar berhenti.
+        """
+        nonlocal stopping
+        if stopping:
+            return
+        stopping = True
         print(f"[pyworker] sinyal {signum}: menghentikan model server", flush=True)
         if model_proc.poll() is None:
             model_proc.terminate()
+        raise SystemExit(0)
 
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
