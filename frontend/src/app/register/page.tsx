@@ -1,12 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import Link from "next/link"
 import { User, Mail, Lock } from "lucide-react"
 
-import { getApiBaseUrl, getGoogleClientId } from "@/lib/env"
+import { getApiBaseUrl } from "@/lib/env"
 import { readApiError } from "@/lib/api-errors"
-import { requestGoogleAccessToken } from "@/lib/social"
+import SocialButtons from "@/components/SocialButtons"
 
 export default function RegisterPage() {
   const [name, setName] = useState("")
@@ -14,10 +14,6 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
-  const [googleLoading, setGoogleLoading] = useState(false)
-  const [googleClientId, setGoogleClientId] = useState("")
-
-  useEffect(() => setGoogleClientId(getGoogleClientId()), [])
 
   const finishSignup = (accessToken: string, refreshToken?: string) => {
     localStorage.setItem("token", accessToken)
@@ -66,27 +62,6 @@ export default function RegisterPage() {
       setError(message)
     } finally {
       setLoading(false)
-    }
-  }
-
-  const handleGoogleSignup = async () => {
-    setError("")
-    setGoogleLoading(true)
-    try {
-      const googleAccessToken = await requestGoogleAccessToken(googleClientId)
-      const response = await fetch(`${getApiBaseUrl()}/api/auth/social-login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: "google", access_token: googleAccessToken }),
-      })
-      const payload = await response.json().catch(() => null)
-      if (!response.ok) throw new Error(readApiError(payload, "Google sign-up failed."))
-      if (!payload?.access_token) throw new Error("The server did not return a token. Try again.")
-      finishSignup(payload.access_token, payload.refresh_token)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Google sign-up failed.")
-    } finally {
-      setGoogleLoading(false)
     }
   }
 
@@ -200,21 +175,7 @@ export default function RegisterPage() {
           </form>
 
           <div style={{ display: "grid", gap: 12, marginTop: 16 }}>
-            {googleClientId ? (
-              <button
-                type="button"
-                onClick={handleGoogleSignup}
-                disabled={googleLoading}
-                className="ui-btn ui-btn-ghost ui-btn-block"
-              >
-                {googleLoading ? "Connecting to Google..." : "Continue with Google"}
-              </button>
-            ) : (
-              <p className="ui-muted" style={{ fontSize: 12, textAlign: "center", lineHeight: 1.7 }}>
-                Google sign-in is not configured on this deployment yet. Email sign-up works right
-                away.
-              </p>
-            )}
+            <SocialButtons mode="signup" onSuccess={finishSignup} />
             <p className="ui-muted" style={{ textAlign: "center", fontSize: 13 }}>
               Already have an account?{" "}
               <Link href="/login" className="ui-gold" style={{ fontWeight: 700 }}>

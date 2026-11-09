@@ -1,23 +1,18 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import Link from "next/link"
 import { Mail, Lock } from "lucide-react"
 
-import { getApiBaseUrl, getGoogleClientId } from "@/lib/env"
+import { getApiBaseUrl } from "@/lib/env"
 import { readApiError } from "@/lib/api-errors"
-import { requestGoogleAccessToken } from "@/lib/social"
+import SocialButtons from "@/components/SocialButtons"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
-  const [googleLoading, setGoogleLoading] = useState(false)
-  const [googleClientId, setGoogleClientId] = useState("")
-
-  // Client ID dibaca dari runtime-env.js (diisi container saat start).
-  useEffect(() => setGoogleClientId(getGoogleClientId()), [])
 
   const finishLogin = (accessToken: string, refreshToken?: string) => {
     localStorage.setItem("token", accessToken)
@@ -51,28 +46,6 @@ export default function LoginPage() {
       setLoading(false)
     }
   }
-
-  const handleGoogleLogin = async () => {
-    setError("")
-    setGoogleLoading(true)
-    try {
-      const googleAccessToken = await requestGoogleAccessToken(googleClientId)
-      const response = await fetch(`${getApiBaseUrl()}/api/auth/social-login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: "google", access_token: googleAccessToken }),
-      })
-      const payload = await response.json().catch(() => null)
-      if (!response.ok) throw new Error(readApiError(payload, "Google sign-in failed."))
-      if (!payload?.access_token) throw new Error("The server did not return a token. Try again.")
-      finishLogin(payload.access_token, payload.refresh_token)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Google sign-in failed.")
-    } finally {
-      setGoogleLoading(false)
-    }
-  }
-
 
   return (
     <div className="ui-shell">
@@ -158,21 +131,7 @@ export default function LoginPage() {
           </form>
 
           <div style={{ display: "grid", gap: 12, marginTop: 16 }}>
-            {googleClientId ? (
-              <button
-                type="button"
-                onClick={handleGoogleLogin}
-                disabled={googleLoading}
-                className="ui-btn ui-btn-ghost ui-btn-block"
-              >
-                {googleLoading ? "Connecting to Google..." : "Continue with Google"}
-              </button>
-            ) : (
-              <p className="ui-muted" style={{ fontSize: 12, textAlign: "center", lineHeight: 1.7 }}>
-                Google sign-in is not configured on this deployment yet. Use your email and
-                password — it works right away.
-              </p>
-            )}
+            <SocialButtons mode="login" onSuccess={finishLogin} />
             <p className="ui-muted" style={{ textAlign: "center", fontSize: 13 }}>
               No account?{" "}
               <Link href="/register" className="ui-gold" style={{ fontWeight: 700 }}>

@@ -226,7 +226,23 @@ async def _create_oauth_user(
     return user
 
 
+@router.get("/social-providers")
+async def social_providers():
+    """
+    Provider OAuth yang siap dipakai (client id/secret tersedia di server).
+
+    Frontend memakai endpoint ini untuk memutuskan tombol mana yang aktif,
+    sehingga tombol tidak pernah "diam" tanpa penjelasan.
+    """
+    return {
+        "google": bool(settings.GOOGLE_CLIENT_ID),
+        "x": bool(settings.X_CLIENT_ID and settings.X_CLIENT_SECRET),
+        "facebook": bool(settings.FACEBOOK_CLIENT_ID and settings.FACEBOOK_CLIENT_SECRET),
+    }
+
+
 @router.post("/social-login", response_model=TokenResponse)
+
 async def social_login(data: SocialLoginRequest, db: AsyncSession = Depends(get_db_session)):
     """
     Login via penyedia OAuth.
