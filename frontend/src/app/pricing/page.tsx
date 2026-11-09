@@ -1,10 +1,11 @@
 import Link from "next/link"
 import Navbar from "@/components/Navbar"
+import SiteFooter from "@/components/SiteFooter"
 import PricingCards from "@/components/PricingCards"
 
 export const metadata = {
-  title: "Harga — Clipzy AI",
-  description: "Paket Gratis, Standar, Pro, dan Team untuk mengubah video panjang jadi klip vertikal.",
+  title: "Pricing — Clipzy AI",
+  description: "Free, Standard, Pro, and Team plans for turning long videos into vertical clips.",
 }
 
 export default function PricingPage() {
@@ -15,13 +16,15 @@ export default function PricingPage() {
         <PricingCards />
         <div className="ui-container" style={{ textAlign: "center", padding: "8px 0 70px" }}>
           <p className="ui-muted" style={{ marginBottom: 18 }}>
-            Belum yakin? Mulai dengan paket Gratis — tanpa kartu kredit.
+            Not sure yet? Start on the Free plan — no credit card required.
           </p>
           <Link href="/register" className="ui-btn ui-btn-gold">
-            Daftar gratis
+            Create free account
           </Link>
         </div>
       </main>
+      <SiteFooter />
     </div>
   )
 }
+

@@ -5,6 +5,7 @@ import os
 DOCKERHUB = os.environ.get("VPS_DOCKERHUB", "sujinwo555")
 TAG = os.environ.get("VPS_TAG", "1.5.0")
 PUBLIC_URL = os.environ.get("VPS_PUBLIC_URL", "https://proxyai.live")
+GOOGLE_CLIENT_ID = os.environ.get("VPS_GOOGLE_CLIENT_ID", "")
 
 COMPOSE_TEMPLATE = """# Deployment Clipzi di VPS (satu origin lewat Caddy)
 name: clipzi
@@ -40,6 +41,7 @@ services:
     container_name: clipzi-web
     environment:
       NEXT_PUBLIC_API_URL: __PUBLIC_URL__
+      NEXT_PUBLIC_GOOGLE_CLIENT_ID: "__GOOGLE_CLIENT_ID__"
     expose:
       - "3000"
     mem_limit: 512m
@@ -86,4 +88,5 @@ def compose_text() -> str:
         COMPOSE_TEMPLATE.replace("__DOCKERHUB__", DOCKERHUB)
         .replace("__TAG__", TAG)
         .replace("__PUBLIC_URL__", PUBLIC_URL)
+        .replace("__GOOGLE_CLIENT_ID__", GOOGLE_CLIENT_ID)
     )

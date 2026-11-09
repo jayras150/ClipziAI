@@ -267,6 +267,71 @@
 .ui-tab:hover {
   color: #fff;
 }
+
+/* ---------- Footer bersama ---------- */
+.ui-footer {
+  border-top: 1px solid var(--ui-line);
+  padding: 28px 0;
+  margin-top: 40px;
+  color: #7c808c;
+  font-size: 12px;
+}
+.ui-footer-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.ui-footer-copy {
+  color: #7c808c;
+}
+.ui-footer-links {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.ui-footer-links a:hover {
+  color: var(--ui-gold);
+}
+.ui-legal {
+  padding: 46px 0 10px;
+  max-width: 780px;
+}
+.ui-legal h1 {
+  font-family: var(--font-space), "Space Grotesk", sans-serif;
+  font-size: clamp(28px, 4vw, 40px);
+  letter-spacing: -1.4px;
+  margin: 8px 0 10px;
+}
+.ui-legal h2 {
+  font-family: var(--font-space), "Space Grotesk", sans-serif;
+  font-size: 19px;
+  margin: 30px 0 10px;
+  letter-spacing: -0.4px;
+}
+.ui-legal p,
+.ui-legal li {
+  color: var(--ui-muted);
+  font-size: 14px;
+  line-height: 1.85;
+}
+.ui-legal ul {
+  padding-left: 20px;
+  margin: 10px 0;
+}
+.ui-legal li {
+  margin-bottom: 6px;
+}
+.ui-legal a {
+  color: var(--ui-gold);
+}
+.ui-legal .ui-legal-meta {
+  font-size: 12px;
+  color: #6f7381;
+  margin-bottom: 18px;
+}
+
 .ui-tab.active {
   background: linear-gradient(135deg, var(--ui-gold-2), #e8b54f);
   color: #1b160d;

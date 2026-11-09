@@ -27,7 +27,7 @@ const spaceGrotesk = Space_Grotesk({
 export const metadata: Metadata = {
   title: "Clipzy AI — Create More. Edit Less.",
   description:
-    "Clipzy AI — Ubah video panjang menjadi konten pendek yang siap viral dengan bantuan AI.",
+    "Clipzy AI turns long videos into short, ready-to-publish clips with AI highlight detection, subtitles, and vertical reframing.",
 }
 
 export default function RootLayout({
@@ -36,7 +36,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="id" className={`${dmSans.variable} ${spaceGrotesk.variable}`}>
+    <html lang="en" className={`${dmSans.variable} ${spaceGrotesk.variable}`}>
       <body className={dmSans.className}>
         {/* Konfigurasi runtime (NEXT_PUBLIC_API_URL) dimuat sebelum bundle klien */}
         <Script src="/runtime-env.js" strategy="beforeInteractive" />

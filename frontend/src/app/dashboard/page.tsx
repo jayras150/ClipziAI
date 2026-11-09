@@ -1,14 +1,15 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { Upload, Play, Youtube, Unlink, LoaderCircle, Link2 } from "lucide-react"
 import { api } from "@/lib/api"
+import SiteFooter from "@/components/SiteFooter"
 
 const SAMPLE_PROJECTS = [
-  { id: 1, title: "Tutorial Memasak", status: "completed", progress: 100, clips: 5 },
-  { id: 2, title: "Review Teknologi", status: "processing", progress: 65, clips: 3 },
-  { id: 3, title: "Vlog Perjalanan", status: "queued", progress: 0, clips: 0 },
+  { id: 1, title: "Cooking tutorial", status: "completed", progress: 100, clips: 5 },
+  { id: 2, title: "Tech review", status: "processing", progress: 65, clips: 3 },
+  { id: 3, title: "Travel vlog", status: "queued", progress: 0, clips: 0 },
 ]
 
 export default function DashboardPage() {
@@ -25,12 +26,12 @@ export default function DashboardPage() {
     api
       .getYouTubeStatus(token)
       .then(setYoutube)
-      .catch(() => setYoutubeMessage("Masuk untuk melihat status YouTube."))
+      .catch(() => setYoutubeMessage("Sign in to view your YouTube status."))
 
     const status = new URLSearchParams(window.location.search).get("youtube")
-    if (status === "connected") setYoutubeMessage("YouTube berhasil terhubung.")
+    if (status === "connected") setYoutubeMessage("YouTube connected successfully.")
     if (status === "denied") setYoutubeMessage("Izin YouTube dibatalkan.")
-    if (status === "error") setYoutubeMessage("Koneksi YouTube gagal. Periksa konfigurasi Google OAuth.")
+    if (status === "error") setYoutubeMessage("YouTube connection failed. Check the Google OAuth configuration.")
   }, [])
 
   const connectYouTube = async () => {
@@ -44,7 +45,7 @@ export default function DashboardPage() {
     try {
       window.location.href = await api.getYouTubeAuthUrl(token)
     } catch (error: any) {
-      setYoutubeMessage(error.response?.data?.detail || "Tidak dapat memulai koneksi YouTube.")
+      setYoutubeMessage(error.response?.data?.detail || "Could not start the YouTube connection.")
       setYoutubeLoading(false)
     }
   }
@@ -56,9 +57,9 @@ export default function DashboardPage() {
     try {
       await api.disconnectYouTube(token)
       setYoutube({ connected: false })
-      setYoutubeMessage("Koneksi YouTube berhasil dihapus.")
+      setYoutubeMessage("YouTube connection removed.")
     } catch {
-      setYoutubeMessage("Koneksi YouTube tidak dapat dihapus.")
+      setYoutubeMessage("Could not remove the YouTube connection.")
     } finally {
       setYoutubeLoading(false)
     }
@@ -68,14 +69,14 @@ export default function DashboardPage() {
     <div className="ui-shell">
       <div className="ui-container ui-nav">
         <Link className="ui-brand" href="/">
-          <span className="ui-brand-mark">▶</span>
+          <span className="ui-brand-mark">â–¶</span>
           <span>
             clipzy<em>AI</em>
           </span>
         </Link>
         <nav className="ui-nav-links">
           <Link href="/dashboard">Dashboard</Link>
-          <Link href="/pricing">Harga</Link>
+          <Link href="/pricing">Pricing</Link>
         </nav>
         <div className="ui-nav-actions">
           <button
@@ -90,7 +91,7 @@ export default function DashboardPage() {
             ) : (
               <Youtube size={15} />
             )}
-            {youtube.connected ? `YouTube: ${youtube.channel_name || "Terhubung"}` : "Hubungkan YouTube"}
+            {youtube.connected ? `YouTube: ${youtube.channel_name || "Connected"}` : "Connect YouTube"}
           </button>
         </div>
       </div>
@@ -112,7 +113,7 @@ export default function DashboardPage() {
               Dashboard
             </h1>
             <p className="ui-muted" style={{ marginTop: 6 }}>
-              Kelola proyek video dan hubungkan channel YouTube Anda.
+              Manage your video projects and connect your YouTube channel.
             </p>
           </div>
           <div className="ui-tabs">
@@ -126,7 +127,7 @@ export default function DashboardPage() {
               className={`ui-tab${activeTab === "projects" ? " active" : ""}`}
               onClick={() => setActiveTab("projects")}
             >
-              Proyek
+              Projects
             </button>
           </div>
         </div>
@@ -140,20 +141,20 @@ export default function DashboardPage() {
 
         {activeTab === "upload" ? (
           <div className="ui-card">
-            <h2 className="ui-subtitle">Unggah Video</h2>
+            <h2 className="ui-subtitle">Upload video</h2>
             <p className="ui-muted" style={{ marginBottom: 20 }}>
-              Tempel tautan video atau unggah file. AI akan memilih momen terbaiknya.
+              Paste a video link or upload a file. AI will pick the best moments.
             </p>
 
             <div className="ui-dropzone">
               <Upload size={40} className="ui-gold" style={{ margin: "0 auto 12px" }} />
-              <p style={{ fontSize: 14, color: "#e6e7ea" }}>Klik atau seret file video di sini</p>
-              <p className="ui-hint">Maksimal 2GB · MP4, MOV, AVI</p>
+              <p style={{ fontSize: 14, color: "#e6e7ea" }}>Click or drag a video file here</p>
+              <p className="ui-hint">Max 2 GB · MP4, MOV, AVI</p>
             </div>
 
             <div style={{ marginTop: 22 }}>
               <label className="ui-label" htmlFor="video-url">
-                Atau tempel URL video
+                Or paste a video URL
               </label>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <input
@@ -164,12 +165,12 @@ export default function DashboardPage() {
                   style={{ flex: "1 1 260px" }}
                 />
                 <button className="ui-btn ui-btn-gold">
-                  <Play size={15} /> Proses
+                  <Play size={15} /> Process
                 </button>
               </div>
               <p className="ui-hint">
-                Biaya 1 kredit per klip. Pemrosesan berjalan di GPU cloud dan instance dihentikan
-                otomatis setelah selesai.
+                1 credit per clip. Processing runs on cloud GPUs and the instance shuts down
+                automatically when the task finishes.
               </p>
             </div>
           </div>
@@ -234,7 +235,7 @@ export default function DashboardPage() {
                     color: "var(--ui-muted)",
                   }}
                 >
-                  <span>{project.clips} klip</span>
+                  <span>{project.clips} clips</span>
                   <span>{project.progress}%</span>
                 </div>
               </article>
@@ -242,6 +243,7 @@ export default function DashboardPage() {
           </div>
         )}
       </main>
+      <SiteFooter />
     </div>
   )
 }

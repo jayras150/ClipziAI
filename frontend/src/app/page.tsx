@@ -7,40 +7,56 @@ const FEATURES = [
   {
     icon: "✦",
     title: "AI Moment Detection",
-    desc: "Temukan bagian menarik dari video panjang berdasarkan percakapan, konteks, dan momen penting.",
+    desc: "Scans the transcript to surface hooks, punchlines, and the most engaging moments — no need to rewatch the whole video.",
   },
   {
     icon: "▤",
     title: "Smart Subtitles",
-    desc: "Buat subtitle otomatis agar konten lebih mudah diikuti, termasuk untuk penonton tanpa suara.",
+    desc: "Whisper transcribes the audio and burns accurate, timed captions straight into the video.",
   },
   {
     icon: "▣",
     title: "Vertical Reframing",
-    desc: "Siapkan format vertikal untuk Shorts, Reels, dan TikTok dengan komposisi yang lebih sesuai.",
+    desc: "Automatically reframes the main subject to 9:16, ready for Shorts, Reels, and TikTok.",
   },
   {
     icon: "◉",
     title: "AI Speaker Focus",
-    desc: "Bantu menjaga pembicara tetap menjadi fokus saat video disesuaikan ke rasio vertikal.",
+    desc: "Keeps the speaker centred while the frame is cropped to vertical, so nobody is cut off.",
   },
   {
     icon: "⌁",
     title: "Fast Video Workflow",
-    desc: "Satukan proses pemilihan momen, pemotongan, dan persiapan hasil dalam satu alur kerja.",
+    desc: "Moment selection, cutting, subtitles, and rendering run in a single automated pipeline.",
   },
   {
     icon: "↗",
     title: "Export & Share",
-    desc: "Siapkan hasil akhir untuk dibagikan ke platform video pendek favoritmu.",
+    desc: "Publish clips straight to YouTube with AI-suggested titles, descriptions, and tags.",
   },
 ]
 
 const STEPS = [
-  { num: "01 / INPUT", title: "Masukkan video", desc: "Unggah video atau masukkan sumber video yang ingin kamu olah." },
-  { num: "02 / ANALYZE", title: "AI menganalisis", desc: "AI memproses audio dan konten untuk mencari bagian yang potensial." },
-  { num: "03 / CREATE", title: "Buat clips", desc: "Pilih momen, sesuaikan subtitle, dan atur tampilan video." },
-  { num: "04 / EXPORT", title: "Export hasilnya", desc: "Simpan video pendek dan bagikan ke platform pilihanmu." },
+  {
+    num: "01 / INPUT",
+    title: "Add your video",
+    desc: "Paste a YouTube, TikTok, or Instagram link — or upload a file directly.",
+  },
+  {
+    num: "02 / ANALYZE",
+    title: "AI analyses it",
+    desc: "Audio is transcribed and the timeline is scored to find the strongest segments.",
+  },
+  {
+    num: "03 / CREATE",
+    title: "Clips are rendered",
+    desc: "Highlights are cut, reframed to 9:16, and captions are burned in.",
+  },
+  {
+    num: "04 / EXPORT",
+    title: "Download or publish",
+    desc: "Grab the MP4 and SRT files, or push them to YouTube in one click.",
+  },
 ]
 
 export default function LandingPage() {
@@ -49,7 +65,7 @@ export default function LandingPage() {
   const [year, setYear] = useState<number | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Tahun dihitung di klien agar tidak ada hydration mismatch.
+  // Year is computed on the client to avoid hydration mismatch.
   useEffect(() => setYear(new Date().getFullYear()), [])
 
   const onPickFile = (file: File | null) => {
@@ -73,19 +89,19 @@ export default function LandingPage() {
           </span>
         </Link>
         <nav className={`nav-links${menuOpen ? " open" : ""}`}>
-          <a href="#features" onClick={closeMenu}>Fitur</a>
-          <a href="#how" onClick={closeMenu}>Cara Kerja</a>
-          <a href="#demo" onClick={closeMenu}>Coba Demo</a>
-          <a href="#about" onClick={closeMenu}>Tentang</a>
+          <a href="#features" onClick={closeMenu}>Features</a>
+          <a href="#how" onClick={closeMenu}>How it works</a>
+          <a href="#demo" onClick={closeMenu}>Demo</a>
+          <Link href="/pricing" onClick={closeMenu}>Pricing</Link>
         </nav>
         <div className="nav-actions">
-          <a className="btn btn-ghost" href="#features">Jelajahi</a>
+          <Link className="btn btn-ghost" href="/login">Sign in</Link>
           <Link className="btn btn-gold" href="/register">
-            Mulai Gratis <span>↗</span>
+            Start free <span>↗</span>
           </Link>
           <button
             className="menu-toggle"
-            aria-label="Buka menu"
+            aria-label="Toggle menu"
             onClick={() => setMenuOpen((open) => !open)}
           >
             {menuOpen ? "✕" : "☰"}
@@ -107,16 +123,16 @@ export default function LandingPage() {
               Big impact.
             </h1>
             <p className="hero-copy">
-              Ubah video panjang menjadi konten Shorts, Reels, dan TikTok secara otomatis. Temukan
-              momen terbaik, buat subtitle, dan siapkan video untuk dibagikan — lebih cepat dengan
-              Clipzy AI.
+              Turn long videos into Shorts, Reels, and TikToks automatically. Clipzy AI finds the
+              best moments, writes the subtitles, and prepares every clip for publishing — in
+              minutes, not hours.
             </p>
             <div className="hero-buttons">
               <Link href="/register" className="btn btn-gold">
-                Mulai Sekarang <span>→</span>
+                Start free <span>→</span>
               </Link>
               <a href="#how" className="btn btn-ghost">
-                Lihat cara kerja
+                See how it works
               </a>
             </div>
             <div className="hero-note">
@@ -125,7 +141,7 @@ export default function LandingPage() {
                 <i className="avatar" />
                 <i className="avatar" />
               </div>
-              <span>Workflow lebih cepat. Kreativitas tetap milikmu.</span>
+              <span>5 free credits. No credit card required.</span>
             </div>
           </div>
 
@@ -175,14 +191,11 @@ export default function LandingPage() {
           <div className="section-head">
             <div className="kicker">Powerful features</div>
             <h2>
-              Semua yang kamu butuhkan
+              Everything you need
               <br />
-              untuk membuat clips.
+              to ship more clips.
             </h2>
-            <p>
-              Fokus pada ide dan cerita. Clipzy AI membantu mempercepat proses produksi konten
-              pendek.
-            </p>
+            <p>Focus on the story. Clipzy AI handles the repetitive editing work.</p>
           </div>
           <div className="feature-grid">
             {FEATURES.map((feature) => (
@@ -195,107 +208,140 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section className="section container" id="how">
+
+
+        <section className="section container how" id="how">
           <div className="section-head">
-            <div className="kicker">Simple workflow</div>
-            <h2>Dari video panjang ke short clips.</h2>
-            <p>Empat langkah sederhana untuk memulai proses kreatifmu.</p>
+            <div className="kicker">Workflow</div>
+            <h2>
+              From long video
+              <br />
+              to ready-to-post clips.
+            </h2>
+            <p>Four automated steps. No editing skills needed.</p>
           </div>
-          <div className="workflow">
+          <div className="steps">
             {STEPS.map((step) => (
-              <article className="step" key={step.num}>
+              <div className="step" key={step.num}>
                 <div className="step-num">{step.num}</div>
-                <h3>{step.title}</h3>
+                <h4>{step.title}</h4>
                 <p>{step.desc}</p>
-              </article>
+              </div>
             ))}
           </div>
         </section>
 
         <section className="section container" id="demo">
-          <div className="demo-wrap">
+          <div className="demo">
             <div>
-              <div className="kicker">Try the experience</div>
-              <h2>Siap membuat konten berikutnya?</h2>
+              <div className="kicker">Try it</div>
+              <h2>Drop a video and see the highlights.</h2>
               <p>
-                Pilih file video dari perangkatmu untuk mencoba interaksi halaman ini. Demo ini
-                hanya menampilkan nama file — belum mengunggah atau memproses video ke server.
+                Sign in to start processing. Clips are generated with subtitles, a 9:16 crop, and
+                AI-suggested titles you can edit before exporting.
               </p>
-              <a href="#features" className="btn btn-ghost">
-                Jelajahi fitur <span>→</span>
-              </a>
+              <ul className="demo-list">
+                <li>Highlights detected from the transcript</li>
+                <li>Auto-captions with word-level timing</li>
+                <li>Ready for Shorts, Reels, and TikTok</li>
+              </ul>
             </div>
-            <div className="upload-box">
-              <div className="upload-icon">⇧</div>
-              <h3>Pilih video kamu</h3>
-              <p>MP4, MOV, atau WebM · Demo antarmuka</p>
-              <input
-                ref={inputRef}
-                type="file"
-                accept="video/mp4,video/quicktime,video/webm"
-                hidden
-                onChange={(event) => onPickFile(event.target.files?.[0] ?? null)}
-              />
-              <button className="btn btn-gold" onClick={() => inputRef.current?.click()}>
-                Pilih File Video
-              </button>
-              <div className="file-name" aria-live="polite">
-                {fileName}
+            <div>
+              <div className="dropzone" onClick={() => inputRef.current?.click()}>
+                <div className="drop-icon">⇪</div>
+                <strong>Drop your video here</strong>
+                <span>MP4, MOV, or paste a YouTube link</span>
+                <button
+                  type="button"
+                  className="btn btn-gold"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    inputRef.current?.click()
+                  }}
+                >
+                  Choose file
+                </button>
+                <input
+                  ref={inputRef}
+                  type="file"
+                  accept="video/*"
+                  hidden
+                  onChange={(event) => onPickFile(event.target.files?.[0] ?? null)}
+                />
               </div>
+              {fileName && <div className="file-name">{fileName}</div>}
+              <p className="drop-help">
+                Max 2 GB per file. Uploading requires an account —{" "}
+                <Link href="/register">create one free</Link>.
+              </p>
             </div>
           </div>
-          <div className="stats">
+        </section>
+
+        <section className="container stats">
+          <div className="section-head center">
+            <div className="kicker">Built for creators</div>
+            <h2>Numbers that matter.</h2>
+          </div>
+          <div className="stat-grid">
             <div className="stat">
-              <strong>AI</strong>
-              <span>Smart assistance</span>
+              <strong>10×</strong>
+              <span>Faster than manual editing</span>
+            </div>
+            <div className="stat">
+              <strong>3 min</strong>
+              <span>Average render time per video</span>
             </div>
             <div className="stat">
               <strong>9:16</strong>
-              <span>Vertical-ready format</span>
+              <span>Ready for every vertical feed</span>
             </div>
             <div className="stat">
-              <strong>∞</strong>
-              <span>Creative possibilities</span>
+              <strong>5</strong>
+              <span>Free credits on signup</span>
             </div>
           </div>
         </section>
 
-        <section className="container section" id="about">
+        <section className="container">
           <div className="cta">
-            <div className="kicker">Create without limits</div>
             <h2>
-              Lebih banyak konten.
+              Ready to turn long videos
               <br />
-              Lebih sedikit pekerjaan manual.
+              into clips that perform?
             </h2>
-            <p>
-              Clipzy AI membantu kreator mengubah ide dan video panjang menjadi konten pendek dengan
-              workflow yang lebih praktis.
-            </p>
-            <Link className="btn btn-gold" href="/register">
-              Mulai dengan Clipzy AI <span>↗</span>
-            </Link>
+            <p>Create an account and get 5 free credits. No credit card required.</p>
+            <div className="hero-buttons">
+              <Link href="/register" className="btn btn-gold">
+                Create free account <span>→</span>
+              </Link>
+              <Link href="/pricing" className="btn btn-ghost">
+                View pricing
+              </Link>
+            </div>
           </div>
         </section>
-      </main>
 
-      <footer>
-        <div className="container footer-inner">
+        <footer className="container footer">
           <Link className="brand" href="#home">
             <span className="brand-mark">▶</span>
             <span>
               clipzy<em>AI</em>
             </span>
           </Link>
-          <span>© {year ?? ""} Clipzy AI. All rights reserved.</span>
+          <p>AI-powered video clipping for creators.</p>
           <div className="footer-links">
-            <a href="#features">Features</a>
-            <a href="#how">How it works</a>
-            <Link href="/login">Masuk</Link>
-            <a href="#home">Back to top ↑</a>
+            <Link href="/pricing">Pricing</Link>
+            <Link href="/privacy-policy">Privacy Policy</Link>
+            <Link href="/terms">Terms of Service</Link>
+            <Link href="/refund-policy">Refund Policy</Link>
+            <Link href="/contact">Contact</Link>
           </div>
-        </div>
-      </footer>
+          <div className="footer-note">
+            © {year ?? 2026} Clipzy AI. All rights reserved.
+          </div>
+        </footer>
+      </main>
     </div>
   )
 }

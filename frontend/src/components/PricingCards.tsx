@@ -4,52 +4,52 @@ import Link from "next/link"
 
 const PLANS = [
   {
-    name: "Gratis",
-    price: "Gratis",
+    name: "Free",
+    price: "Free",
     period: "",
-    credits: "5 kredit sekali jalan",
-    duration: "Maks 5 menit",
-    features: ["Smart Crop 9:16", "Auto Subtitle", "Watermark Clipzy"],
+    credits: "5 credits, one-time",
+    duration: "Up to 5 minutes",
+    features: ["9:16 smart crop", "Auto subtitles", "Clipzy watermark"],
     popular: false,
   },
   {
-    name: "Standar",
-    price: "Rp 99.000",
-    period: "/bulan",
-    credits: "30 kredit/bulan",
-    duration: "Maks 30 menit",
+    name: "Standard",
+    price: "Rp 99,000",
+    period: "/month",
+    credits: "30 credits/month",
+    duration: "Up to 30 minutes",
     features: [
-      "Semua fitur Gratis",
-      "Auto Zoom",
-      "Blur Background",
-      "YouTube Upload",
-      "Tanpa watermark",
+      "Everything in Free",
+      "Auto zoom",
+      "Blurred background",
+      "YouTube upload",
+      "No watermark",
     ],
     popular: false,
   },
   {
     name: "Pro",
-    price: "Rp 249.000",
-    period: "/bulan",
-    credits: "100 kredit/bulan",
-    duration: "Maks 60 menit",
+    price: "Rp 249,000",
+    period: "/month",
+    credits: "100 credits/month",
+    duration: "Up to 60 minutes",
     features: [
-      "Semua fitur Standar",
-      "Semua editing tools",
-      "Viral Scoring AI",
-      "AI Metadata",
-      "Thumbnail AI",
-      "Antrian prioritas",
+      "Everything in Standard",
+      "All editing tools",
+      "AI viral scoring",
+      "AI metadata",
+      "AI thumbnails",
+      "Priority queue",
     ],
     popular: true,
   },
   {
     name: "Team",
-    price: "Rp 499.000",
-    period: "/bulan",
-    credits: "300 kredit/bulan",
-    duration: "Maks 120 menit",
-    features: ["Semua fitur Pro", "5+ anggota tim", "Manajemen tim", "Kredit bersama"],
+    price: "Rp 499,000",
+    period: "/month",
+    credits: "300 credits/month",
+    duration: "Up to 120 minutes",
+    features: ["Everything in Pro", "5+ team members", "Team management", "Shared credits"],
     popular: false,
   },
 ]
@@ -60,9 +60,9 @@ export default function PricingCards() {
       <div style={{ textAlign: "center", maxWidth: 620, margin: "0 auto 42px" }}>
         <div className="ui-kicker">Pricing</div>
         <h2 className="ui-title" style={{ margin: "12px 0" }}>
-          Pilih paket yang tepat
+          Choose the plan that fits
         </h2>
-        <p className="ui-muted">Mulai gratis, upgrade kapan saja. Semua paket memakai AI terbaru.</p>
+        <p className="ui-muted">Start free, upgrade anytime. Every plan uses the latest AI models.</p>
       </div>
 
       <div
@@ -84,7 +84,7 @@ export default function PricingCards() {
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <h3 className="ui-subtitle">{plan.name}</h3>
-              {plan.popular && <span className="ui-badge ui-badge-gold">Populer</span>}
+              {plan.popular && <span className="ui-badge ui-badge-gold">Popular</span>}
             </div>
             <div style={{ margin: "10px 0 6px" }}>
               <span style={{ font: "700 27px var(--font-space), sans-serif", color: "var(--ui-gold)" }}>
@@ -112,7 +112,7 @@ export default function PricingCards() {
               href="/register"
               className={`ui-btn ui-btn-block ${plan.popular ? "ui-btn-gold" : "ui-btn-ghost"}`}
             >
-              {plan.name === "Gratis" ? "Mulai gratis" : `Pilih ${plan.name}`}
+              {plan.name === "Free" ? "Start free" : `Choose ${plan.name}`}
             </Link>
           </article>
         ))}

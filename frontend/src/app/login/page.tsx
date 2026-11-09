@@ -1,16 +1,29 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { Mail, Lock } from "lucide-react"
 
-import { getApiBaseUrl } from "@/lib/env"
+import { getApiBaseUrl, getGoogleClientId } from "@/lib/env"
+import { readApiError } from "@/lib/api-errors"
+import { requestGoogleAccessToken } from "@/lib/social"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
+  const [googleClientId, setGoogleClientId] = useState("")
+
+  // Client ID dibaca dari runtime-env.js (diisi container saat start).
+  useEffect(() => setGoogleClientId(getGoogleClientId()), [])
+
+  const finishLogin = (accessToken: string, refreshToken?: string) => {
+    localStorage.setItem("token", accessToken)
+    if (refreshToken) localStorage.setItem("refresh_token", refreshToken)
+    window.location.href = "/dashboard"
+  }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -20,24 +33,46 @@ export default function LoginPage() {
       const response = await fetch(`${getApiBaseUrl()}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
       })
-      const payload = await response.json()
-      if (!response.ok) throw new Error(payload.detail || "Email atau kata sandi salah.")
-      localStorage.setItem("token", payload.access_token)
-      localStorage.setItem("refresh_token", payload.refresh_token)
-      window.location.href = "/dashboard"
-    } catch (err: any) {
-      setError(err.message || "Login gagal. Coba lagi.")
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(readApiError(payload, "Incorrect email or password."))
+      if (!payload?.access_token) throw new Error("The server did not return a token. Try again.")
+      finishLogin(payload.access_token, payload.refresh_token)
+    } catch (err) {
+      const message =
+        err instanceof TypeError
+          ? "Cannot reach the server. Check your connection and try again."
+          : err instanceof Error
+            ? err.message
+            : "Sign in failed. Please try again."
+      setError(message)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleSocialLogin = (provider: string) => {
-    console.log(`Login with ${provider}`)
-    // TODO: Redirect to OAuth provider
+  const handleGoogleLogin = async () => {
+    setError("")
+    setGoogleLoading(true)
+    try {
+      const googleAccessToken = await requestGoogleAccessToken(googleClientId)
+      const response = await fetch(`${getApiBaseUrl()}/api/auth/social-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: "google", access_token: googleAccessToken }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(readApiError(payload, "Google sign-in failed."))
+      if (!payload?.access_token) throw new Error("The server did not return a token. Try again.")
+      finishLogin(payload.access_token, payload.refresh_token)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Google sign-in failed.")
+    } finally {
+      setGoogleLoading(false)
+    }
   }
+
 
   return (
     <div className="ui-shell">
@@ -50,7 +85,7 @@ export default function LoginPage() {
         </Link>
         <div className="ui-nav-actions">
           <Link className="ui-btn ui-btn-ghost" href="/register">
-            Daftar
+            Sign up
           </Link>
         </div>
       </div>
@@ -65,24 +100,29 @@ export default function LoginPage() {
       >
         <div style={{ width: "min(420px, calc(100vw - 44px))" }}>
           <div style={{ textAlign: "center", marginBottom: 26 }}>
-            <div className="ui-brand-mark" style={{ margin: "0 auto 14px", width: 42, height: 42 }}>▶</div>
+            <div className="ui-brand-mark" style={{ margin: "0 auto 14px", width: 42, height: 42 }}>
+              ▶
+            </div>
             <h2 className="ui-title" style={{ fontSize: 28 }}>
-              Masuk ke <span className="ui-shine">Clipzy AI</span>
+              Sign in to <span className="ui-shine">Clipzy AI</span>
             </h2>
             <p className="ui-muted" style={{ marginTop: 8 }}>
-              Selamat datang kembali. Lanjutkan membuat klip.
+              Welcome back. Pick up where you left off.
             </p>
           </div>
 
           <form onSubmit={handleLogin} className="ui-card" style={{ display: "grid", gap: 16 }}>
             <div>
-              <label className="ui-label" htmlFor="email">Email</label>
+              <label className="ui-label" htmlFor="email">
+                Email
+              </label>
               <div className="ui-input-wrap">
                 <Mail size={17} />
                 <input
                   id="email"
                   type="email"
                   required
+                  autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="ui-input with-icon"
@@ -92,13 +132,16 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label className="ui-label" htmlFor="password">Kata Sandi</label>
+              <label className="ui-label" htmlFor="password">
+                Password
+              </label>
               <div className="ui-input-wrap">
                 <Lock size={17} />
                 <input
                   id="password"
                   type="password"
                   required
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="ui-input with-icon"
@@ -110,31 +153,33 @@ export default function LoginPage() {
             {error && <div className="ui-alert ui-alert-error">{error}</div>}
 
             <button type="submit" disabled={loading} className="ui-btn ui-btn-gold ui-btn-block">
-              {loading ? "Memproses..." : "Masuk"}
+              {loading ? "Signing in..." : "Sign in"}
             </button>
+          </form>
 
+          <div style={{ display: "grid", gap: 12, marginTop: 16 }}>
+            {googleClientId ? (
+              <button
+                type="button"
+                onClick={handleGoogleLogin}
+                disabled={googleLoading}
+                className="ui-btn ui-btn-ghost ui-btn-block"
+              >
+                {googleLoading ? "Connecting to Google..." : "Continue with Google"}
+              </button>
+            ) : (
+              <p className="ui-muted" style={{ fontSize: 12, textAlign: "center", lineHeight: 1.7 }}>
+                Google sign-in is not configured on this deployment yet. Use your email and
+                password — it works right away.
+              </p>
+            )}
             <p className="ui-muted" style={{ textAlign: "center", fontSize: 13 }}>
-              Belum punya akun?{" "}
+              No account?{" "}
               <Link href="/register" className="ui-gold" style={{ fontWeight: 700 }}>
-                Daftar gratis
+                Create one free
               </Link>
             </p>
-
-            <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#6f7381", fontSize: 11 }}>
-              <span style={{ flex: 1, height: 1, background: "var(--ui-line)" }} />
-              atau lanjutkan dengan
-              <span style={{ flex: 1, height: 1, background: "var(--ui-line)" }} />
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
-              <button type="button" onClick={() => handleSocialLogin("google")} className="ui-btn ui-btn-ghost">
-                Google
-              </button>
-              <button type="button" onClick={() => handleSocialLogin("x")} className="ui-btn ui-btn-ghost">
-                X
-              </button>
-            </div>
-          </form>
+          </div>
         </div>
       </main>
     </div>

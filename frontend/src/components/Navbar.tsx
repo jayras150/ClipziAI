@@ -13,14 +13,15 @@ export default function Navbar() {
       </Link>
       <nav className="ui-nav-links">
         <Link href="/dashboard">Dashboard</Link>
-        <Link href="/pricing">Harga</Link>
+        <Link href="/pricing">Pricing</Link>
+        <Link href="/contact">Contact</Link>
       </nav>
       <div className="ui-nav-actions">
         <Link className="ui-btn ui-btn-ghost" href="/login">
-          Masuk
+          Sign in
         </Link>
         <Link className="ui-btn ui-btn-gold" href="/register">
-          Mulai Gratis
+          Start free
         </Link>
       </div>
     </header>
