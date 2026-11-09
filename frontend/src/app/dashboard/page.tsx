@@ -177,17 +177,17 @@ export default function DashboardPage() {
       window.location.href = await api.getYouTubeAuthUrl(stored)
     } catch (error: any) {
       const detail = String(error.response?.data?.detail || "")
-      const needsFallback =
-        error.response?.status === 409 && /redirect[ _]uri/i.test(detail) && /mismatch|terdaftar/i.test(detail)
+      const originalMessage = readApiError(error.response?.data, "Could not start the YouTube connection.")
 
-      if (!needsFallback) {
-        setYoutubeMessage(readApiError(error.response?.data, "Could not start the YouTube connection."))
+      // 409 = konfigurasi OAuth server belum lengkap (contoh paling umum:
+      // redirect URI belum terdaftar di Google Cloud Console). Pakai alur token
+      // Google Identity Services yang tidak membutuhkan redirect URI sama sekali.
+      if (error.response?.status !== 409) {
+        setYoutubeMessage(originalMessage)
         setYoutubeLoading(false)
         return
       }
 
-      // Redirect URI belum terdaftar di Google Console → pakai alur token Google
-      // Identity Services (tidak memerlukan redirect URI sama sekali).
       try {
         setYoutubeMessage("Opening Google consent…")
         const diagnostics = await api.getYouTubeDiagnostics(stored)
@@ -196,7 +196,7 @@ export default function DashboardPage() {
         setYoutube({ connected: true, channel_name: connected.channel_name })
         setYoutubeMessage(connected.message || "YouTube connected.")
       } catch (fallbackError: any) {
-        setYoutubeMessage(fallbackError?.message || "Could not connect YouTube.")
+        setYoutubeMessage([fallbackError?.message || "Could not connect YouTube.", detail].filter(Boolean).join(" "))
       } finally {
         setYoutubeLoading(false)
       }
