@@ -63,6 +63,31 @@ class VideoProcessor:
             width, height = 1080, 1920
         return width - (width % 2), height - (height % 2)
 
+    def _dimensions_for_ratio(self, aspect_ratio: str) -> tuple[int, int]:
+        """
+        Dimensi output untuk aspect ratio tertentu.
+
+        Sisi pendek mengikuti sisi pendek OUTPUT_RESOLUTION (default 1080), sisi
+        panjang dihitung dari rasio. Jadi:
+          9:16 -> 1080x1920, 1:1 -> 1080x1080, 16:9 -> 1920x1080.
+        Versi lama selalu memakai 1080x1920 sehingga klip 1:1/16:9 ditarik
+        kembali menjadi vertikal (distorsi).
+        """
+        base_w, base_h = self._target_dimensions()
+        short = min(base_w, base_h)
+        try:
+            num, den = aspect_ratio.replace(" ", "").split(":", 1)
+            ratio = float(num) / float(den)
+        except (ValueError, ZeroDivisionError):
+            ratio = 9 / 16
+
+        if ratio >= 1:
+            width, height = round(short * ratio), short
+        else:
+            width, height = short, round(short / ratio)
+
+        return width - (width % 2), height - (height % 2)
+
     async def smart_crop_aspect(
         self,
         input_path: str,
@@ -77,7 +102,7 @@ class VideoProcessor:
         resolusi target. Untuk sumber portrait/landscape/square apa pun hasilnya
         selalu rasio yang diminta, tidak pernah terpotong sempit aneh.
         """
-        width, height = self._target_dimensions()
+        width, height = self._dimensions_for_ratio(aspect_ratio)
         num, den = aspect_ratio.replace(" ", "").split(":", 1)
         target_ratio = float(num) / float(den)
 
