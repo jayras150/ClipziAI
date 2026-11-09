@@ -91,6 +91,12 @@ async def create_task(
     if task_data.outro_url:
         editing_options["outro_url"] = task_data.outro_url
 
+    # ---------- Auto zoom follow-speaker ----------
+    if task_data.auto_zoom:
+        editing_options["auto_zoom"] = task_data.auto_zoom
+        if task_data.zoom_level and task_data.zoom_level != 1.0:
+            editing_options["zoom_level"] = task_data.zoom_level
+
     # Create task
     task = Task(
         user_id=current_user.id,

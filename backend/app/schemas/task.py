@@ -50,6 +50,13 @@ class TaskCreate(BaseModel):
     watermark_scale: float = Field(0.16, ge=0.05, le=0.6)
     intro_url: Optional[str] = Field(None, description="Video intro yang ditempel di awal")
     outro_url: Optional[str] = Field(None, description="Video outro yang ditempel di akhir")
+    # ---------- Auto zoom follow-speaker ----------
+    auto_zoom: Optional[str] = Field(
+        None, description="'speaker' = crop mengikuti wajah pembicara"
+    )
+    zoom_level: float = Field(
+        1.0, ge=1.0, le=2.5, description="Perbesaran jendela crop saat auto zoom"
+    )
 
 
 class TaskResponse(BaseModel):

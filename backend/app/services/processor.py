@@ -4,6 +4,7 @@ Video Processor Service - FFmpeg, PySceneDetect, smart crop, burn subtitle
 import os
 import asyncio
 import functools
+import logging
 import re
 import subprocess
 from typing import List, Dict, Any, Optional, Tuple
@@ -13,6 +14,7 @@ from uuid import uuid4
 from app.core.config import get_settings
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 class VideoProcessor:
@@ -345,6 +347,217 @@ class VideoProcessor:
 
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, self._run_ffmpeg, cmd)
+        return output_path
+
+    # =====================================================================
+    # Auto zoom follow-speaker (OpenCV + sendcmd crop animation)
+    # =====================================================================
+    @staticmethod
+    def _face_detector(width: int, height: int):
+        """
+        Buat detektor wajah YuNet (cv2.FaceDetectorYN); None bila tidak tersedia.
+
+        Catatan penting: OpenCV 5.x MENGHAPUS API lama `cv2.CascadeClassifier`
+        (dan file XML haar tidak lagi dibundel), jadi deteksi wajah memakai
+        model ONNX YuNet yang diunduh saat build ke /opt/opencv-data.
+        """
+        try:
+            import cv2
+        except ImportError:
+            return None
+
+        if not hasattr(cv2, "FaceDetectorYN"):
+            return None
+
+        candidates = [
+            os.environ.get("OPENCV_FACE_MODEL", ""),
+            "/opt/opencv-data/face_detection_yunet_2023mar.onnx",
+        ]
+        model_path = next((p for p in candidates if p and os.path.exists(p)), None)
+        if not model_path:
+            return None
+
+        try:
+            detector = cv2.FaceDetectorYN.create(
+                model_path, "", (int(width), int(height)),
+                score_threshold=0.6, nms_threshold=0.3, top_k=5000,
+            )
+            detector.setInputSize((int(width), int(height)))
+            return detector
+        except Exception:
+            return None
+
+    def _speaker_track_sync(
+        self,
+        input_path: str,
+        start_time: float,
+        duration: float,
+        aspect_ratio: str,
+        zoom: float,
+        sample_fps: float,
+        smooth: float,
+    ) -> List[Tuple[float, float, float, float, float]]:
+        """
+        Deteksi wajah per sampel frame lalu bangun jalur crop.
+
+        Mengembalikan (t_relatif, x, y, w, h) dalam piksel sumber. "Speaker" v1 =
+        wajah terbesar yang stabil antar frame. Bila tidak ada wajah, daftar
+        kosong (pemanggil memakai crop tengah).
+        """
+        import cv2
+
+        num, den = aspect_ratio.replace(" ", "").split(":", 1)
+        target_ratio = float(num) / float(den)
+        zoom = max(1.0, float(zoom or 1.0))
+
+        capture = cv2.VideoCapture(input_path)
+        if not capture.isOpened():
+            return []
+
+        src_w = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+        src_h = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+        fps = float(capture.get(cv2.CAP_PROP_FPS) or 30.0) or 30.0
+        if src_w <= 0 or src_h <= 0:
+            capture.release()
+            return []
+
+        # YuNet butuh ukuran input yang tetap; buat setelah dimensi diketahui.
+        detector = self._face_detector(src_w, src_h)
+        if detector is None:
+            capture.release()
+            return []
+
+        # Jendela crop: area terbesar yang muat, diperkecil sesuai zoom.
+        if src_w / src_h > target_ratio:
+            win_h = src_h / zoom
+            win_w = win_h * target_ratio
+        else:
+            win_w = src_w / zoom
+            win_h = win_w / target_ratio
+        win_w = max(2, int(win_w) - int(win_w) % 2)
+        win_h = max(2, int(win_h) - int(win_h) % 2)
+
+        capture.set(cv2.CAP_PROP_POS_MSEC, max(0.0, start_time) * 1000.0)
+        step = max(1, int(round(fps / max(0.5, sample_fps))))
+        total_frames = int(duration * fps)
+
+        track: List[Tuple[float, float, float, float, float]] = []
+        cx = src_w / 2.0
+        cy = src_h / 2.0
+        alive = True
+        frame_index = 0
+
+        while alive and frame_index <= total_frames:
+            alive, frame = capture.read()
+            if not alive or frame is None:
+                break
+            if frame_index % step == 0:
+                # YuNet: faces = Nx15 [x, y, w, h, 5 landmark (x,y), score]
+                detector.setInputSize((src_w, src_h))
+                _, faces = detector.detect(frame)
+                if faces is not None and len(faces) > 0:
+                    fx, fy, fw, fh = max(
+                        faces, key=lambda box: float(box[2]) * float(box[3])
+                    )[:4]
+                    target_x = float(fx) + float(fw) / 2.0
+                    target_y = float(fy) + float(fh) / 2.0
+                    # EMA: gerakan halus, tanpa jitter.
+                    cx = (1 - smooth) * cx + smooth * target_x
+                    cy = (1 - smooth) * cy + smooth * target_y
+
+                x = min(max(0.0, cx - win_w / 2.0), src_w - win_w)
+                y = min(max(0.0, cy - win_h / 2.0), src_h - win_h)
+                track.append(
+                    (
+                        round(frame_index / fps, 3),
+                        float(int(x) - int(x) % 2),
+                        float(int(y) - int(y) % 2),
+                        float(win_w),
+                        float(win_h),
+                    )
+                )
+            frame_index += 1
+
+        capture.release()
+        return track
+
+    async def track_speaker_crop(
+        self,
+        input_path: str,
+        output_path: str,
+        start_time: float = 0,
+        duration: float = 60,
+        aspect_ratio: str = "9:16",
+        zoom: float = 1.0,
+        filter_preset: Optional[str] = None,
+        sample_fps: float = 2.5,
+        smoothing: float = 0.35,
+    ) -> str:
+        """
+        Render klip dengan jendela crop yang MENGIKUTI wajah pembicara
+        (auto zoom follow-speaker).
+
+        Posisi crop dianimasikan lewat `sendcmd` pada filter `crop` (opsi w/h/x/y
+        ffmpeg bertanda `T` = mendukung timeline command), lalu di-scale ke
+        resolusi target. Bila tidak ada wajah terdeteksi, kembali ke crop tengah.
+        """
+        width, height = self._dimensions_for_ratio(aspect_ratio)
+        loop = asyncio.get_event_loop()
+
+        track = await loop.run_in_executor(
+            None,
+            self._speaker_track_sync,
+            input_path, start_time, duration, aspect_ratio, zoom, sample_fps, smoothing,
+        )
+
+        if not track:
+            logger.warning("Track wajah kosong; memakai crop tengah: %s", input_path)
+            return await self.render_clip(
+                input_path, output_path,
+                start_time=start_time, duration=duration,
+                aspect_ratio=aspect_ratio, filter_preset=filter_preset,
+            )
+
+        _, first_x, first_y, win_w, win_h = track[0]
+
+        # Format sendcmd: "<waktu> crop x <nilai>;" (waktu relatif terhadap klip).
+        commands: List[str] = []
+        for t_rel, x, y, _, _ in track:
+            commands.append(f"{t_rel:.3f} crop x {x:.0f};")
+            commands.append(f"{t_rel:.3f} crop y {y:.0f};")
+
+        cmd_path = str(Path(output_path).with_name(f"track_{uuid4().hex}.cmd"))
+        Path(cmd_path).write_text("\n".join(commands), encoding="utf-8")
+
+        preset_chain = self.filter_chain_for_preset(filter_preset)
+        chain = (
+            f"sendcmd=f={self._escape_filter_path(cmd_path)},"
+            f"crop=w={int(win_w)}:h={int(win_h)}:x={int(first_x)}:y={int(first_y)},"
+            f"scale={width}:{height}:flags=lanczos,setsar=1"
+        )
+        if preset_chain:
+            chain = f"{chain},{preset_chain}"
+
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
+            "-ss", str(start_time),
+            "-i", input_path,
+            "-t", str(duration),
+            "-vf", chain,
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            "-r", str(settings.OUTPUT_FPS),
+            "-c:a", "aac", "-b:a", "128k",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+
+        try:
+            await loop.run_in_executor(None, self._run_ffmpeg, cmd)
+        finally:
+            try:
+                os.remove(cmd_path)
+            except OSError:
+                pass
         return output_path
 
     @staticmethod

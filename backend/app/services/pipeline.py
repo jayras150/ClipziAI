@@ -179,6 +179,9 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
         watermark_scale = float(options.get("watermark_scale", 0.16) or 0.16)
         intro_url = options.get("intro_url")
         outro_url = options.get("outro_url")
+        # ---------- Auto zoom follow-speaker ----------
+        auto_zoom = str(options.get("auto_zoom") or "").strip().lower()
+        zoom_level = float(options.get("zoom_level", 1.0) or 1.0)
 
         try:
             # 1) Unduh sumber (memakai cookie pool bila ada)
@@ -254,15 +257,27 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
             total = len(ranges)
             for index, (start, duration) in enumerate(ranges, 1):
                 raw_clip = str(work_dir / f"clip_{index:02d}_raw.mp4")
-                await processor.render_clip(
-                    video_path,
-                    raw_clip,
-                    start_time=start,
-                    duration=duration,
-                    aspect_ratio=aspect_ratio,
-                    filter_preset=filter_preset,
-                    blur_fill=blur_fill,
-                )
+                if auto_zoom in {"speaker", "face", "follow"}:
+                    # Auto zoom: jendela crop mengikuti wajah pembicara.
+                    await processor.track_speaker_crop(
+                        video_path,
+                        raw_clip,
+                        start_time=start,
+                        duration=duration,
+                        aspect_ratio=aspect_ratio,
+                        zoom=zoom_level,
+                        filter_preset=filter_preset,
+                    )
+                else:
+                    await processor.render_clip(
+                        video_path,
+                        raw_clip,
+                        start_time=start,
+                        duration=duration,
+                        aspect_ratio=aspect_ratio,
+                        filter_preset=filter_preset,
+                        blur_fill=blur_fill,
+                    )
 
                 final_clip = raw_clip
                 subtitle_url: Optional[str] = None

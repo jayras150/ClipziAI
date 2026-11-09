@@ -86,6 +86,15 @@ RUN curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp 
       -o /usr/local/bin/yt-dlp \
     && chmod 0755 /usr/local/bin/yt-dlp
 
+# Data model deteksi wajah (auto zoom follow-speaker).
+# OpenCV 5.x menghapus cv2.CascadeClassifier dan tidak lagi membundel file XML
+# haar, sehingga dipakai model ONNX YuNet yang diunduh saat build.
+RUN mkdir -p /opt/opencv-data \
+    && curl -fsSL -o /opt/opencv-data/face_detection_yunet_2023mar.onnx \
+       https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx \
+    && ls -l /opt/opencv-data \
+    && test "$(stat -c%s /opt/opencv-data/face_detection_yunet_2023mar.onnx)" -gt 100000
+
 # Ambil virtualenv dari stage builder
 COPY --from=builder /opt/venv /opt/venv
 

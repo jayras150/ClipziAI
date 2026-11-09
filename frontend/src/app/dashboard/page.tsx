@@ -105,6 +105,9 @@ export default function DashboardPage() {
   const [watermarkPosition, setWatermarkPosition] = useState("bottom-right")
   const [introUrl, setIntroUrl] = useState("")
   const [outroUrl, setOutroUrl] = useState("")
+  // Auto zoom follow-speaker
+  const [autoZoom, setAutoZoom] = useState("off")
+  const [zoomLevel, setZoomLevel] = useState("1.3")
   const [submitting, setSubmitting] = useState(false)
   const [taskError, setTaskError] = useState("")
   const [notice, setNotice] = useState("")
@@ -279,6 +282,13 @@ export default function DashboardPage() {
       if (intro) editingOptions.intro_url = intro
       const outro = outroUrl.trim()
       if (outro) editingOptions.outro_url = outro
+
+      // Auto zoom follow-speaker
+      if (autoZoom === "speaker") {
+        editingOptions.auto_zoom = "speaker"
+        const zoom = parseFloat(zoomLevel)
+        if (!Number.isNaN(zoom) && zoom !== 1) editingOptions.zoom_level = zoom
+      }
 
       const task = await api.createTask(stored, url, editingOptions)
       setUrlValue("")
@@ -574,6 +584,34 @@ export default function DashboardPage() {
                       <option value="bottom-right">kanan bawah</option>
                       <option value="center">tengah</option>
                     </select>
+                    <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa" }}>Auto zoom</label>
+                    <select
+                      id="auto-zoom"
+                      value={autoZoom}
+                      onChange={(e) => setAutoZoom(e.target.value)}
+                      className="ui-input"
+                      style={{ width: 150, padding: "6px 8px", fontSize: 13, background: "#171a22", color: "#f5f5f2", border: "1px solid var(--ui-line)" }}
+                    >
+                      <option value="off">off</option>
+                      <option value="speaker">ikut pembicara</option>
+                    </select>
+                    {autoZoom === "speaker" && (
+                      <>
+                        <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa" }}>Zoom</label>
+                        <select
+                          id="zoom-level"
+                          value={zoomLevel}
+                          onChange={(e) => setZoomLevel(e.target.value)}
+                          className="ui-input"
+                          style={{ width: 80, padding: "6px 8px", fontSize: 13, background: "#171a22", color: "#f5f5f2", border: "1px solid var(--ui-line)" }}
+                        >
+                          <option value="1">1.0×</option>
+                          <option value="1.3">1.3×</option>
+                          <option value="1.6">1.6×</option>
+                          <option value="2">2.0×</option>
+                        </select>
+                      </>
+                    )}
                     <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa" }}>Intro URL</label>
                     <input
                       id="intro-url"
