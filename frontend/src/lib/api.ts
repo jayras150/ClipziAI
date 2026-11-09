@@ -234,6 +234,37 @@ export class ApiClient {
     return response.data
   }
 
+  /** Gabungkan beberapa klip menjadi satu video (transisi opsional). */
+  async composeClips(
+    token: string,
+    taskId: string,
+    clipIds: string[],
+    transition = "fade",
+  ): Promise<TaskData> {
+    const response = await this.client.post<TaskData>(
+      `/api/tasks/${taskId}/compose`,
+      { clip_ids: clipIds, transition },
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    return response.data
+  }
+
+  /** Potong satu klip menjadi dua bagian di detik `atTime`. */
+  async splitClip(
+    token: string,
+    taskId: string,
+    clipId: string,
+    atTime: number,
+  ): Promise<TaskData> {
+    const response = await this.client.post<TaskData>(
+      `/api/tasks/${taskId}/split`,
+      { clip_id: clipId, at_time: atTime },
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    return response.data
+  }
+
+
   async getTaskClips(token: string, taskId: string): Promise<ClipData[]> {
     const response = await this.client.get<ClipData[]>(`/api/tasks/${taskId}/clips`, {
       headers: { Authorization: `Bearer ${token}` },

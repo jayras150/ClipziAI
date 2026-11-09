@@ -89,3 +89,26 @@ class TaskListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class ComposeRequest(BaseModel):
+    """Gabungkan beberapa klip hasil task ini menjadi satu video baru."""
+
+    clip_ids: List[UUID] = Field(..., description="Urutan klip yang digabung (minimal 2)")
+    transition: str = Field("fade", description="fade | wipeleft | dissolve | none")
+    transition_duration: float = Field(0.4, ge=0.1, le=2.0)
+    aspect_ratio: str = Field("9:16", description="9:16 | 1:1 | 16:9")
+    music_url: Optional[str] = Field(None, description="URL musik latar (mp3/m4a)")
+    music_volume: float = Field(0.22, ge=0.0, le=1.0)
+    music_ducking: bool = Field(True, description="Volume musik turun saat ada suara")
+    watermark_url: Optional[str] = None
+    watermark_position: str = "bottom-right"
+    watermark_opacity: float = Field(0.85, ge=0.1, le=1.0)
+    watermark_scale: float = Field(0.16, ge=0.05, le=0.6)
+
+
+class SplitRequest(BaseModel):
+    """Potong satu klip menjadi dua bagian."""
+
+    clip_id: UUID
+    at_time: float = Field(..., gt=0, description="Titik potong dalam detik")

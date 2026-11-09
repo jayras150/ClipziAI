@@ -6,7 +6,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
 from app.api.deps import get_db_session, get_current_user
@@ -14,7 +14,13 @@ from app.models.user import User
 from app.models.task import Task, TaskStatus
 from app.models.clip import Clip
 from app.models.user_profile import UserProfile
-from app.schemas.task import TaskCreate, TaskResponse, TaskListResponse
+from app.schemas.task import (
+    ComposeRequest,
+    SplitRequest,
+    TaskCreate,
+    TaskListResponse,
+    TaskResponse,
+)
 from app.schemas.clip import ClipResponse
 from app.schemas.common import MessageResponse
 from app.services.vast_worker import dispatch_mode, submit_task
@@ -246,3 +252,151 @@ async def delete_task(
     await db.commit()
     
     return MessageResponse(message="Task deleted successfully")
+
+
+# =============================================================================
+# Editing lanjutan: compose (gabung klip) & split (potong klip)
+#
+# Keduanya membuat TASK BARU lalu mengirimkannya ke worker GPU Vast.ai — VPS
+# tidak pernah merender apa pun. Progres dipantau lewat endpoint task biasa.
+# =============================================================================
+
+
+async def _ensure_user_credits(profile: Optional[UserProfile], needed: float) -> None:
+    if profile is None:
+        raise HTTPException(status_code=404, detail="User profile not found")
+    if float(profile.credits_balance) < needed:
+        raise HTTPException(
+            status_code=400,
+            detail="Insufficient credits. Please upgrade your plan or purchase more credits.",
+        )
+
+
+async def _new_editing_task(
+    current_user: User,
+    db: AsyncSession,
+    source_task: Task,
+    options: dict,
+    title_hint: str,
+) -> Task:
+    """Buat task baru berisi editing_options untuk compose/split, lalu dispatch."""
+    task = Task(
+        user_id=current_user.id,
+        source_url=source_task.source_url,
+        source_type=source_task.source_type,
+        status=TaskStatus.QUEUED,
+        output_format=source_task.output_format,
+        output_resolution=source_task.output_resolution,
+        fps=source_task.fps,
+        editing_options=options,
+        auto_upload_youtube=False,
+    )
+    db.add(task)
+    await db.commit()
+    await db.refresh(task)
+
+    dispatch = await submit_task(task.id)
+    if not dispatch.get("queued"):
+        task.status = TaskStatus.ERROR
+        task.error_message = (
+            f"Gagal mengirim {title_hint} ke worker (mode {dispatch_mode()}): "
+            f"{dispatch.get('error') or 'tanpa keterangan'}"
+        )
+        await db.commit()
+    return task
+
+
+@router.post("/{task_id}/compose", response_model=TaskResponse)
+async def compose_task_clips(
+    task_id: UUID,
+    payload: ComposeRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Gabungkan klip-klip hasil satu task menjadi satu video (dengan transisi)."""
+    source_task = (
+        await db.execute(
+            select(Task).where(Task.id == task_id, Task.user_id == current_user.id)
+        )
+    ).scalar_one_or_none()
+    if not source_task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    clip_ids = [str(cid) for cid in payload.clip_ids]
+    if len(clip_ids) < 2:
+        raise HTTPException(status_code=400, detail="Minimal 2 klip untuk digabung")
+
+    found = (
+        await db.execute(
+            select(Clip).where(Clip.id.in_([UUID(cid) for cid in clip_ids]), Clip.task_id == task_id)
+        )
+    ).scalars().all()
+    if len({str(clip.id) for clip in found}) != len(clip_ids):
+        raise HTTPException(status_code=400, detail="Ada clip_id yang tidak valid untuk task ini")
+
+    profile = (
+        await db.execute(select(UserProfile).where(UserProfile.user_id == current_user.id))
+    ).scalar_one_or_none()
+    await _ensure_user_credits(profile, 1.0)
+
+    options = {
+        "mode": "compose",
+        "clip_ids": clip_ids,
+        "transition": payload.transition,
+        "transition_duration": payload.transition_duration,
+        "aspect_ratio": payload.aspect_ratio,
+        "music_volume": payload.music_volume,
+        "music_ducking": payload.music_ducking,
+        "watermark_position": payload.watermark_position,
+        "watermark_opacity": payload.watermark_opacity,
+        "watermark_scale": payload.watermark_scale,
+    }
+    if payload.music_url:
+        options["music_url"] = payload.music_url
+    if payload.watermark_url:
+        options["watermark_url"] = payload.watermark_url
+
+    return await _new_editing_task(current_user, db, source_task, options, "compose")
+
+
+@router.post("/{task_id}/split", response_model=TaskResponse)
+async def split_task_clip(
+    task_id: UUID,
+    payload: SplitRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Potong satu klip menjadi dua bagian di detik `at_time`."""
+    source_task = (
+        await db.execute(
+            select(Task).where(Task.id == task_id, Task.user_id == current_user.id)
+        )
+    ).scalar_one_or_none()
+    if not source_task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    clip = (
+        await db.execute(
+            select(Clip).where(Clip.id == payload.clip_id, Clip.task_id == task_id)
+        )
+    ).scalar_one_or_none()
+    if not clip:
+        raise HTTPException(status_code=404, detail="Clip not found in this task")
+
+    if payload.at_time >= float(clip.duration or 0):
+        raise HTTPException(
+            status_code=400,
+            detail=f"at_time harus lebih kecil dari durasi klip ({clip.duration:.2f}s)",
+        )
+
+    profile = (
+        await db.execute(select(UserProfile).where(UserProfile.user_id == current_user.id))
+    ).scalar_one_or_none()
+    await _ensure_user_credits(profile, 2.0)
+
+    options = {
+        "mode": "split",
+        "clip_id": str(payload.clip_id),
+        "at_time": payload.at_time,
+    }
+    return await _new_editing_task(current_user, db, source_task, options, "split")

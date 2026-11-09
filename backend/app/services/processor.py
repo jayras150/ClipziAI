@@ -560,6 +560,167 @@ class VideoProcessor:
                 pass
         return output_path
 
+    async def split_clip(
+        self,
+        input_path: str,
+        output_a: str,
+        output_b: str,
+        at_time: float,
+    ) -> tuple[str, str]:
+        """
+        Potong satu klip jadi dua bagian di detik `at_time` (stream copy, cepat).
+
+        ffmpeg memakai keyframe terdekat sebagai titik potong, jadi hasil bisa
+        bergeser < 1 detik — cukup untuk keperluan editing cepat.
+        """
+        loop = asyncio.get_event_loop()
+
+        part_a = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
+            "-i", input_path, "-t", f"{at_time:.3f}",
+            "-c", "copy", "-movflags", "+faststart", output_a,
+        ]
+        part_b = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
+            "-ss", f"{at_time:.3f}", "-i", input_path,
+            "-c", "copy", "-movflags", "+faststart", output_b,
+        ]
+
+        await loop.run_in_executor(None, self._run_ffmpeg, part_a)
+        await loop.run_in_executor(None, self._run_ffmpeg, part_b)
+        return output_a, output_b
+
+    async def concat_with_transition(
+        self,
+        input_paths: List[str],
+        output_path: str,
+        transition: str = "fade",
+        transition_duration: float = 0.4,
+        width: int = 1080,
+        height: int = 1920,
+    ) -> str:
+        """
+        Gabungkan beberapa klip dengan transisi opsional.
+
+        transition="none" → sambung lurus (concat_videos). Selain itu memakai
+        xfade (video) + acrossfade (audio). Semua input dinormalkan dulu karena
+        xfade menuntut resolusi/fps/format audio yang identik.
+        """
+        if not input_paths:
+            raise ValueError("concat_with_transition butuh minimal satu input")
+        if len(input_paths) == 1:
+            import shutil as _shutil
+            _shutil.copyfile(input_paths[0], output_path)
+            return output_path
+        if (transition or "none").lower() == "none":
+            return await self.concat_videos(input_paths, output_path, width, height)
+
+        loop = asyncio.get_event_loop()
+        durations: List[float] = []
+        for path in input_paths:
+            info = await self.get_video_info(path)
+            durations.append(float(info.get("duration") or 0))
+        if any(d <= 0 for d in durations):
+            return await self.concat_videos(input_paths, output_path, width, height)
+
+        fade = max(0.1, min(float(transition_duration), min(durations) / 2))
+
+        cmd = ["ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y"]
+        for path in input_paths:
+            cmd += ["-i", path]
+
+        parts: List[str] = []
+        for index in range(len(input_paths)):
+            parts.append(
+                f"[{index}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,"
+                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,"
+                f"fps={settings.OUTPUT_FPS},format=yuv420p[v{index}];"
+                f"[{index}:a]aresample=async=1:first_pts=0[a{index}]"
+            )
+
+        last_v, last_a = "v0", "a0"
+        offset = durations[0] - fade
+        for index in range(1, len(input_paths)):
+            out_v, out_a = f"vx{index}", f"ax{index}"
+            parts.append(
+                f"[{last_v}][v{index}]xfade=transition={transition}:"
+                f"duration={fade:.3f}:offset={offset:.3f}[{out_v}]"
+            )
+            parts.append(f"[{last_a}][a{index}]acrossfade=d={fade:.3f}[{out_a}]")
+            offset += durations[index] - fade
+            last_v, last_a = out_v, out_a
+
+        cmd += [
+            "-filter_complex", ";".join(parts),
+            "-map", f"[{last_v}]", "-map", f"[{last_a}]",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            "-c:a", "aac", "-b:a", "160k",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+
+        await loop.run_in_executor(None, self._run_ffmpeg, cmd)
+        return output_path
+
+    async def mix_music(
+        self,
+        input_path: str,
+        music_path: str,
+        output_path: str,
+        volume: float = 0.22,
+        ducking: bool = True,
+        fade: float = 1.0,
+    ) -> str:
+        """
+        Campur musik latar ke video.
+
+        `ducking=True` memakai sidechaincompress: volume musik otomatis turun
+        saat ada suara orang (sidechain = audio asli), jadi narasi tetap jelas.
+        Musik di-loop lalu dipotong sesuai durasi video dan diberi fade in/out.
+        """
+        loop = asyncio.get_event_loop()
+        info = await self.get_video_info(input_path)
+        duration = float(info.get("duration") or 0) or 1.0
+        fade = max(0.0, min(float(fade), duration / 2))
+        vol = max(0.0, min(1.0, float(volume)))
+
+        music_chain = (
+            f"[1:a]volume={vol:.3f},atrim=0:{duration:.3f},asetpts=N/SR/TB,"
+            f"afade=t=in:st=0:d={fade:.2f},"
+            f"afade=t=out:st={max(0.0, duration - fade):.2f}:d={fade:.2f}[mus]"
+        )
+
+        if ducking:
+            filter_complex = (
+                f"[0:a]asplit=2[sp][sc];"
+                f"{music_chain};"
+                f"[mus][sc]sidechaincompress=threshold=0.05:ratio=6:attack=15:release=350[musd];"
+                f"[sp][musd]amix=inputs=2:duration=first:dropout_transition=0,"
+                f"loudnorm=I=-14:TP=-1.5:LRA=11[a]"
+            )
+        else:
+            filter_complex = (
+                f"{music_chain};"
+                f"[0:a][mus]amix=inputs=2:duration=first:dropout_transition=0,"
+                f"loudnorm=I=-14:TP=-1.5:LRA=11[a]"
+            )
+
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
+            "-i", input_path,
+            "-stream_loop", "-1", "-i", music_path,
+            "-filter_complex", filter_complex,
+            "-map", "0:v", "-map", "[a]",
+            "-c:v", "copy",
+            "-c:a", "aac", "-b:a", "160k",
+            "-shortest",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+
+        await loop.run_in_executor(None, self._run_ffmpeg, cmd)
+        return output_path
+
     @staticmethod
     def _escape_filter_path(path: str) -> str:
         """Escape path agar aman sebagai opsi filter ffmpeg."""

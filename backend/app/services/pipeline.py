@@ -144,6 +144,21 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
         if task.status == TaskStatus.COMPLETED:
             return {"ok": True, "clips": task.total_clips or 0, "error": None}
 
+        # ---- Editing lanjutan atas klip yang sudah jadi ----
+        # "compose" (gabung beberapa klip) dan "split" (potong klip) tidak perlu
+        # mengunduh video sumber, jadi ditangani modul terpisah.
+        mode = str((task.editing_options or {}).get("mode") or "").strip().lower()
+        if mode in {"compose", "split"}:
+            from app.services.pipeline_compose import (
+                run_compose_pipeline,
+                run_split_pipeline,
+            )
+
+            await db.close()
+            if mode == "compose":
+                return await run_compose_pipeline(task_id)
+            return await run_split_pipeline(task_id)
+
         task.status = TaskStatus.PROCESSING
         task.progress = 1
         task.error_message = None

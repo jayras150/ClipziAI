@@ -16,6 +16,8 @@ import {
   AlertTriangle,
   FileVideo,
   RefreshCw,
+  Layers,
+  Scissors,
 } from "lucide-react"
 
 import { api, ClipData, TaskData } from "@/lib/api"
@@ -115,6 +117,11 @@ export default function DashboardPage() {
   const [openTaskId, setOpenTaskId] = useState("")
   const [clips, setClips] = useState<ClipData[]>([])
   const [clipsLoading, setClipsLoading] = useState(false)
+  // Editing lanjutan: pilih klip untuk digabung / potong
+  const [selectedClips, setSelectedClips] = useState<string[]>([])
+  const [composeTransition, setComposeTransition] = useState("fade")
+  const [splitAt, setSplitAt] = useState<Record<string, string>>({})
+  const [editingBusy, setEditingBusy] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -326,6 +333,61 @@ export default function DashboardPage() {
       setTaskError(readApiError(error.response?.data, "Could not delete the project."))
     }
   }
+  const toggleClipSelection = (clipId: string) => {
+    setSelectedClips((current) =>
+      current.includes(clipId) ? current.filter((id) => id !== clipId) : [...current, clipId],
+    )
+  }
+
+  const mergeSelectedClips = async () => {
+    if (!openTaskId || selectedClips.length < 2) return
+    setEditingBusy(true)
+    setTaskError("")
+    setNotice("")
+    try {
+      const task = await api.composeClips(token, openTaskId, selectedClips, composeTransition)
+      setNotice(
+        task.status === "error"
+          ? task.error_message || "Compose dibuat tetapi gagal dikirim ke worker."
+          : `Gabungan ${selectedClips.length} klip sedang diproses.`,
+      )
+      setSelectedClips([])
+      await refreshTasks(token)
+      setActiveTab("projects")
+    } catch (error: any) {
+      setTaskError(readApiError(error.response?.data, "Could not merge the selected clips."))
+    } finally {
+      setEditingBusy(false)
+    }
+  }
+
+  const splitClipAt = async (clip: ClipData) => {
+    if (!openTaskId) return
+    const value = parseFloat(splitAt[clip.id] || "")
+    if (Number.isNaN(value) || value <= 0 || value >= clip.duration) {
+      setTaskError(`Titik potong harus antara 0 dan ${clip.duration.toFixed(1)} detik.`)
+      return
+    }
+    setEditingBusy(true)
+    setTaskError("")
+    setNotice("")
+    try {
+      const task = await api.splitClip(token, openTaskId, clip.id, value)
+      setNotice(
+        task.status === "error"
+          ? task.error_message || "Split dibuat tetapi gagal dikirim ke worker."
+          : `Klip #${clip.clip_index} dipotong di ${value.toFixed(1)} detik.`,
+      )
+      await refreshTasks(token)
+      setActiveTab("projects")
+    } catch (error: any) {
+      setTaskError(readApiError(error.response?.data, "Could not split this clip."))
+    } finally {
+      setEditingBusy(false)
+    }
+  }
+
+
 
   const onPickFile = (file: File | null) => {
     if (!file) return
@@ -828,14 +890,60 @@ export default function DashboardPage() {
                       : "No clips yet — this panel refreshes automatically while the task runs."}
                   </p>
                 ) : (
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
-                      gap: 14,
-                      marginTop: 16,
-                    }}
-                  >
+                  <>
+                    {/* Editing lanjutan: gabung klip terpilih (compose) */}
+                    {clips.length > 1 && (
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                          marginTop: 14,
+                        }}
+                      >
+                        <span style={{ fontSize: 12, color: "var(--ui-muted)" }}>
+                          Centang klip untuk digabung ({selectedClips.length} dipilih)
+                        </span>
+                        <select
+                          id="compose-transition"
+                          value={composeTransition}
+                          onChange={(e) => setComposeTransition(e.target.value)}
+                          className="ui-input"
+                          style={{
+                            width: 120,
+                            padding: "6px 8px",
+                            fontSize: 12,
+                            background: "#171a22",
+                            color: "#f5f5f2",
+                            border: "1px solid var(--ui-line)",
+                          }}
+                        >
+                          <option value="fade">fade</option>
+                          <option value="wipeleft">wipe</option>
+                          <option value="dissolve">dissolve</option>
+                          <option value="none">tanpa transisi</option>
+                        </select>
+                        <button
+                          id="merge-clips"
+                          type="button"
+                          className="ui-btn ui-btn-gold"
+                          style={{ fontSize: 12, padding: "8px 12px" }}
+                          disabled={selectedClips.length < 2 || editingBusy}
+                          onClick={mergeSelectedClips}
+                        >
+                          <Layers size={13} /> Gabung {selectedClips.length || ""}
+                        </button>
+                      </div>
+                    )}
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+                        gap: 14,
+                        marginTop: 16,
+                      }}
+                    >
                     {clips.map((clip) => (
                       <div
                         key={clip.id}
@@ -918,6 +1026,49 @@ export default function DashboardPage() {
                             {formatDuration(clip.duration)}
                             {clip.file_size ? ` · ${formatSize(clip.file_size)}` : ""}
                           </span>
+                          <label
+                            style={{
+                              display: "flex",
+                              gap: 6,
+                              alignItems: "center",
+                              fontSize: 11.5,
+                              color: "var(--ui-muted)",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              className="clip-select"
+                              checked={selectedClips.includes(clip.id)}
+                              onChange={() => toggleClipSelection(clip.id)}
+                            />
+                            pilih untuk gabung
+                          </label>
+                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.5"
+                              placeholder={`${(clip.duration / 2).toFixed(1)}`}
+                              value={splitAt[clip.id] ?? ""}
+                              onChange={(e) =>
+                                setSplitAt((current) => ({ ...current, [clip.id]: e.target.value }))
+                              }
+                              className="ui-input"
+                              style={{ width: 72, padding: "6px 8px", fontSize: 12 }}
+                            />
+                            <button
+                              type="button"
+                              className="ui-btn ui-btn-ghost"
+                              style={{ fontSize: 12, padding: "8px 12px" }}
+                              disabled={editingBusy}
+                              onClick={() => splitClipAt(clip)}
+                            >
+                              <Scissors size={13} /> Split
+                            </button>
+                          </div>
+
+
                           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                             {clip.download_url && (
                               <a
@@ -945,7 +1096,8 @@ export default function DashboardPage() {
                         </div>
                       </div>
                     ))}
-                  </div>
+                    </div>
+                  </>
                 )}
               </div>
             )}
