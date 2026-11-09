@@ -90,8 +90,11 @@ RUN curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp 
 COPY --from=builder /opt/venv /opt/venv
 
 # Cache model Whisper hasil build (dipakai fallback transkripsi lokal).
+# --chown wajib: container berjalan sebagai user `clipzi`, sedangkan file hasil
+# build dimiliki root. Tanpa ini huggingface_hub gagal menulis lock/refs dan
+# transkripsi lokal error "Permission denied: /opt/whisper-cache/...".
 ENV HF_HOME=/opt/whisper-cache
-COPY --from=builder /opt/whisper-cache /opt/whisper-cache
+COPY --from=builder --chown=clipzi:clipzi /opt/whisper-cache /opt/whisper-cache
 
 WORKDIR $APP_HOME
 COPY . .

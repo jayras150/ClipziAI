@@ -67,7 +67,17 @@ class AudioTranscriber:
                     "pip install -r requirements-whisper-local.txt — atau pakai "
                     "TRANSCRIPTION_PROVIDER berbasis API (groq/openai/openrouter)."
                 ) from exc
-            self._model = WhisperModel(self.model_size, device="cpu", compute_type="int8")
+            self._model = WhisperModel(
+                # Nama model faster-whisper (tiny/base/small/medium/large-v3).
+                # Penting: saat provider API gagal dan fallback lokal dipakai,
+                # `self.model_size` masih berisi nama model API
+                # (mis. "openai/whisper-large-v3-turbo") yang bukan repo HF valid
+                # untuk faster-whisper. Jadi untuk non-lokal selalu pakai
+                # WHISPER_MODEL (model yang sudah dibaking ke image).
+                self.model_size if self._is_local() else (settings.WHISPER_MODEL or "small"),
+                device="cpu",
+                compute_type="int8",
+            )
         return self._model
     
     async def transcribe(
