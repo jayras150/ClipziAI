@@ -52,6 +52,24 @@ RUN if [ "$INSTALL_LOCAL_WHISPER" = "1" ]; then \
     fi
 
 # -----------------------------------------------------------------------------
+# Transkripsi Whisper di GPU (HuggingFace transformers + torch CUDA).
+#
+# Dipakai worker Vast.ai: GPU sudah tersedia per task, jadi Whisper berjalan di
+# GPU tanpa biaya API. Model TIDAK dibaking (bisa >3 GB); diunduh sekali per
+# instance saat pertama dipakai — dengan model default "*-turbo" (±1,6 GB).
+#
+# Nonaktifkan: --build-arg INSTALL_GPU_WHISPER=0
+# -----------------------------------------------------------------------------
+ARG INSTALL_GPU_WHISPER=1
+COPY requirements-gpu-whisper.txt ./
+RUN if [ "$INSTALL_GPU_WHISPER" = "1" ]; then \
+        pip install -r requirements-gpu-whisper.txt && \
+        python -c "import torch; print('torch', torch.__version__, 'cuda build:', torch.version.cuda)" ; \
+    else \
+        echo "INSTALL_GPU_WHISPER=0 -> transkripsi GPU dilewati"; \
+    fi
+
+# -----------------------------------------------------------------------------
 # Stage 2: runtime image (tanpa toolchain, ukuran lebih kecil)
 # -----------------------------------------------------------------------------
 FROM python:3.11-slim AS runtime

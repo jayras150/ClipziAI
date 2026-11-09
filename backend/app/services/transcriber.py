@@ -41,6 +41,105 @@ class AudioTranscriber:
     def _is_local(self) -> bool:
         return self.provider in {"local", "faster-whisper", "faster_whisper"}
 
+    def _is_gpu(self) -> bool:
+        return self.provider in {"gpu", "cuda", "transformers", "hf"}
+
+    @staticmethod
+    def _cuda_available() -> bool:
+        """True bila torch terpasang DAN ada GPU CUDA yang bisa dipakai."""
+        try:
+            import torch
+        except Exception:
+            return False
+        try:
+            return bool(torch.cuda.is_available())
+        except Exception:
+            return False
+
+    def _gpu_pipeline(self):
+        """
+        Muat pipeline ASR Whisper di GPU (HuggingFace transformers), sekali saja.
+
+        Model default dari settings.GPU_WHISPER_MODEL (openai/whisper-large-v3-turbo).
+        Model diunduh otomatis saat pertama dipakai (di-cache HF_HOME).
+        """
+        if getattr(self, "_gpu_model", None) is not None:
+            return self._gpu_model
+
+        import torch
+        from transformers import pipeline as hf_pipeline
+
+        model_id = settings.GPU_WHISPER_MODEL or "openai/whisper-large-v3-turbo"
+        dtype_name = (settings.GPU_WHISPER_DTYPE or "float16").lower()
+        torch_dtype = torch.float16 if dtype_name == "float16" else torch.float32
+        device = 0 if self._cuda_available() else -1
+
+        logger.info(
+            "Memuat Whisper GPU: model=%s device=%s dtype=%s",
+            model_id, "cuda:0" if device == 0 else "cpu", dtype_name,
+        )
+
+        self._gpu_model = hf_pipeline(
+            "automatic-speech-recognition",
+            model=model_id,
+            device=device,
+            torch_dtype=torch_dtype if device == 0 else torch.float32,
+            chunk_length_s=30,
+            return_timestamps=True,
+        )
+        return self._gpu_model
+
+    async def _transcribe_gpu(
+        self,
+        audio_path: str,
+        language: Optional[str],
+    ) -> Dict[str, Any]:
+        """Transkripsi memakai Whisper large di GPU worker (transformers)."""
+        loop = asyncio.get_event_loop()
+
+        def _run() -> Dict[str, Any]:
+            asr = self._gpu_pipeline()
+            generate_kwargs: Dict[str, Any] = {}
+            if language:
+                generate_kwargs["language"] = language
+                generate_kwargs["task"] = "transcribe"
+            result = asr(audio_path, generate_kwargs=generate_kwargs or None)
+
+            chunks = result.get("chunks") or []
+            segments: List[Dict[str, Any]] = []
+            for index, chunk in enumerate(chunks):
+                stamp = chunk.get("timestamp") or (0.0, 0.0)
+                start = float(stamp[0] or 0.0)
+                end = float(stamp[1] if stamp[1] is not None else start + 1.0)
+                text_value = (chunk.get("text") or "").strip()
+                if not text_value:
+                    continue
+                segments.append(
+                    {
+                        "id": index,
+                        "start": round(start, 3),
+                        "end": round(max(end, start + 0.2), 3),
+                        "text": text_value,
+                        "words": [],
+                    }
+                )
+
+            text = (result.get("text") or "").strip()
+            duration = self._audio_duration(audio_path)
+            if not segments and text:
+                segments = self._synthesize_segments(text, duration)
+
+            return {
+                "language": language,
+                "language_probability": None,
+                "duration": duration or None,
+                "segments": segments,
+                "full_text": text or " ".join(s["text"] for s in segments),
+            }
+
+        return await loop.run_in_executor(None, _run)
+
+
     def _get_remote_client(self) -> openai.AsyncOpenAI:
         """Build a client for any provider implementing OpenAI audio transcriptions."""
         api_key = settings.TRANSCRIPTION_API_KEY or settings.AI_API_KEY or settings.OPENAI_API_KEY
@@ -95,6 +194,23 @@ class AudioTranscriber:
         """
         if self._is_local():
             return await self._transcribe_local(audio_path, language)
+
+        # GPU worker (Vast.ai): Whisper large-v3 di GPU, tanpa biaya API.
+        # Deteksi otomatis: kalau CUDA tersedia, GPU selalu diprioritaskan sehingga
+        # tidak perlu mengubah env di Vast (API container tanpa GPU tetap memakai
+        # provider API / Whisper lokal).
+        if self._is_gpu() or (not self._is_local() and self._cuda_available()):
+            try:
+                return await self._transcribe_gpu(audio_path, language)
+            except Exception as exc:
+                if self._is_gpu():
+                    raise RuntimeError(
+                        f"Transkripsi GPU gagal: {str(exc)[:300]}"
+                    ) from exc
+                logger.warning(
+                    "Transkripsi GPU gagal (%s); mencoba provider API.",
+                    str(exc)[:200],
+                )
 
         try:
             return await self._transcribe_remote(audio_path, language)

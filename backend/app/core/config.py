@@ -49,12 +49,19 @@ class Settings(BaseSettings):
     AI_MAX_TOKENS: int = 2048
 
     # Audio transcription provider
-    # Provider: local | openai | groq | together | custom
+    # Provider: local | gpu | openai | groq | together | custom
     # Non-local providers must expose the OpenAI-compatible /audio/transcriptions API.
     TRANSCRIPTION_PROVIDER: str = "local"
     TRANSCRIPTION_API_KEY: Optional[str] = None
     TRANSCRIPTION_BASE_URL: Optional[str] = None
     TRANSCRIPTION_MODEL: Optional[str] = None
+
+    # Transkripsi Whisper di GPU worker (HuggingFace transformers).
+    # Model default -turbo: akurasi hampir setara large-v3 tapi jauh lebih cepat.
+    # Ganti ke "openai/whisper-large-v3" bila ingin akurasi maksimum (lebih berat).
+    GPU_WHISPER_MODEL: str = "openai/whisper-large-v3-turbo"
+    GPU_WHISPER_DEVICE: str = "cuda"
+    GPU_WHISPER_DTYPE: str = "float16"
 
     # Duitku Payment
     DUITKU_MERCHANT_CODE: Optional[str] = None
