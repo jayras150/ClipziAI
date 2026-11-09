@@ -436,6 +436,46 @@ Yang perlu diperhatikan:
 | Isolasi data | secret dibaca dari **Environment Variables akun Vast**, tidak lewat argumen |
 | Biaya | GPU ditagih per detik selama instance hidup; setelah `destroy` = 0 |
 | Risiko | API mati total → instance bisa yatim. Mitigasi: saat API start, `cleanup_orphan_instances()` menghapus instance `clipzi-*` yang task-nya sudah terminal/hilang. Cek manual: `vastai show instances` |
+
+#### Worker tidak pernah `ready` (`failed to find rdy worker`)
+
+Gejala di `python scripts/vastai-setup.py logs`:
+
+```
+error queue_work: endpoint 43832 failed to find rdy worker for req: ... new_load: 0
+```
+
+Instance naik (`loading` → `model_loading`) tetapi tidak pernah `ready`, sehingga
+request menggantung lalu timeout. Penyebab yang sudah terbukti di Clipzi:
+
+| Penyebab | Cara memastikan | Perbaikan |
+|----------|-----------------|-----------|
+| Workergroup masih memakai template lama (image `clipzy-worker`, port 8080) | `vastai show workergroups --raw` → lihat `template_hash`, `template_id`, `search_query.image_tag` | buat template baru + `python scripts/vastai-setup.py retemplate --hash <hash>` |
+| Worker tidak memakai **PyWorker** | worker berhenti di `model_loading` walau container `running` | image worker harus `python -m deployments.pyworker_main` (`CLIPZI_ROLE=worker`) |
+| Port PyWorker tidak diekspos | template env bukan `-p 8000:8000` | template env: `-p 8000:8000 -e CLIPZI_ROLE=worker -e WORKER_PORT=8000 -e MODEL_SERVER_PORT=18000` |
+| Template privat dibuat tapi hash tidak tercatat | `VAST_TEMPLATE_HASH` kosong | pakai hash dari keluaran `vastai-setup.py template` (kini dibaca dari keluaran `create`, bukan dari pencarian publik) |
+
+Alur perbaikan lengkap:
+
+```bash
+# 0. hentikan biaya dulu
+python scripts/vastai-setup.py activate --stop
+
+# 1. build & push ulang image worker (kode PyWorker ikut di dalam image)
+docker build -t <user>/clipzi-backend:1.1.0 backend
+docker push <user>/clipzi-backend:1.1.0
+#    lalu set VAST_WORKER_IMAGE=<user>/clipzi-backend:1.1.0 di backend/.env
+
+# 2. template baru + arahkan workergroup ke template itu
+python scripts/vastai-setup.py template
+python scripts/vastai-setup.py retemplate --hash <hash-dari-langkah-2>
+
+# 3. nyalakan & uji
+python scripts/vastai-setup.py activate
+python scripts/vastai-setup.py logs --tail 50     # tunggu worker `ready`
+python scripts/vastai-smoke-test.py --send        # 1 request /health; harus OK
+```
+
 | Kapan dipakai | task besar/langka, batch malam, demo. Untuk trafik ramai pakai endpoint scale-to-zero |
 
 

@@ -926,6 +926,7 @@ python scripts/vastai-setup.py status       # lihat URL endpoint -> isi VAST_END
 | Perintah | Fungsi |
 |----------|--------|
 | `python scripts/vastai-setup.py template` | buat **template worker** (image+port+env) & cetak hash → isi ke `VAST_TEMPLATE_HASH` |
+| `python scripts/vastai-setup.py retemplate` | arahkan workergroup yang sudah ada ke template/hash baru (mis. setelah image worker berubah) |
 | `python scripts/vastai-setup.py create` | buat endpoint + workergroup (idempotent secara manual, cek `status` dulu) |
 | `... update` | terapkan ulang `VAST_MAX_WORKERS`, `VAST_TARGET_UTIL`, `VAST_INACTIVITY_TIMEOUT` |
 | `... status` | lihat endpoint, URL, workergroup, jumlah worker |
@@ -936,6 +937,7 @@ python scripts/vastai-setup.py status       # lihat URL endpoint -> isi VAST_END
 | `... update --max-workers 0` | paksa nol worker tanpa mematikan endpoint |
 | `python scripts/vastai-setup.py --dry-run create` | lihat perintah `vastai` tanpa menjalankan |
 | `python scripts/vastai-run-once.py --task-id <UUID>` | **one-shot**: buat instance → jalankan 1 task → `destroy instance` otomatis |
+| `python scripts/vastai-smoke-test.py` | cek endpoint + worker (`ready`?) tanpa biaya; `--send` mengirim 1 request `/health` untuk uji cold start |
 | `python scripts/test-oneshot-offline.py` | validasi logika oneshot (offer, dispatch, reaper, orphan cleanup) tanpa GPU/jaringan |
 
 ### Satu task satu instance (ephemeral)
@@ -1003,17 +1005,28 @@ instance `clipzi-*` yang task-nya sudah terminal/hilang.
 Uji logika ini tanpa GPU/API key (fake SDK + fake DB):
 
 ```bash
-python scripts/test-oneshot-offline.py     # 7 cek: offer, dispatch, reaper, boot timeout, orphan cleanup
+python scripts/test-oneshot-offline.py     # 8 cek: offer, dispatch, reaper, boot timeout, orphan cleanup, PyWorker
 ```
 
 ### Satu image, dua peran
 
 Image backend yang sama dipakai untuk API dan worker; peran dipilih lewat env:
 
-| `CLIPZI_ROLE` | Proses yang dijalankan | Dipakai di |
-|---------------|------------------------|------------|
-| `api` (default) | `uvicorn app.main:app` (63 endpoint REST) | VPS |
-| `worker` | `uvicorn deployments.worker_api:app` (`/health`, `/ready`, `/process`) | worker Vast |
+| `CLIPZI_ROLE` | Proses yang dijalankan | Port publik | Dipakai di |
+|---------------|------------------------|-------------|------------|
+| `api` (default) | `uvicorn app.main:app` (63 endpoint REST) | `PORT` (8000) | VPS |
+| `worker` | `python -m deployments.pyworker_main` → **PyWorker** di `WORKER_PORT` + pipeline (`worker_api`) di `127.0.0.1:MODEL_SERVER_PORT` | `WORKER_PORT` (8000) | worker Vast |
+
+> **Wajib PyWorker untuk serverless.** Engine Vast hanya mengirim request ke
+> worker yang melapor `ready`, dan laporan itu dibuat oleh PyWorker (framework di
+> dalam paket `vastai`), bukan oleh service FastAPI. Tanpa PyWorker, worker
+> berhenti di `model_loading` dan log endpoint berbunyi
+> `failed to find rdy worker`. Untuk uji lokal tanpa Vast pakai
+> `CLIPZI_WORKER_MODE=api` (uvicorn langsung, tanpa PyWorker).
+>
+> Karena itu template worker harus mengekspos port PyWorker:
+> `-p 8000:8000 -e CLIPZI_ROLE=worker -e WORKER_PORT=8000 -e MODEL_SERVER_PORT=18000`
+
 
 ### Migrasi / upgrade VPS
 

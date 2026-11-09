@@ -2,7 +2,7 @@
   // Konfigurasi Pyright/Pylance untuk workspace Clipzi AI.
   // Backend ada di folder `backend/`, jadi `import app.*` perlu `extraPaths`.
   "pythonVersion": "3.12",
-  "include": ["backend/app", "scripts"],
+  "include": ["backend/app", "backend/deployments", "scripts"],
   "exclude": [
     "**/__pycache__",
     "**/.venv",

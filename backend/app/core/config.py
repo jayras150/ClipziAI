@@ -110,6 +110,11 @@ class Settings(BaseSettings):
     # Deployment hybrid: Vast.ai Serverless (worker GPU untuk proses video)
     VAST_API_KEY: Optional[str] = None
     VAST_ENDPOINT_NAME: str = "clipzi-processing"
+    # ID resource yang dikelola `scripts/vastai-setup.py` (status/retemplate/update).
+    # Tidak dipakai API saat runtime, tetapi dibaca di sini supaya satu .env bisa
+    # dipakai bersama skrip & container tanpa error "extra inputs are not permitted".
+    VAST_ENDPOINT_ID: Optional[int] = None
+    VAST_WORKERGROUP_ID: Optional[int] = None
     VAST_TEMPLATE_HASH: Optional[str] = None
     VAST_TEMPLATE_NAME: str = "clipzi-worker"
     VAST_TEMPLATE_PUBLIC: bool = False

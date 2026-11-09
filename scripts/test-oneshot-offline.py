@@ -273,6 +273,34 @@ def test_cleanup_orphans():
     return f"dihapus {sorted(client.destroyed)}, task aktif dibiarkan"
 
 
+def test_pyworker_config():
+    """Worker Vast wajib memakai PyWorker; port & route-nya harus konsisten."""
+    os.environ.setdefault("MODEL_SERVER_PORT", "18000")
+    os.environ.setdefault("WORKER_PORT", "8000")
+    import importlib
+
+    import deployments.pyworker_main as pw
+
+    pw = importlib.reload(pw)  # baca ulang env yang baru diset
+    config = pw.build_config()
+
+    assert config.model_server_port == 18000, config.model_server_port
+    assert config.model_server_url == "http://127.0.0.1", config.model_server_url
+    routes = [handler.route for handler in config.handlers]
+    assert routes == ["/process"], routes
+    handler = config.handlers[0]
+    assert handler.allow_parallel_requests is False, handler
+    assert handler.workload_calculator({}) == 100.0, handler.workload_calculator
+
+    # PyWorker membaca WORKER_PORT dari environment saat start_server().
+    src = pathlib.Path("deployments/pyworker_main.py").read_text(encoding="utf-8")
+    assert "WORKER_PORT" in src, "pyworker_main harus menyetel WORKER_PORT"
+    entry = pathlib.Path("docker-entrypoint.sh").read_text(encoding="utf-8")
+    assert "deployments.pyworker_main" in entry, "entrypoint belum memakai PyWorker"
+    assert "CLIPZI_WORKER_MODE" in entry, "mode api tanpa PyWorker harus tersedia"
+    return "PyWorker: route /process, model server 127.0.0.1:18000, entrypoint OK"
+
+
 def main() -> int:
     # API key wajib ada agar cleanup_orphan_instances mau berjalan.
     if not (vw.settings.VAST_API_KEY or "").strip():
@@ -285,6 +313,7 @@ def main() -> int:
     check("reaper saat task ERROR", test_reaper_on_error)
     check("boot timeout", test_boot_timeout)
     check("instance yatim dibersihkan", test_cleanup_orphans)
+    check("konfigurasi PyWorker", test_pyworker_config)
 
     print()
     for label, ok, detail in results:
