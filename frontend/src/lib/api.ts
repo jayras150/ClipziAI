@@ -89,12 +89,19 @@ export class ApiClient {
 
   constructor(token?: string) {
     this.client = axios.create({
-      // Dibaca saat runtime agar NEXT_PUBLIC_API_URL bisa diganti tanpa rebuild image.
-      baseURL: getApiBaseUrl(),
+      // baseURL TIDAK diisi di sini: nilainya harus dibaca saat request dikirim,
+      // bukan saat modul di-import. /runtime-env.js bisa saja baru dieksekusi
+      // setelah bundle ini dimuat, dan itu akan membuat baseURL jatuh ke
+      // http://localhost:8000 pada build produksi.
       headers: {
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
+    })
+
+    this.client.interceptors.request.use((config) => {
+      if (!config.baseURL) config.baseURL = getApiBaseUrl()
+      return config
     })
 
     this.client.interceptors.response.use(
