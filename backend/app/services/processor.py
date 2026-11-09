@@ -6,6 +6,7 @@ import asyncio
 import subprocess
 from typing import List, Dict, Any, Optional
 from pathlib import Path
+from uuid import uuid4
 
 from app.core.config import get_settings
 
@@ -142,16 +143,21 @@ class VideoProcessor:
         if not font_file:
             raise RuntimeError("Tidak ditemukan font TTF di container untuk caption.")
 
+        # Tulis teks ke file lalu pakai `textfile=`. Cara ini bebas dari masalah
+        # escaping filtergraph (apostrof, titik dua, '%', koma) yang membuat
+        # drawtext gagal menggambar tanpa pesan error.
+        text_file = str(Path(output_path).with_name(f"caption_{uuid4().hex}.txt"))
+        Path(text_file).write_text(text, encoding="utf-8")
+
         drawtext = (
             f"drawtext=fontfile={self._escape_filter_path(font_file)}:"
-            f"text='{self._escape_filter_text(text)}':"
+            f"textfile={self._escape_filter_path(text_file)}:"
             f"fontsize={font_size}:"
             f"fontcolor={font_color}:"
             f"x={x}:"
             f"y={y}:"
             # expansion=none wajib: tanpa ini ffmpeg memperlakukan '%' sebagai
-            # penanda strftime. Teks seperti "100%" atau "50% off" jadi tidak
-            # tergambar sama sekali (drawtext gagal diam-diam).
+            # penanda strftime. Teks seperti "100%" jadi tidak tergambar.
             "expansion=none"
         )
         if box:
@@ -168,7 +174,13 @@ class VideoProcessor:
         ]
 
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self._run_ffmpeg, cmd)
+        try:
+            await loop.run_in_executor(None, self._run_ffmpeg, cmd)
+        finally:
+            try:
+                os.remove(text_file)
+            except OSError:
+                pass
         return output_path
 
     @staticmethod
