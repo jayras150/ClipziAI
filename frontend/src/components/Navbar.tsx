@@ -24,6 +24,9 @@ export default function Navbar() {
       </Link>
       <nav className="ui-nav-links">
         <Link href="/dashboard">Dashboard</Link>
+        <Link href="/#features">Features</Link>
+        <Link href="/#how">How it works</Link>
+        <Link href="/#demo">Demo</Link>
         <Link href="/pricing">Pricing</Link>
         <Link href="/contact">Contact</Link>
       </nav>

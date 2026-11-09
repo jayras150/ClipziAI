@@ -23,7 +23,7 @@ from app.models.task import Task, TaskStatus
 from app.services import cookie_store
 from app.services.credit_service import CreditService
 from app.services.downloader import VideoDownloader
-from app.services.processor import VideoProcessor
+from app.services.processor import VideoProcessor, get_caption_style
 from app.services.storage import R2Storage
 from app.services.transcriber import AudioTranscriber
 
@@ -182,6 +182,8 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
         manual_end = options.get("end_time")
         aspect_ratio = str(options.get("aspect_ratio", "9:16"))
         caption_text = options.get("caption_text")
+        # Gaya caption: preset di app/services/processor.py (CAPTION_STYLES).
+        caption_style = str(options.get("caption_style") or "").strip().lower()
         speed = float(options.get("speed", 1.0) or 1.0)
         # ---------- Fase 2: gaya & polish ----------
         filter_preset = options.get("filter_preset")
@@ -322,7 +324,9 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                         # alih-alih menggagalkan seluruh task.
                         burned = str(work_dir / f"clip_{index:02d}_sub.mp4")
                         try:
-                            await processor.burn_subtitle(raw_clip, srt_path, burned)
+                            await processor.burn_subtitle(
+                                raw_clip, srt_path, burned, style=caption_style
+                            )
                             final_clip = burned
                         except Exception as exc:
                             logger.warning(
@@ -351,14 +355,31 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                 if caption_text:
                     captioned = str(work_dir / f"clip_{index:02d}_caption.mp4")
                     try:
+                        # Ukuran font mengikuti tinggi output supaya caption
+                        # tetap terbaca di 9:16, 1:1, dan 16:9.
+                        caption_preset = get_caption_style(caption_style)
+                        overlay = caption_preset["overlay"]
+                        _, out_h = processor._dimensions_for_ratio(aspect_ratio)
+                        font_size = max(18, int(round(out_h * float(overlay["size_ratio"]))))
+                        vertical = str(overlay.get("y") or "bottom")
+                        if vertical == "top":
+                            y_expr = "h*0.07"
+                        elif vertical == "center":
+                            y_expr = "(h-text_h)/2"
+                        else:
+                            y_expr = "h-text_h-h*0.085"
                         await processor.add_text_overlay(
                             final_clip,
                             captioned,
                             caption_text,
-                            font_size=26,
-                            font_color="white",
+                            font_size=font_size,
+                            font_color=str(overlay["color"]),
                             x="(w-text_w)/2",
-                            y="h-text_h-40",
+                            y=y_expr,
+                            box=bool(overlay.get("box", False)),
+                            box_color=str(overlay.get("box_color") or "black@0.6"),
+                            border_width=int(overlay.get("border_width") or 0),
+                            border_color=str(overlay.get("border_color") or "black"),
                         )
                         final_clip = captioned
                     except Exception as exc:

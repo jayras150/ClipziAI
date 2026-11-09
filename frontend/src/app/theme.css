@@ -57,28 +57,6 @@
 .ui-container-wide {
   width: min(1920px, calc(100% - 48px));
 }
-/* Card upload: 1 kolom di layar sempit, 2 kolom (form + dropzone) di layar lebar. */
-.ui-upload-card {
-  display: grid;
-  gap: 26px;
-}
-.ui-upload-side {
-  display: flex;
-  flex-direction: column;
-}
-@media (min-width: 1100px) {
-  .ui-upload-card {
-    grid-template-columns: minmax(0, 1.5fr) minmax(300px, 1fr);
-    align-items: stretch;
-  }
-  .ui-upload-side .ui-dropzone {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-  }
-}
 
 /* ---------- Navigasi ---------- */
 .ui-nav {
@@ -164,10 +142,25 @@
 
 /* ---------- Kartu & tipografi ---------- */
 .ui-card {
+  position: relative;
   background: linear-gradient(145deg, #171a21, #101217);
-  border: 1px solid var(--ui-line);
-  border-radius: 20px;
+  border: 1px solid rgba(244, 199, 107, 0.22);
+  /* Sudut diagonal (kiri-atas & kanan-bawah membulat, sisanya tajam). */
+  border-radius: 26px 7px 26px 7px;
   padding: 26px;
+  box-shadow: 0 20px 46px rgba(0, 0, 0, 0.32);
+}
+/* Garis aksen emas di sudut kanan-atas supaya kartu terasa "bertepi". */
+.ui-card::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 68px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, rgba(244, 199, 107, 0.75));
+  pointer-events: none;
 }
 .ui-card-hover {
   transition: 0.25s;
@@ -259,24 +252,42 @@
   margin-top: 6px;
 }
 
-/* Selector: buang tampilan bawaan browser, pakai chevron sendiri. */
+/* Selector: buang tampilan bawaan browser, pakai chevron sendiri.
+   Tampilan dibuat "kartu emas" (bukan kotak polos): latar emas transparan,
+   teks emas, sudut diagonal, dan cincin fokus lembut. */
 select.ui-input {
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
   padding-right: 36px;
-  background-color: rgba(255, 255, 255, 0.04);
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23a6a9b6' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  color: var(--ui-gold-2);
+  font-weight: 600;
+  border-color: rgba(244, 199, 107, 0.4);
+  border-radius: 12px 4px 12px 4px;
+  background-color: rgba(244, 199, 107, 0.08);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23f4c76b' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
   background-repeat: no-repeat;
   background-position: right 12px center;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
   cursor: pointer;
 }
 select.ui-input:hover {
-  border-color: rgba(255, 255, 255, 0.22);
+  border-color: rgba(244, 199, 107, 0.72);
+  background-color: rgba(244, 199, 107, 0.13);
+}
+select.ui-input:focus {
+  border-color: var(--ui-gold);
+  box-shadow: 0 0 0 3px rgba(244, 199, 107, 0.16);
 }
 select.ui-input option {
-  background: #14161d;
+  background: #16131c;
   color: #f5f5f2;
+  font-weight: 500;
+}
+select.ui-input option:checked,
+select.ui-input option:hover {
+  background: #2a2110;
+  color: var(--ui-gold-2);
 }
 
 /* ---------- Panel opsi editing (kartu per kontrol) ---------- */
@@ -290,37 +301,80 @@ select.ui-input option {
   flex-direction: column;
   gap: 7px;
   min-width: 0;
-  padding: 11px 13px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 13px;
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
+  padding: 12px 14px 13px;
+  /* Sudut diagonal + garis emas tipis; warna aksen ditentukan nth-child di
+     bawah supaya tiap blok punya nuansa sendiri (tidak semuanya emas). */
+  border: 1px solid var(--opt-line, rgba(244, 199, 107, 0.3));
+  border-radius: 18px 5px 18px 5px;
+  background:
+    linear-gradient(155deg, var(--opt-tint, rgba(244, 199, 107, 0.08)), rgba(255, 255, 255, 0.012) 62%);
+  transition: 0.2s;
+}
+.ui-opt:hover {
+  border-color: var(--opt-line-strong, rgba(244, 199, 107, 0.55));
+  transform: translateY(-1px);
+}
+/* Aksen bergilir per blok: emas, ungu, toska, rose, biru. */
+.ui-opt-grid > .ui-opt:nth-child(5n + 1) {
+  --opt-line: rgba(244, 199, 107, 0.34);
+  --opt-line-strong: rgba(244, 199, 107, 0.62);
+  --opt-tint: rgba(244, 199, 107, 0.08);
+  --opt-label: #f0c979;
+}
+.ui-opt-grid > .ui-opt:nth-child(5n + 2) {
+  --opt-line: rgba(160, 143, 255, 0.34);
+  --opt-line-strong: rgba(160, 143, 255, 0.62);
+  --opt-tint: rgba(150, 130, 255, 0.09);
+  --opt-label: #b6a9ff;
+}
+.ui-opt-grid > .ui-opt:nth-child(5n + 3) {
+  --opt-line: rgba(96, 214, 198, 0.32);
+  --opt-line-strong: rgba(96, 214, 198, 0.6);
+  --opt-tint: rgba(86, 208, 190, 0.08);
+  --opt-label: #86e0d2;
+}
+.ui-opt-grid > .ui-opt:nth-child(5n + 4) {
+  --opt-line: rgba(255, 148, 172, 0.32);
+  --opt-line-strong: rgba(255, 148, 172, 0.6);
+  --opt-tint: rgba(255, 138, 164, 0.08);
+  --opt-label: #ffadbf;
+}
+.ui-opt-grid > .ui-opt:nth-child(5n + 5) {
+  --opt-line: rgba(126, 186, 255, 0.32);
+  --opt-line-strong: rgba(126, 186, 255, 0.6);
+  --opt-tint: rgba(116, 176, 255, 0.08);
+  --opt-label: #9ac8ff;
 }
 .ui-opt-label {
   font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.6px;
   text-transform: uppercase;
-  color: #8b8f9d;
+  color: var(--opt-label, #8b8f9d);
 }
 .ui-opt .ui-input {
   padding: 9px 12px;
   font-size: 13px;
-  border-radius: 10px;
+  border-radius: 10px 3px 10px 3px;
   background: rgba(9, 10, 14, 0.55);
 }
+/* Chevron emas dipertahankan: `background` shorthand di atas menghapus
+   background-image, jadi gambar panah ditulis ulang di sini. */
 .ui-opt select.ui-input {
   padding-right: 32px;
-  background-color: rgba(9, 10, 14, 0.55);
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23a6a9b6' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-color: rgba(244, 199, 107, 0.07);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23f4c76b' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
   background-repeat: no-repeat;
   background-position: right 10px center;
 }
 .ui-opt-panel {
   margin-top: 12px;
-  padding: 16px;
-  border: 1px solid var(--ui-line);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.018);
+  padding: 18px;
+  border: 1px solid rgba(244, 199, 107, 0.18);
+  border-radius: 20px 6px 20px 6px;
+  background:
+    radial-gradient(600px 200px at 100% 0%, rgba(244, 199, 107, 0.06), transparent 70%),
+    rgba(255, 255, 255, 0.017);
 }
 .ui-opt-details > summary {
   list-style: none;
@@ -331,9 +385,9 @@ select.ui-input option {
   font-size: 13px;
   font-weight: 600;
   color: #cfd1d8;
-  border: 1px solid var(--ui-line);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(244, 199, 107, 0.26);
+  border-radius: 14px 4px 14px 4px;
+  background: rgba(244, 199, 107, 0.06);
   cursor: pointer;
   transition: 0.2s;
 }
@@ -372,17 +426,33 @@ select.ui-input option {
   align-items: center;
   gap: 11px;
   min-width: 0;
-  padding: 11px 13px;
+  padding: 12px 14px;
   font-size: 12.5px;
   color: #d5d7de;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--opt-line, rgba(244, 199, 107, 0.28));
+  border-radius: 18px 5px 18px 5px;
+  background: linear-gradient(155deg, var(--opt-tint, rgba(244, 199, 107, 0.07)), rgba(255, 255, 255, 0.012) 65%);
   cursor: pointer;
   transition: 0.2s;
 }
+.ui-switch-list > .ui-switch:nth-child(4n + 1) {
+  --opt-line: rgba(244, 199, 107, 0.32);
+  --opt-tint: rgba(244, 199, 107, 0.08);
+}
+.ui-switch-list > .ui-switch:nth-child(4n + 2) {
+  --opt-line: rgba(160, 143, 255, 0.32);
+  --opt-tint: rgba(150, 130, 255, 0.09);
+}
+.ui-switch-list > .ui-switch:nth-child(4n + 3) {
+  --opt-line: rgba(96, 214, 198, 0.3);
+  --opt-tint: rgba(86, 208, 190, 0.08);
+}
+.ui-switch-list > .ui-switch:nth-child(4n + 4) {
+  --opt-line: rgba(255, 148, 172, 0.3);
+  --opt-tint: rgba(255, 138, 164, 0.08);
+}
 .ui-switch:hover {
-  border-color: rgba(233, 189, 101, 0.35);
+  border-color: rgba(244, 199, 107, 0.55);
 }
 .ui-switch input {
   appearance: none;
@@ -783,5 +853,230 @@ select.ui-input option {
 .ui-dropzone:hover {
   border-color: rgba(233, 189, 101, 0.7);
   background: rgba(233, 189, 101, 0.06);
+}
+
+/* =============================================================================
+   Dashboard v3 — susunan baru: kartu upload di ATAS → form paste link → opsi.
+   Semua kartu memakai sudut diagonal dengan garis emas, tetapi warna aksen
+   dibedakan per blok (lihat var --opt-line/--opt-tint di atas).
+   ============================================================================= */
+.ui-stack {
+  display: grid;
+  gap: 18px;
+}
+
+/* --- Kartu upload (paling atas, selebar konten) --- */
+.ui-upload-hero {
+  padding: 18px;
+}
+.ui-upload-hero .ui-dropzone {
+  border-radius: 22px 6px 22px 6px;
+  padding: 40px 26px;
+  border-width: 1.5px;
+  background:
+    radial-gradient(520px 200px at 50% 0%, rgba(244, 199, 107, 0.1), transparent 70%),
+    rgba(233, 189, 101, 0.025);
+}
+.ui-upload-hero .ui-dropzone:hover {
+  background:
+    radial-gradient(520px 200px at 50% 0%, rgba(244, 199, 107, 0.16), transparent 70%),
+    rgba(233, 189, 101, 0.05);
+}
+.ui-drop-icon {
+  width: 62px;
+  height: 62px;
+  margin: 0 auto 14px;
+  display: grid;
+  place-items: center;
+  border-radius: 20px 6px 20px 6px;
+  border: 1px solid rgba(244, 199, 107, 0.35);
+  background: linear-gradient(150deg, rgba(244, 199, 107, 0.18), rgba(244, 199, 107, 0.04));
+  color: var(--ui-gold);
+}
+.ui-drop-title {
+  font-family: var(--font-space), "Space Grotesk", sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  color: #f0f1f4;
+}
+.ui-drop-formats {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+.ui-drop-formats span {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  padding: 4px 9px;
+  border-radius: 8px 2px 8px 2px;
+  border: 1px solid rgba(244, 199, 107, 0.22);
+  background: rgba(244, 199, 107, 0.07);
+  color: #e7cf9c;
+}
+
+/* --- Kartu form paste link --- */
+.ui-link-card {
+  padding: 22px;
+}
+.ui-url-row {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.ui-url-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 340px;
+  min-width: 0;
+}
+.ui-url-field > svg {
+  position: absolute;
+  left: 14px;
+  color: var(--ui-gold);
+  pointer-events: none;
+}
+.ui-url-field input {
+  height: 50px;
+  padding-left: 42px;
+  padding-right: 14px;
+  font-size: 14px;
+  border-radius: 15px 4px 15px 4px;
+  border-color: rgba(244, 199, 107, 0.32);
+  background: rgba(9, 10, 14, 0.6);
+}
+.ui-url-field input:focus {
+  border-color: var(--ui-gold);
+  box-shadow: 0 0 0 3px rgba(244, 199, 107, 0.14);
+}
+.ui-url-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.ui-url-actions .ui-btn {
+  height: 50px;
+  padding: 0 18px;
+  border-radius: 15px 4px 15px 4px;
+}
+/* Tombol Paste: emas lembut (bukan gradient penuh, supaya tidak bersaing
+   dengan tombol Process). */
+.ui-btn-paste {
+  border: 1px solid rgba(244, 199, 107, 0.55);
+  background: rgba(244, 199, 107, 0.14);
+  color: var(--ui-gold-2);
+}
+.ui-btn-paste:hover {
+  background: rgba(244, 199, 107, 0.22);
+}
+/* Tombol Clear: merah lembut. */
+.ui-btn-clear {
+  border: 1px solid rgba(240, 138, 122, 0.45);
+  background: rgba(240, 138, 122, 0.1);
+  color: #f7b2a5;
+}
+.ui-btn-clear:hover {
+  background: rgba(240, 138, 122, 0.18);
+  border-color: rgba(240, 138, 122, 0.7);
+}
+
+/* --- Tombol kembali ke halaman sebelumnya --- */
+.ui-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px 8px 11px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #c9cbd3;
+  border: 1px solid rgba(244, 199, 107, 0.24);
+  border-radius: 12px 3px 12px 3px;
+  background: rgba(255, 255, 255, 0.035);
+  cursor: pointer;
+  transition: 0.2s;
+  font-family: inherit;
+}
+.ui-back:hover {
+  color: var(--ui-gold-2);
+  border-color: rgba(244, 199, 107, 0.6);
+  background: rgba(244, 199, 107, 0.09);
+  transform: translateX(-2px);
+}
+
+/* --- Pratinjau gaya subtitle --- */
+.ui-sub-preview {
+  display: grid;
+  place-items: center;
+  height: 62px;
+  margin-top: 2px;
+  border-radius: 14px 4px 14px 4px;
+  border: 1px dashed rgba(244, 199, 107, 0.24);
+  background:
+    radial-gradient(240px 90px at 50% 120%, rgba(244, 199, 107, 0.12), transparent 70%),
+    #0b0c11;
+  overflow: hidden;
+}
+.ui-sub-preview span {
+  font-family: var(--font-dm), "DM Sans", system-ui, sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  line-height: 1.15;
+  text-align: center;
+  padding: 2px 8px;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+/* --- Navigasi: lebih banyak tautan, tetap rapi di layar sempit --- */
+.ui-nav-links {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.ui-nav-links a {
+  padding-bottom: 2px;
+  border-bottom: 1px solid transparent;
+  transition: 0.2s;
+}
+.ui-nav-links a:hover {
+  border-bottom-color: rgba(244, 199, 107, 0.55);
+}
+@media (max-width: 1180px) {
+  .ui-nav-links {
+    gap: 18px;
+    font-size: 13px;
+  }
+}
+@media (max-width: 560px) {
+  /* Jangan disembunyikan: tampilkan sebagai baris yang bisa digeser. */
+  .ui-nav-links {
+    display: flex;
+    order: 3;
+    width: 100%;
+    gap: 16px;
+    font-size: 12.5px;
+    overflow-x: auto;
+    white-space: nowrap;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+  .ui-nav-links::-webkit-scrollbar {
+    display: none;
+  }
+  .ui-link-card,
+  .ui-upload-hero {
+    padding: 15px;
+  }
+  .ui-url-actions {
+    width: 100%;
+  }
+  .ui-url-actions .ui-btn {
+    flex: 1;
+  }
 }
 

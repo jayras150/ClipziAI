@@ -18,6 +18,9 @@ import {
   RefreshCw,
   Layers,
   Scissors,
+  ArrowLeft,
+  ClipboardPaste,
+  Eraser,
 } from "lucide-react"
 
 import { api, ClipData, MusicTrackData, TaskData } from "@/lib/api"
@@ -28,6 +31,41 @@ import SiteFooter from "@/components/SiteFooter"
 import UserMenu from "@/components/UserMenu"
 
 const ACTIVE_STATUSES = ["queued", "processing"]
+
+/**
+ * Opsi gaya subtitle yang dikirim sebagai `editing_options.caption_style`.
+ * Nilainya dipetakan ke preset CAPTION_STYLES di backend
+ * (`app/services/processor.py`) — warna, garis tepi, kotak latar, dan posisi.
+ */
+const SUBTITLE_STYLE_OPTIONS = [
+  { value: "", label: "Bawaan" },
+  { value: "classic", label: "Classic putih" },
+  { value: "gold", label: "Gold tebal" },
+  { value: "boxed", label: "Kotak hitam" },
+  { value: "neon", label: "Neon cyan" },
+  { value: "top", label: "Atas bersih" },
+  { value: "center", label: "Hook tengah" },
+]
+
+/** Pratinjau kecil di kartu "Style subtitle" agar gaya terlihat sebelum proses. */
+function subtitlePreviewStyle(style: string): React.CSSProperties {
+  switch (style) {
+    case "gold":
+      return { color: "#f4c76b", fontSize: 20, textShadow: "0 0 2px #000, 1px 1px 0 #000, -1px -1px 0 #000" }
+    case "neon":
+      return { color: "#7ce9dc", fontSize: 20, textShadow: "0 0 6px rgba(124,233,220,.55), 1px 1px 0 #000" }
+    case "boxed":
+      return { color: "#ffffff", fontSize: 15, background: "rgba(0,0,0,.72)", borderRadius: 3, padding: "3px 8px" }
+    case "top":
+      return { color: "#ffffff", fontSize: 16, textShadow: "1px 1px 0 #000, -1px -1px 0 #000" }
+    case "center":
+      return { color: "#f4c76b", fontSize: 22, textShadow: "0 0 3px #000, 2px 2px 0 #000, -2px -2px 0 #000" }
+    case "classic":
+      return { color: "#ffffff", fontSize: 16, textShadow: "1px 1px 0 #000, -1px -1px 0 #000" }
+    default:
+      return { color: "#e8e9ee", fontSize: 15 }
+  }
+}
 
 const STATUS_LABEL: Record<string, string> = {
   queued: "Queued",
@@ -97,6 +135,7 @@ export default function DashboardPage() {
   const [endTimeValue, setEndTimeValue] = useState("")
   const [aspectRatioValue, setAspectRatioValue] = useState("9:16")
   const [captionTextValue, setCaptionTextValue] = useState("")
+  const [captionStyle, setCaptionStyle] = useState("")
   const [speedValue, setSpeedValue] = useState("1.0")
   // Fase 2: gaya & polish
   const [filterPreset, setFilterPreset] = useState("none")
@@ -284,6 +323,7 @@ export default function DashboardPage() {
       if (!Number.isNaN(endTime)) editingOptions.end_time = endTime
       if (aspectRatioValue) editingOptions.aspect_ratio = aspectRatioValue
       if (caption) editingOptions.caption_text = caption
+      if (captionStyle) editingOptions.caption_style = captionStyle
       if (!Number.isNaN(speed) && speed !== 1) editingOptions.speed = speed
 
       // Fase 2: gaya & polish
@@ -332,6 +372,39 @@ export default function DashboardPage() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  /** Tempel link dari clipboard; browser bisa menolak (butuh HTTPS + izin). */
+  const pasteFromClipboard = async () => {
+    setTaskError("")
+    setNotice("")
+    try {
+      if (!navigator.clipboard?.readText) throw new Error("Clipboard API tidak tersedia")
+      const text = (await navigator.clipboard.readText()).trim()
+      if (!text) {
+        setNotice("Clipboard kosong — salin link video dulu.")
+        return
+      }
+      setUrlValue(text)
+      setNotice("Link ditempel dari clipboard.")
+    } catch {
+      setTaskError("Browser memblokir akses clipboard. Klik kolom URL lalu tekan Ctrl+V.")
+    }
+  }
+
+  /** Kosongkan kolom URL dan kembalikan fokus ke input. */
+  const clearUrl = () => {
+    setUrlValue("")
+    setTaskError("")
+    setNotice("")
+    document.getElementById("video-url")?.focus()
+  }
+
+  /** Kembali ke halaman sebelumnya; kalau tidak ada riwayat, ke landing. */
+  const goBack = () => {
+    if (typeof window === "undefined") return
+    if (window.history.length > 1) window.history.back()
+    else window.location.href = "/"
   }
 
   const openTask = (task: TaskData) => {
@@ -417,6 +490,8 @@ export default function DashboardPage() {
   }
 
   const openTaskData = tasks.find((task) => task.id === openTaskId) || null
+  // Contoh teks pratinjau: pakai caption yang diketik user agar terasa nyata.
+  const subtitlePreviewText = (captionTextValue.trim() || "Contoh caption").slice(0, 24)
 
   return (
     <div className="ui-shell">
@@ -429,7 +504,11 @@ export default function DashboardPage() {
         </Link>
         <nav className="ui-nav-links">
           <Link href="/dashboard">Dashboard</Link>
+          <Link href="/#features">Features</Link>
+          <Link href="/#how">How it works</Link>
+          <Link href="/#demo">Demo</Link>
           <Link href="/pricing">Pricing</Link>
+          <Link href="/contact">Contact</Link>
         </nav>
         <div className="ui-nav-actions">
           {youtube.connected ? (
@@ -479,7 +558,10 @@ export default function DashboardPage() {
           }}
         >
           <div>
-            <div className="ui-kicker">Studio</div>
+            <button type="button" className="ui-back" onClick={goBack} title="Kembali ke halaman sebelumnya">
+              <ArrowLeft size={14} /> Kembali
+            </button>
+            <div className="ui-kicker" style={{ marginTop: 14 }}>Studio</div>
             <h1 className="ui-title" style={{ marginTop: 8 }}>
               Dashboard
             </h1>
@@ -521,28 +603,88 @@ export default function DashboardPage() {
 
 
         {activeTab === "upload" ? (
-          <div className="ui-card ui-upload-card">
-            <div className="ui-upload-main">
-            <h2 className="ui-subtitle">Upload video</h2>
-            <p className="ui-muted" style={{ marginBottom: 20 }}>
-              Paste a video link and Clipzy AI will pick the best moments, caption them, and crop to 9:16.
-            </p>
+          <div className="ui-stack">
+            {/* 1) Kartu upload — selalu paling atas. */}
+            <section className="ui-card ui-upload-hero">
+              <div
+                className="ui-dropzone"
+                onClick={() => fileInputRef.current?.click()}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") fileInputRef.current?.click()
+                }}
+              >
+                <div className="ui-drop-icon">
+                  <Upload size={26} />
+                </div>
+                <p className="ui-drop-title">Drop your video here</p>
+                <p className="ui-hint" style={{ marginTop: 6 }}>
+                  Click to browse or drag a file — you can also paste a link below.
+                </p>
+                <div className="ui-drop-formats">
+                  <span>MP4</span>
+                  <span>MOV</span>
+                  <span>AVI</span>
+                  <span>MAX 2 GB</span>
+                </div>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="video/*"
+                hidden
+                onChange={(event) => onPickFile(event.target.files?.[0] ?? null)}
+              />
+              <p className="ui-hint" style={{ textAlign: "center", marginTop: 10 }}>
+                Direct file upload is still rolling out — paste a link below for now.
+              </p>
+            </section>
 
+            {/* 2) Form paste link, lalu 3) opsi editing. */}
             {/* noValidate: validasi dilakukan sendiri di submitUrl supaya pesan
                 error konsisten berbahasa Inggris (bukan tooltip bawaan browser). */}
-            <form onSubmit={submitUrl} noValidate>
+            <form className="ui-card ui-link-card" onSubmit={submitUrl} noValidate>
+              <h2 className="ui-subtitle">Paste video link</h2>
+              <p className="ui-muted" style={{ marginBottom: 16 }}>
+                Clipzy AI picks the best moments, captions them, and crops to the ratio you choose.
+              </p>
+
               <label className="ui-label" htmlFor="video-url">
                 Video URL
               </label>
-              <input
-                id="video-url"
-                type="url"
-                value={urlValue}
-                onChange={(event) => setUrlValue(event.target.value)}
-                placeholder="https://youtube.com/watch?v=..."
-                className="ui-input"
-                style={{ marginBottom: 14 }}
-              />
+              <div className="ui-url-row">
+                <div className="ui-url-field">
+                  <Link2 size={16} />
+                  <input
+                    id="video-url"
+                    type="url"
+                    value={urlValue}
+                    onChange={(event) => setUrlValue(event.target.value)}
+                    placeholder="https://youtube.com/watch?v=..."
+                    className="ui-input"
+                  />
+                </div>
+                <div className="ui-url-actions">
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn-paste"
+                    onClick={pasteFromClipboard}
+                    title="Paste a link from the clipboard"
+                  >
+                    <ClipboardPaste size={15} /> Paste
+                  </button>
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn-clear"
+                    onClick={clearUrl}
+                    disabled={!urlValue}
+                    title="Clear the URL field"
+                  >
+                    <Eraser size={15} /> Clear
+                  </button>
+                </div>
+              </div>
 
               {/* Opsi editing manual (Fase 1) — setiap kontrol jadi kartu sendiri. */}
               <div className="ui-opt-grid">
@@ -595,6 +737,26 @@ export default function DashboardPage() {
                     onChange={(e) => setCaptionTextValue(e.target.value)}
                     className="ui-input"
                   />
+                </div>
+                {/* Gaya subtitle: mengatur warna/ketebalan/posisi subtitle SRT
+                    yang dibakar (force_style) sekaligus caption teks di atas. */}
+                <div className="ui-opt">
+                  <label className="ui-opt-label" htmlFor="caption-style">Style subtitle</label>
+                  <select
+                    id="caption-style"
+                    value={captionStyle}
+                    onChange={(e) => setCaptionStyle(e.target.value)}
+                    className="ui-input"
+                  >
+                    {SUBTITLE_STYLE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="ui-sub-preview" aria-hidden="true">
+                    <span style={subtitlePreviewStyle(captionStyle)}>{subtitlePreviewText}</span>
+                  </div>
                 </div>
                 <div className="ui-opt">
                   <label className="ui-opt-label" htmlFor="speed">Kecepatan</label>
@@ -774,43 +936,16 @@ export default function DashboardPage() {
                   </div>
                 </details>
 
-                <div style={{ marginTop: 16 }}>
+                <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                   <button type="submit" className="ui-btn ui-btn-gold" disabled={submitting}>
                     {submitting ? <LoaderCircle size={15} className="animate-spin" /> : <Play size={15} />}
                     {submitting ? "Starting…" : "Process"}
                   </button>
+                  <span className="ui-hint" style={{ margin: 0 }}>
+                    YouTube, TikTok, Instagram, Facebook and X links are supported. 1 credit per clip.
+                  </span>
                 </div>
-              <p className="ui-hint">
-                YouTube, TikTok, Instagram, Facebook and X links are supported. 1 credit per clip.
-              </p>
             </form>
-            </div>
-
-            <div className="ui-upload-side">
-              <div
-                className="ui-dropzone"
-                onClick={() => fileInputRef.current?.click()}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") fileInputRef.current?.click()
-                }}
-              >
-                <Upload size={40} className="ui-gold" style={{ margin: "0 auto 12px" }} />
-                <p style={{ fontSize: 14, color: "#e6e7ea" }}>Click or drag a video file here</p>
-                <p className="ui-hint">Max 2 GB · MP4, MOV, AVI</p>
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="video/*"
-                hidden
-                onChange={(event) => onPickFile(event.target.files?.[0] ?? null)}
-              />
-              <p className="ui-hint" style={{ marginTop: 10 }}>
-                Direct file upload is still rolling out — paste a link above for now.
-              </p>
-            </div>
           </div>
         ) : (
           <div style={{ display: "grid", gap: 18 }}>

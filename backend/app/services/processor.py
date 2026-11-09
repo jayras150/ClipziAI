@@ -16,6 +16,123 @@ from app.core.config import get_settings
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Preset gaya caption/subtitle (dipakai UI "Style subtitle").
+#
+# `force_style` menata subtitle SRT yang dibakar libass. Nilai FontSize/MarginV
+# memakai satuan PlayResY=288 milik demuxer SRT ffmpeg: 16 = ukuran bawaan,
+# 18-20 terasa lebih besar, 19 + Bold = gaya "hook" khas TikTok/Reels.
+#
+# `overlay` menata caption teks manual (drawtext). `size_ratio` adalah tinggi
+# font dibagi tinggi output supaya ukurannya ikut resolusi (1080x1920, 1:1,
+# maupun 16:9), `y` menentukan posisi vertikal.
+# ---------------------------------------------------------------------------
+CAPTION_STYLES: Dict[str, Dict[str, Any]] = {
+    "classic": {
+        "label": "Classic putih",
+        "force_style": (
+            "FontName=DejaVu Sans,FontSize=16,PrimaryColour=&H00FFFFFF,"
+            "OutlineColour=&H00000000,Outline=1.6,Shadow=0,Alignment=2,MarginV=22"
+        ),
+        "overlay": {
+            "size_ratio": 0.050,
+            "color": "white",
+            "border_width": 3,
+            "border_color": "black",
+            "box": False,
+            "box_color": "black@0.6",
+            "y": "bottom",
+        },
+    },
+    "gold": {
+        "label": "Gold tebal",
+        "force_style": (
+            "FontName=DejaVu Sans,FontSize=18,PrimaryColour=&H006BC7F4,"
+            "OutlineColour=&H00000000,Outline=2.2,Shadow=0,Bold=1,Alignment=2,MarginV=24"
+        ),
+        "overlay": {
+            "size_ratio": 0.062,
+            "color": "0xF4C76B",
+            "border_width": 5,
+            "border_color": "black",
+            "box": False,
+            "box_color": "black@0.6",
+            "y": "bottom",
+        },
+    },
+    "boxed": {
+        "label": "Kotak hitam",
+        "force_style": (
+            "FontName=DejaVu Sans,FontSize=16,PrimaryColour=&H00FFFFFF,"
+            "BorderStyle=3,OutlineColour=&H00000000,BackColour=&H80000000,"
+            "Outline=1,Shadow=0,Alignment=2,MarginV=22"
+        ),
+        "overlay": {
+            "size_ratio": 0.050,
+            "color": "white",
+            "border_width": 0,
+            "border_color": "black",
+            "box": True,
+            "box_color": "black@0.62",
+            "y": "bottom",
+        },
+    },
+    "neon": {
+        "label": "Neon cyan",
+        "force_style": (
+            "FontName=DejaVu Sans,FontSize=18,PrimaryColour=&H00DCE97C,"
+            "OutlineColour=&H00000000,Outline=2.4,Shadow=0,Bold=1,Alignment=2,MarginV=24"
+        ),
+        "overlay": {
+            "size_ratio": 0.060,
+            "color": "0x7CE9DC",
+            "border_width": 5,
+            "border_color": "black",
+            "box": False,
+            "box_color": "black@0.6",
+            "y": "bottom",
+        },
+    },
+    "top": {
+        "label": "Atas bersih",
+        "force_style": (
+            "FontName=DejaVu Sans,FontSize=16,PrimaryColour=&H00FFFFFF,"
+            "OutlineColour=&H00000000,Outline=1.6,Shadow=0,Alignment=8,MarginV=24"
+        ),
+        "overlay": {
+            "size_ratio": 0.050,
+            "color": "white",
+            "border_width": 3,
+            "border_color": "black",
+            "box": False,
+            "box_color": "black@0.6",
+            "y": "top",
+        },
+    },
+    "center": {
+        "label": "Hook tengah",
+        "force_style": (
+            "FontName=DejaVu Sans,FontSize=19,PrimaryColour=&H006BC7F4,"
+            "OutlineColour=&H00000000,Outline=2.6,Shadow=0,Bold=1,Alignment=5,MarginV=0"
+        ),
+        "overlay": {
+            "size_ratio": 0.066,
+            "color": "0xF4C76B",
+            "border_width": 5,
+            "border_color": "black",
+            "box": False,
+            "box_color": "black@0.6",
+            "y": "center",
+        },
+    },
+}
+
+
+def get_caption_style(name: Optional[str]) -> Dict[str, Any]:
+    """Ambil preset gaya caption; nama tak dikenal jatuh ke `classic`."""
+    key = (name or "").strip().lower()
+    return CAPTION_STYLES.get(key, CAPTION_STYLES["classic"])
+
 
 class VideoProcessor:
     """Process videos: scene detection, smart crop 9:16, burn subtitle, compress."""
@@ -160,6 +277,8 @@ class VideoProcessor:
         y: str = "(h-text_h)/2",
         box: bool = True,
         box_color: str = "black@0.6",
+        border_width: int = 0,
+        border_color: str = "black",
     ) -> str:
         """Bakar teks ke video dengan ffmpeg drawtext. Font sistem dilema dulu."""
         font_paths = [
@@ -189,6 +308,9 @@ class VideoProcessor:
             # penanda strftime. Teks seperti "100%" jadi tidak tergambar.
             "expansion=none"
         )
+        # Garis tepi (outline) membuat teks tetap terbaca di atas video terang.
+        if border_width > 0:
+            drawtext += f":borderw={int(border_width)}:bordercolor={border_color}"
         if box:
             drawtext += f":box=1:boxcolor={box_color}:boxborderw=8"
 
@@ -881,7 +1003,21 @@ class VideoProcessor:
         output_path: str,
         style: str = "default",
     ) -> str:
+        """
+        Bakar subtitle SRT ke video.
+
+        `style` adalah nama preset di CAPTION_STYLES (classic/gold/boxed/neon/
+        top/center). Nilainya diteruskan ke libass lewat `force_style`, jadi
+        warna, ketebalan garis tepi, kotak latar, dan posisi ikut berubah tanpa
+        perlu menulis ulang file SRT.
+        """
         vf_filter = f"subtitles=filename={self._escape_filter_path(subtitle_path)}"
+        preset = CAPTION_STYLES.get((style or "").strip().lower())
+        if preset:
+            # force_style berisi koma, jadi harus dibungkus kutip tunggal agar
+            # filtergraph tidak menganggapnya pemisah antar-filter.
+            force = str(preset["force_style"]).replace("'", "")
+            vf_filter += f":force_style='{force}'"
 
         cmd = [
             "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
