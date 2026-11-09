@@ -148,7 +148,11 @@ class VideoProcessor:
             f"fontsize={font_size}:"
             f"fontcolor={font_color}:"
             f"x={x}:"
-            f"y={y}"
+            f"y={y}:"
+            # expansion=none wajib: tanpa ini ffmpeg memperlakukan '%' sebagai
+            # penanda strftime. Teks seperti "100%" atau "50% off" jadi tidak
+            # tergambar sama sekali (drawtext gagal diam-diam).
+            "expansion=none"
         )
         if box:
             drawtext += f":box=1:boxcolor={box_color}:boxborderw=8"
@@ -169,8 +173,14 @@ class VideoProcessor:
 
     @staticmethod
     def _escape_filter_text(text: str) -> str:
-        """Escape teks untuk filter drawtext ffmpeg (backslash, petik, %)."""
-        return text.replace("\\", "\\\\").replace("'", "\\'").replace("%", "%%")
+        """
+        Escape teks untuk filter drawtext.
+
+        Karakter '%' TIDAK diubah: filter memakai `expansion=none`, sehingga '%'
+        dianggap literal. Sebelumnya '%' diubah jadi '%%' dan itu membuat
+        drawtext tidak menggambar apa pun (ffmpeg memprosesnya sebagai strftime).
+        """
+        return text.replace("\\", "\\\\").replace("'", "\\'")
 
     async def change_speed(
         self,

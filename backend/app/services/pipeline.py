@@ -345,7 +345,11 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                         subtitle_url=clip["subtitle_url"],
                         thumbnail_url=clip["thumbnail_url"],
                         file_size=clip["file_size"],
-                        editing_applied=[k for k, v in options.items() if v],
+                        editing_applied=[
+                            k
+                            for k, v in options.items()
+                            if v is not None and v is not False and v != ""
+                        ],
                     )
                 )
 
