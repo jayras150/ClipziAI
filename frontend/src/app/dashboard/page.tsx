@@ -634,6 +634,28 @@ export default function DashboardPage() {
                               : "linear-gradient(160deg,#2a2213,#141821)",
                           }}
                         >
+                          {/* Player asli (bukan hanya thumbnail) supaya klip bisa
+                              ditonton langsung dari dashboard. */}
+                          {clip.download_url && (
+                            <video
+                              src={clip.download_url}
+                              poster={clip.thumbnail_url || undefined}
+                              controls
+                              playsInline
+                              loop
+                              muted
+                              preload="metadata"
+                              style={{
+                                position: "absolute",
+                                inset: 0,
+                                width: "100%",
+                                height: "100%",
+                                objectFit: "cover",
+                                display: "block",
+                                background: "#0b0d12",
+                              }}
+                            />
+                          )}
                           <span
                             style={{
                               position: "absolute",
@@ -644,6 +666,7 @@ export default function DashboardPage() {
                               borderRadius: 999,
                               background: "rgba(0,0,0,.6)",
                               color: "#f4d99a",
+                              pointerEvents: "none",
                             }}
                           >
                             #{clip.clip_index + 1}
@@ -659,6 +682,7 @@ export default function DashboardPage() {
                                 borderRadius: 999,
                                 background: "rgba(244,199,107,.18)",
                                 color: "#f4d99a",
+                                pointerEvents: "none",
                               }}
                             >
                               {Math.round(clip.viral_score)}
