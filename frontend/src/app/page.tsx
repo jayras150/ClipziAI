@@ -161,10 +161,6 @@ export default function LandingPage() {
                 preload="auto"
                 aria-label="Clipzy AI preview clip"
               />
-              <span className="studio-tag">
-                <strong>Your next viral moment</strong>
-                AI-selected highlight · 00:42
-              </span>
               <span className="studio-score">SCORE 94.8</span>
             </div>
 

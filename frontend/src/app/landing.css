@@ -1052,8 +1052,8 @@
 .landing .studio-clips {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 10px;
-  width: min(880px, 100%);
+  gap: 12px;
+  width: min(760px, 100%);
   margin: 0 auto;
 }
 .landing .studio-clip {
