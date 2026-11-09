@@ -26,13 +26,31 @@ jobs:
       - name: Setup Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and Push
+      # Worker = image PENUH (Whisper CTranslate2 + lib CUDA) untuk Vast.ai.
+      # Tag :worker dipakai VAST_WORKER_IMAGE; :1.5.0/:latest dipertahankan
+      # supaya deployment lama tetap kompatibel.
+      - name: Build and Push (worker, GPU)
         uses: docker/build-push-action@v6
         with:
           context: ./backend
           file: ./backend/Dockerfile
+          target: worker
           push: true
           platforms: linux/amd64
           tags: |
+            sujinwo555/clipzi-backend:worker
             sujinwo555/clipzi-backend:1.5.0
             sujinwo555/clipzi-backend:latest
+
+      # API = image LEAN (tanpa CUDA/Whisper) untuk container di VPS.
+      # Beban berat (ffmpeg render + transkripsi) tidak pernah jalan di VPS.
+      - name: Build and Push (api, lean)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          target: api
+          push: true
+          platforms: linux/amd64
+          tags: |
+            sujinwo555/clipzi-backend:api

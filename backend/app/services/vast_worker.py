@@ -400,6 +400,24 @@ async def submit_task(task_id: UUID) -> Dict[str, Any]:
         elif mode == "oneshot":
             result = await _dispatch_oneshot(task_id)
         else:
+            # Mode `inline` menjalankan pipeline di proses API — artinya render
+            # ffmpeg + Whisper memakan CPU/RAM server hosting (VPS). Itu hanya
+            # boleh untuk development (DEBUG=True). Di produksi task ditolak
+            # dengan pesan jelas supaya beban berat tetap di worker GPU Vast.ai.
+            if not settings.DEBUG:
+                logger.error(
+                    "Task %s ditolak: dispatch mode 'inline' tidak diizinkan di produksi",
+                    task_id,
+                )
+                return {
+                    "mode": "inline",
+                    "queued": False,
+                    "error": (
+                        "Worker GPU belum terkonfigurasi. Pipeline tidak dijalankan di "
+                        "server API — set VAST_DISPATCH_MODE=oneshot beserta VAST_API_KEY "
+                        "dan VAST_WORKER_IMAGE agar pemrosesan berjalan di Vast.ai."
+                    ),
+                }
             result = await _dispatch_inline(task_id)
         logger.info("Task %s didispatch via %s", task_id, mode)
         return result

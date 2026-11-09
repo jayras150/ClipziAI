@@ -30,44 +30,21 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 # -----------------------------------------------------------------------------
-# Transkripsi lokal (fallback tanpa kredit API)
+# Stage 2 (opsional): dependency GPU untuk WORKER
 #
-# faster-whisper dipasang di image agar subtitle tetap dihasilkan walaupun
-# provider API menolak (mis. OpenRouter 402 "maximum cost exceeds credits")
-# atau sedang offline. Model `small` (int8/CPU) diunduh SAAT BUILD supaya
-# instance Vast (oneshot = filesystem baru) tidak perlu unduh ulang per task.
+# Hanya dipakai target `worker` (Vast.ai serverless). VPS memakai target `api`
+# yang LEAN — tanpa lib CUDA dan tanpa Whisper — supaya beban berat tidak pernah
+# menyentuh server hosting backend/frontend.
 #
-# Nonaktifkan: docker build --build-arg INSTALL_LOCAL_WHISPER=0 ...
+# Mesin transkripsi: CTranslate2 (faster-whisper) + cuBLAS/cuDNN dari paket pip
+# (±1,5 GB), bukan torch (±3 GB). Model TIDAK dibaking; diunduh per instance
+# Vast (large-v3 ±3 GB, atau set GPU_WHISPER_MODEL=turbo untuk ±1,6 GB).
 # -----------------------------------------------------------------------------
-ARG INSTALL_LOCAL_WHISPER=1
-ARG WHISPER_MODEL_NAME=small
-ENV HF_HOME=/opt/whisper-cache
+FROM builder AS builder-worker
 
-COPY requirements-whisper-local.txt ./
-RUN if [ "$INSTALL_LOCAL_WHISPER" = "1" ]; then \
-        pip install -r requirements-whisper-local.txt && \
-        python -c "from faster_whisper import WhisperModel; WhisperModel('${WHISPER_MODEL_NAME}', device='cpu', compute_type='int8'); print('whisper siap: ${WHISPER_MODEL_NAME}')"; \
-    else \
-        echo "INSTALL_LOCAL_WHISPER=0 -> transkripsi lokal dilewati"; \
-    fi
-
-# -----------------------------------------------------------------------------
-# Transkripsi Whisper di GPU (HuggingFace transformers + torch CUDA).
-#
-# Dipakai worker Vast.ai: GPU sudah tersedia per task, jadi Whisper berjalan di
-# GPU tanpa biaya API. Model TIDAK dibaking (bisa >3 GB); diunduh sekali per
-# instance saat pertama dipakai — dengan model default "*-turbo" (±1,6 GB).
-#
-# Nonaktifkan: --build-arg INSTALL_GPU_WHISPER=0
-# -----------------------------------------------------------------------------
-ARG INSTALL_GPU_WHISPER=1
 COPY requirements-gpu-whisper.txt ./
-RUN if [ "$INSTALL_GPU_WHISPER" = "1" ]; then \
-        pip install -r requirements-gpu-whisper.txt && \
-        python -c "import faster_whisper, ctranslate2; print('ct2', ctranslate2.__version__, 'gpu libs siap')" ; \
-    else \
-        echo "INSTALL_GPU_WHISPER=0 -> transkripsi GPU dilewati"; \
-    fi
+RUN pip install -r requirements-gpu-whisper.txt && \
+    python -c "import faster_whisper, ctranslate2; print('ct2', ctranslate2.__version__, 'gpu libs siap')"
 
 # -----------------------------------------------------------------------------
 # Stage 2: runtime image (tanpa toolchain, ukuran lebih kecil)
@@ -113,20 +90,8 @@ RUN mkdir -p /opt/opencv-data \
     && ls -l /opt/opencv-data \
     && test "$(stat -c%s /opt/opencv-data/face_detection_yunet_2023mar.onnx)" -gt 100000
 
-# Ambil virtualenv dari stage builder
-COPY --from=builder /opt/venv /opt/venv
-
-# Cache model Whisper hasil build (dipakai fallback transkripsi lokal).
-# --chown wajib: container berjalan sebagai user `clipzi`, sedangkan file hasil
-# build dimiliki root. Tanpa ini huggingface_hub gagal menulis lock/refs dan
-# transkripsi lokal error "Permission denied: /opt/whisper-cache/...".
-ENV HF_HOME=/opt/whisper-cache
-COPY --from=builder --chown=clipzi:clipzi /opt/whisper-cache /opt/whisper-cache
-
-# Lib CUDA (cuBLAS/cuDNN) dari paket pip untuk CTranslate2 GPU.
-# Tanpa LD_LIBRARY_PATH ini, faster-whisper gagal memuat cudnn/cublas meski
-# wheel-nya sudah terpasang.
-ENV LD_LIBRARY_PATH="/opt/venv/lib/python3.11/site-packages/nvidia/cublas/lib:/opt/venv/lib/python3.11/site-packages/nvidia/cudnn/lib:${LD_LIBRARY_PATH}"
+# Ambil virtualenv: dipindah ke masing-masing TARGET (api/worker) karena
+# keduanya memakai builder berbeda (worker menambah lib CUDA + Whisper).
 
 WORKDIR $APP_HOME
 COPY . .
@@ -164,3 +129,26 @@ COPY --chown=clipzi:clipzi --chmod=0755 deployments/pipeline_onstart.sh deployme
 
 USER clipzi
 ENTRYPOINT ["/usr/local/bin/clipzi-entrypoint.sh"]
+
+# =============================================================================
+# TARGET "api" — untuk VPS (hosting backend + frontend).
+#
+# LEAN: tanpa lib CUDA, tanpa Whisper, tanpa cache model. Beban berat (render
+# ffmpeg & transkripsi) TIDAK dijalankan di sini — semuanya di worker Vast.ai.
+# =============================================================================
+FROM runtime AS api
+
+COPY --from=builder /opt/venv /opt/venv
+
+# =============================================================================
+# TARGET "worker" — untuk Vast.ai serverless (GPU).
+#
+# Menambah Whisper (CTranslate2 large-v3) + lib CUDA. Tag inilah yang dipakai
+# VAST_WORKER_IMAGE. Model Whisper diunduh saat runtime ke cache HF milik user
+# container (HOME=/home/clipzi), jadi tidak perlu dibaking ke image.
+# =============================================================================
+FROM runtime AS worker
+
+COPY --from=builder-worker /opt/venv /opt/venv
+
+ENV LD_LIBRARY_PATH="/opt/venv/lib/python3.11/site-packages/nvidia/cublas/lib:/opt/venv/lib/python3.11/site-packages/nvidia/cudnn/lib:${LD_LIBRARY_PATH}"
