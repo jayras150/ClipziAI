@@ -33,4 +33,6 @@ jobs:
           file: ./backend/Dockerfile
           push: true
           platforms: linux/amd64
-          tags: sujinwo555/clipzi-backend:1.0.0
+          tags: |
+            sujinwo555/clipzi-backend:1.1.0
+            sujinwo555/clipzi-backend:latest
