@@ -3,6 +3,7 @@ YouTube endpoints - OAuth, upload, status
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime, timedelta, timezone
@@ -158,6 +159,62 @@ async def youtube_oauth_callback(
     except Exception:
         await db.rollback()
         return RedirectResponse(f"{dashboard_url}?youtube=error")
+
+
+class YouTubeTokenPayload(BaseModel):
+    """Access token dari Google Identity Services (alur tanpa redirect URI)."""
+
+    access_token: str
+
+
+@router.post("/token", response_model=YouTubeConnectionStatus)
+async def connect_youtube_with_token(
+    payload: YouTubeTokenPayload,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """
+    Hubungkan YouTube memakai access token dari Google Identity Services.
+
+    Dipakai sebagai fallback ketika redirect URI server belum terdaftar di
+    Google Cloud Console: alur ini tidak memerlukan redirect URI sama sekali,
+    hanya JavaScript origin yang juga dipakai tombol "Sign in with Google".
+    """
+    access_token = (payload.access_token or "").strip()
+    if not access_token:
+        raise HTTPException(status_code=400, detail="Access token Google tidak boleh kosong.")
+
+    channel = await youtube_service.get_channel(access_token)
+
+    result = await db.execute(select(YouTubeCredential).where(YouTubeCredential.user_id == current_user.id))
+    credential = result.scalar_one_or_none()
+    encrypted_token = encrypt_field(access_token)
+
+    if credential is None:
+        credential = YouTubeCredential(
+            user_id=current_user.id,
+            channel_id=channel["channel_id"],
+            channel_name=channel["channel_name"],
+            access_token_encrypted=encrypted_token,
+            refresh_token_encrypted=encrypt_field(""),
+            token_expires_at=youtube_service.token_expiry(3600),
+            scopes="https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly",
+        )
+        db.add(credential)
+    else:
+        credential.channel_id = channel["channel_id"]
+        credential.channel_name = channel["channel_name"]
+        credential.access_token_encrypted = encrypted_token
+        credential.token_expires_at = youtube_service.token_expiry(3600)
+
+    await db.commit()
+
+    return YouTubeConnectionStatus(
+        connected=True,
+        channel_id=channel["channel_id"],
+        channel_name=channel["channel_name"],
+        message="Akun YouTube terhubung.",
+    )
 
 
 @router.get("/status", response_model=YouTubeConnectionStatus)

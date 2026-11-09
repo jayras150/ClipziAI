@@ -20,6 +20,7 @@ import {
 
 import { api, ClipData, TaskData } from "@/lib/api"
 import { readApiError } from "@/lib/api-errors"
+import { requestYouTubeAccessToken } from "@/lib/social"
 import SiteFooter from "@/components/SiteFooter"
 
 const ACTIVE_STATUSES = ["queued", "processing"]
@@ -175,8 +176,30 @@ export default function DashboardPage() {
     try {
       window.location.href = await api.getYouTubeAuthUrl(stored)
     } catch (error: any) {
-      setYoutubeMessage(readApiError(error.response?.data, "Could not start the YouTube connection."))
-      setYoutubeLoading(false)
+      const detail = String(error.response?.data?.detail || "")
+      const needsFallback =
+        error.response?.status === 409 && /redirect[ _]uri/i.test(detail) && /mismatch|terdaftar/i.test(detail)
+
+      if (!needsFallback) {
+        setYoutubeMessage(readApiError(error.response?.data, "Could not start the YouTube connection."))
+        setYoutubeLoading(false)
+        return
+      }
+
+      // Redirect URI belum terdaftar di Google Console → pakai alur token Google
+      // Identity Services (tidak memerlukan redirect URI sama sekali).
+      try {
+        setYoutubeMessage("Opening Google consent…")
+        const diagnostics = await api.getYouTubeDiagnostics(stored)
+        const accessToken = await requestYouTubeAccessToken(diagnostics.client_id || "")
+        const connected = await api.setYouTubeAccessToken(stored, accessToken)
+        setYoutube({ connected: true, channel_name: connected.channel_name })
+        setYoutubeMessage(connected.message || "YouTube connected.")
+      } catch (fallbackError: any) {
+        setYoutubeMessage(fallbackError?.message || "Could not connect YouTube.")
+      } finally {
+        setYoutubeLoading(false)
+      }
     }
   }
 

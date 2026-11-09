@@ -146,6 +146,21 @@ export class ApiClient {
     return response.data
   }
 
+  /** Simpan access token YouTube dari Google Identity Services (fallback tanpa redirect URI). */
+  async setYouTubeAccessToken(token: string, accessToken: string) {
+    const response = await this.client.post<{
+      connected: boolean
+      channel_id?: string
+      channel_name?: string
+      message?: string
+    }>(
+      "/api/youtube/token",
+      { access_token: accessToken },
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    return response.data
+  }
+
   async getYouTubeDiagnostics(token: string): Promise<YouTubeDiagnostics> {
     const response = await this.client.get<YouTubeDiagnostics>("/api/youtube/diagnostics", {
       headers: { Authorization: `Bearer ${token}` },

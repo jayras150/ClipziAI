@@ -27,6 +27,8 @@ declare global {
 
 const GIS_SRC = "https://accounts.google.com/gsi/client"
 const GOOGLE_SCOPE = "openid email profile"
+const YOUTUBE_SCOPE =
+  "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly"
 
 let scriptPromise: Promise<void> | null = null
 
@@ -58,6 +60,24 @@ function loadGoogleScript(): Promise<void> {
 
 /** Minta access token Google; throw Error dengan pesan siap tampil bila gagal. */
 export async function requestGoogleAccessToken(clientId: string): Promise<string> {
+  return requestTokenWithScope(clientId, GOOGLE_SCOPE, "")
+}
+
+/**
+ * Minta access token dengan scope YouTube.
+ *
+ * Alur ini tidak memakai redirect URI, jadi tetap berfungsi walaupun
+ * https://<domain>/api/youtube/callback belum terdaftar di Google Console.
+ */
+export async function requestYouTubeAccessToken(clientId: string): Promise<string> {
+  return requestTokenWithScope(clientId, YOUTUBE_SCOPE, "consent")
+}
+
+async function requestTokenWithScope(
+  clientId: string,
+  scope: string,
+  prompt: string,
+): Promise<string> {
   if (!clientId) {
     throw new Error("Google sign-in is not configured for this deployment.")
   }
@@ -72,7 +92,7 @@ export async function requestGoogleAccessToken(clientId: string): Promise<string
   return new Promise<string>((resolve, reject) => {
     const client = oauth2.initTokenClient({
       client_id: clientId,
-      scope: GOOGLE_SCOPE,
+      scope,
       callback: (response) => {
         if (response.error || !response.access_token) {
           reject(new Error(response.error || "Google sign-in was cancelled."))
@@ -85,6 +105,6 @@ export async function requestGoogleAccessToken(clientId: string): Promise<string
       },
     })
 
-    client.requestAccessToken({ prompt: "" })
+    client.requestAccessToken({ prompt })
   })
 }

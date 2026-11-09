@@ -8,6 +8,7 @@ import Navbar from "@/components/Navbar"
 import SiteFooter from "@/components/SiteFooter"
 import { api, UserProfileData, YouTubeDiagnostics } from "@/lib/api"
 import { readApiError } from "@/lib/api-errors"
+import { requestYouTubeAccessToken } from "@/lib/social"
 
 const LANGUAGES = [
   { value: "en", label: "English" },
@@ -130,8 +131,29 @@ export default function ProfilePage() {
     try {
       window.location.href = await api.getYouTubeAuthUrl(token)
     } catch (err: any) {
-      setError(readApiError(err.response?.data, "Could not start the YouTube connection."))
-      setYoutubeBusy(false)
+      const detail = String(err.response?.data?.detail || "")
+      const needsFallback =
+        err.response?.status === 409 && /redirect[ _]uri/i.test(detail) && /mismatch|terdaftar/i.test(detail)
+
+      if (!needsFallback) {
+        setError(readApiError(err.response?.data, "Could not start the YouTube connection."))
+        setYoutubeBusy(false)
+        return
+      }
+
+      // Redirect URI belum terdaftar di Google Console → pakai alur token Google
+      // Identity Services yang tidak memerlukan redirect URI.
+      try {
+        const diagnostics = await api.getYouTubeDiagnostics(token)
+        const accessToken = await requestYouTubeAccessToken(diagnostics.client_id || "")
+        const connected = await api.setYouTubeAccessToken(token, accessToken)
+        setYoutube({ connected: true, channel_name: connected.channel_name })
+        flash(connected.message || "YouTube connected.")
+      } catch (fallbackError: any) {
+        setError(fallbackError?.message || "Could not connect YouTube.")
+      } finally {
+        setYoutubeBusy(false)
+      }
     }
   }
 
