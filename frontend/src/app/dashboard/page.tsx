@@ -521,7 +521,8 @@ export default function DashboardPage() {
 
 
         {activeTab === "upload" ? (
-          <div className="ui-card">
+          <div className="ui-card ui-upload-card">
+            <div className="ui-upload-main">
             <h2 className="ui-subtitle">Upload video</h2>
             <p className="ui-muted" style={{ marginBottom: 20 }}>
               Paste a video link and Clipzy AI will pick the best moments, caption them, and crop to 9:16.
@@ -764,8 +765,9 @@ export default function DashboardPage() {
                 YouTube, TikTok, Instagram, Facebook and X links are supported. 1 credit per clip.
               </p>
             </form>
+            </div>
 
-            <div style={{ marginTop: 22 }}>
+            <div className="ui-upload-side">
               <div
                 className="ui-dropzone"
                 onClick={() => fileInputRef.current?.click()}
