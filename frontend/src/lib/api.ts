@@ -19,6 +19,14 @@ export interface UserProfileData {
   created_at: string
 }
 
+export interface MusicTrackData {
+  id: string
+  name: string
+  mood: string | null
+  duration: number | null
+  url: string
+}
+
 export interface YouTubeDiagnostics {
   configured: boolean
   client_id: string | null
@@ -229,6 +237,14 @@ export class ApiClient {
 
   async getTask(token: string, taskId: string): Promise<TaskData> {
     const response = await this.client.get<TaskData>(`/api/tasks/${taskId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return response.data
+  }
+
+  /** Daftar musik latar yang tersedia (library di R2). */
+  async getMusicLibrary(token: string): Promise<MusicTrackData[]> {
+    const response = await this.client.get<MusicTrackData[]>("/api/music", {
       headers: { Authorization: `Bearer ${token}` },
     })
     return response.data

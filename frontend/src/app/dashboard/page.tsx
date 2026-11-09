@@ -20,7 +20,7 @@ import {
   Scissors,
 } from "lucide-react"
 
-import { api, ClipData, TaskData } from "@/lib/api"
+import { api, ClipData, MusicTrackData, TaskData } from "@/lib/api"
 import { readApiError } from "@/lib/api-errors"
 import { requestYouTubeAccessToken } from "@/lib/social"
 import ConfirmDialog from "@/components/ConfirmDialog"
@@ -110,6 +110,11 @@ export default function DashboardPage() {
   // Auto zoom follow-speaker
   const [autoZoom, setAutoZoom] = useState("off")
   const [zoomLevel, setZoomLevel] = useState("1.3")
+  // Musik latar
+  const [musicLibrary, setMusicLibrary] = useState<MusicTrackData[]>([])
+  const [musicUrl, setMusicUrl] = useState("")
+  const [musicVolume, setMusicVolume] = useState("0.22")
+  const [musicDucking, setMusicDucking] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [taskError, setTaskError] = useState("")
   const [notice, setNotice] = useState("")
@@ -165,6 +170,12 @@ export default function DashboardPage() {
       .getYouTubeStatus(stored)
       .then(setYoutube)
       .catch(() => setYoutubeMessage("Could not load your YouTube status."))
+
+    // Library musik latar (track disimpan di R2).
+    api
+      .getMusicLibrary(stored)
+      .then(setMusicLibrary)
+      .catch(() => setMusicLibrary([]))
 
     const params = new URLSearchParams(window.location.search)
     const prefill = params.get("video_url")
@@ -295,6 +306,14 @@ export default function DashboardPage() {
         editingOptions.auto_zoom = "speaker"
         const zoom = parseFloat(zoomLevel)
         if (!Number.isNaN(zoom) && zoom !== 1) editingOptions.zoom_level = zoom
+      }
+
+      // Musik latar
+      if (musicUrl) {
+        editingOptions.music_url = musicUrl
+        const vol = parseFloat(musicVolume)
+        if (!Number.isNaN(vol)) editingOptions.music_volume = vol
+        editingOptions.music_ducking = musicDucking
       }
 
       const task = await api.createTask(stored, url, editingOptions)
@@ -671,6 +690,47 @@ export default function DashboardPage() {
                           <option value="1.6">1.6×</option>
                           <option value="2">2.0×</option>
                         </select>
+                      </>
+                    )}
+                    <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa" }}>Musik</label>
+                    <select
+                      id="music-track"
+                      value={musicUrl}
+                      onChange={(e) => setMusicUrl(e.target.value)}
+                      className="ui-input"
+                      style={{ width: 170, padding: "6px 8px", fontSize: 13, background: "#171a22", color: "#f5f5f2", border: "1px solid var(--ui-line)" }}
+                    >
+                      <option value="">tanpa musik</option>
+                      {musicLibrary.map((track) => (
+                        <option key={track.id} value={track.url}>
+                          {track.name}
+                          {track.mood ? ` · ${track.mood}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    {musicUrl && (
+                      <>
+                        <select
+                          id="music-volume"
+                          value={musicVolume}
+                          onChange={(e) => setMusicVolume(e.target.value)}
+                          className="ui-input"
+                          style={{ width: 90, padding: "6px 8px", fontSize: 13, background: "#171a22", color: "#f5f5f2", border: "1px solid var(--ui-line)" }}
+                        >
+                          <option value="0.12">volume 12%</option>
+                          <option value="0.22">volume 22%</option>
+                          <option value="0.35">volume 35%</option>
+                          <option value="0.5">volume 50%</option>
+                        </select>
+                        <label style={{ fontSize: 12, color: "#c9cbd4", display: "flex", gap: 6, alignItems: "center" }}>
+                          <input
+                            type="checkbox"
+                            id="music-ducking"
+                            checked={musicDucking}
+                            onChange={(e) => setMusicDucking(e.target.checked)}
+                          />
+                          ducking (musik turun saat bicara)
+                        </label>
                       </>
                     )}
                     <label className="ui-label" style={{ fontSize: 12, margin: 0, color: "#9b9eaa" }}>Intro URL</label>

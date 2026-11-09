@@ -197,6 +197,10 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
         # ---------- Auto zoom follow-speaker ----------
         auto_zoom = str(options.get("auto_zoom") or "").strip().lower()
         zoom_level = float(options.get("zoom_level", 1.0) or 1.0)
+        # ---------- Musik latar ----------
+        music_url = options.get("music_url")
+        music_volume = float(options.get("music_volume", 0.22) or 0.22)
+        music_ducking = bool(options.get("music_ducking", True))
 
         try:
             # 1) Unduh sumber (memakai cookie pool bila ada)
@@ -372,6 +376,27 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                             task.id,
                             index,
                             exc,
+                        )
+
+                # ---------- Musik latar (ducking di bawah narasi) ----------
+                if music_url:
+                    try:
+                        music_path = str(
+                            work_dir / f"music.{_ext_from_url(str(music_url), 'mp3')}"
+                        )
+                        await _download_asset(str(music_url), music_path)
+                        mixed = str(work_dir / f"clip_{index:02d}_music.mp4")
+                        await processor.mix_music(
+                            final_clip,
+                            music_path,
+                            mixed,
+                            volume=music_volume,
+                            ducking=music_ducking,
+                        )
+                        final_clip = mixed
+                    except Exception as exc:
+                        logger.warning(
+                            "Mix musik gagal (task %s klip %s): %s", task.id, index, exc
                         )
 
                 # ---------- Watermark / logo ----------

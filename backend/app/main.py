@@ -10,6 +10,7 @@ from app.core.config import get_settings
 from app.db.session import engine, init_db
 from app.api import tasks, health, formats, editing, youtube
 from app.api import auth, users, pricing, payment, credits
+from app.api import music
 from app.api.admin import auth as admin_auth
 from app.api.admin import users as admin_users
 from app.api.admin import plans as admin_plans
@@ -70,6 +71,7 @@ app.include_router(pricing.router, prefix="/api/pricing", tags=["Pricing"])
 app.include_router(payment.router, prefix="/api/payment", tags=["Payment"])
 app.include_router(credits.router, prefix="/api/credits", tags=["Credits"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
+app.include_router(music.router, prefix="/api/music", tags=["Music"])
 app.include_router(health.router, prefix="/api", tags=["Health"])
 app.include_router(formats.router, prefix="/api", tags=["Formats"])
 app.include_router(editing.router, prefix="/api/editing", tags=["Editing"])

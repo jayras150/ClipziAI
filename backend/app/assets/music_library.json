@@ -1,0 +1,26 @@
+{
+  "_comment": "Daftar musik latar Clipzy AI. File audio disimpan di Cloudflare R2 (assets/music/), bukan di server VPS. Tambah track: unggah mp3 ke R2 lalu tambahkan entri di sini.",
+  "tracks": [
+    {
+      "id": "ambient-pad",
+      "name": "Ambient Pad",
+      "mood": "calm",
+      "duration": 30,
+      "url": "https://pub-e90798ecfe664a36b574ae3d1ec3f04d.r2.dev/assets/music/ambient-pad.mp3"
+    },
+    {
+      "id": "upbeat-pulse",
+      "name": "Upbeat Pulse",
+      "mood": "energetic",
+      "duration": 30,
+      "url": "https://pub-e90798ecfe664a36b574ae3d1ec3f04d.r2.dev/assets/music/upbeat-pulse.mp3"
+    },
+    {
+      "id": "chill-lofi",
+      "name": "Chill Lofi",
+      "mood": "chill",
+      "duration": 30,
+      "url": "https://pub-e90798ecfe664a36b574ae3d1ec3f04d.r2.dev/assets/music/chill-lofi.mp3"
+    }
+  ]
+}

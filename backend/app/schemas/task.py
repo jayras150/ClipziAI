@@ -57,6 +57,10 @@ class TaskCreate(BaseModel):
     zoom_level: float = Field(
         1.0, ge=1.0, le=2.5, description="Perbesaran jendela crop saat auto zoom"
     )
+    # ---------- Musik latar ----------
+    music_url: Optional[str] = Field(None, description="URL musik latar (mp3/m4a)")
+    music_volume: float = Field(0.22, ge=0.0, le=1.0, description="Volume musik (0-1)")
+    music_ducking: bool = Field(True, description="Volume musik turun saat ada suara orang")
 
 
 class TaskResponse(BaseModel):

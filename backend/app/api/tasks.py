@@ -103,6 +103,12 @@ async def create_task(
         if task_data.zoom_level and task_data.zoom_level != 1.0:
             editing_options["zoom_level"] = task_data.zoom_level
 
+    # ---------- Musik latar ----------
+    if task_data.music_url:
+        editing_options["music_url"] = task_data.music_url
+        editing_options["music_volume"] = task_data.music_volume
+        editing_options["music_ducking"] = task_data.music_ducking
+
     # Create task
     task = Task(
         user_id=current_user.id,
