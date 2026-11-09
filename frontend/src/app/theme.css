@@ -1,0 +1,322 @@
+/* =============================================================================
+   Tema aplikasi Clipzy AI (dipakai halaman login, register, dashboard, pricing).
+   Token & kelas di-prefix `ui-` agar tidak bentrok dengan utility Tailwind atau
+   dengan `.landing` (halaman utama).
+   ============================================================================= */
+:root {
+  --ui-bg: #090a0d;
+  --ui-panel: #111319;
+  --ui-panel-2: #171a22;
+  --ui-gold: #f4c76b;
+  --ui-gold-2: #ffe3a0;
+  --ui-text: #f5f5f2;
+  --ui-muted: #9b9eaa;
+  --ui-line: rgba(255, 255, 255, 0.09);
+  --ui-danger: #f08a7a;
+  --ui-success: #83d7a1;
+}
+
+.ui-shell {
+  position: relative;
+  min-height: 100vh;
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font-family: var(--font-dm), "DM Sans", system-ui, sans-serif;
+}
+.ui-shell::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 80% 0%, rgba(244, 199, 107, 0.1), transparent 35%),
+    radial-gradient(ellipse at 0% 45%, rgba(95, 75, 140, 0.1), transparent 32%);
+  z-index: 0;
+}
+.ui-shell > * {
+  position: relative;
+  z-index: 1;
+}
+.ui-shell a {
+  color: inherit;
+  text-decoration: none;
+}
+.ui-container {
+  width: min(1160px, calc(100% - 44px));
+  margin: auto;
+}
+
+/* ---------- Navigasi ---------- */
+.ui-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 76px;
+  border-bottom: 1px solid var(--ui-line);
+}
+.ui-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  font: 700 21px var(--font-space), "Space Grotesk", sans-serif;
+  letter-spacing: -0.8px;
+}
+.ui-brand-mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: linear-gradient(145deg, #ffe7a8, #d89c39);
+  display: grid;
+  place-items: center;
+  color: #17120a;
+  font-size: 14px;
+}
+.ui-brand em {
+  font-style: normal;
+  color: var(--ui-gold);
+}
+.ui-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  font-size: 14px;
+  color: #b7b8c0;
+}
+.ui-nav-links a:hover {
+  color: var(--ui-gold);
+}
+.ui-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ---------- Tombol ---------- */
+.ui-btn {
+  border: 0;
+  border-radius: 12px;
+  padding: 11px 18px;
+  font-weight: 700;
+  font-size: 13px;
+  transition: 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.ui-btn:hover {
+  transform: translateY(-2px);
+}
+.ui-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+.ui-btn-gold {
+  background: linear-gradient(135deg, var(--ui-gold-2), #e8b54f);
+  color: #1b160d;
+  box-shadow: 0 8px 26px rgba(233, 181, 75, 0.16);
+}
+.ui-btn-ghost {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--ui-line);
+  color: #eee;
+}
+.ui-btn-block {
+  width: 100%;
+}
+
+/* ---------- Kartu & tipografi ---------- */
+.ui-card {
+  background: linear-gradient(145deg, #171a21, #101217);
+  border: 1px solid var(--ui-line);
+  border-radius: 20px;
+  padding: 26px;
+}
+.ui-card-hover {
+  transition: 0.25s;
+}
+.ui-card-hover:hover {
+  transform: translateY(-4px);
+  border-color: rgba(233, 189, 101, 0.33);
+}
+.ui-title {
+  font-family: var(--font-space), "Space Grotesk", sans-serif;
+  font-size: clamp(24px, 3vw, 34px);
+  letter-spacing: -1.2px;
+  line-height: 1.15;
+  margin: 0;
+}
+.ui-subtitle {
+  font-family: var(--font-space), "Space Grotesk", sans-serif;
+  font-size: 18px;
+  letter-spacing: -0.4px;
+  margin: 0 0 6px;
+}
+.ui-muted {
+  color: var(--ui-muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
+.ui-kicker {
+  color: var(--ui-gold);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+.ui-gold {
+  color: var(--ui-gold);
+}
+.ui-shine {
+  background: linear-gradient(100deg, #fff1c8 5%, #e9b64e 60%, #fff0c6);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ---------- Form ---------- */
+.ui-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #cfd1d8;
+  margin-bottom: 7px;
+  letter-spacing: 0.2px;
+}
+.ui-input-wrap {
+  position: relative;
+}
+.ui-input-wrap > svg {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #7c8090;
+  pointer-events: none;
+}
+.ui-input {
+  width: 100%;
+  padding: 13px 15px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--ui-line);
+  border-radius: 12px;
+  color: var(--ui-text);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: 0.2s;
+}
+.ui-input.with-icon {
+  padding-left: 42px;
+}
+.ui-input::placeholder {
+  color: #6f7381;
+}
+.ui-input:focus {
+  border-color: rgba(233, 189, 101, 0.55);
+  box-shadow: 0 0 0 3px rgba(233, 189, 101, 0.12);
+}
+.ui-hint {
+  font-size: 11px;
+  color: #6f7381;
+  margin-top: 6px;
+}
+
+/* ---------- Alert ---------- */
+.ui-alert {
+  border-radius: 12px;
+  padding: 11px 14px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(244, 199, 107, 0.28);
+  background: rgba(244, 199, 107, 0.08);
+  color: #f3e3bd;
+}
+.ui-alert-error {
+  border-color: rgba(240, 138, 122, 0.35);
+  background: rgba(240, 138, 122, 0.1);
+  color: #f8c9c1;
+}
+
+/* ---------- Tab, progress, badge ---------- */
+.ui-tabs {
+  display: flex;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--ui-line);
+  padding: 5px;
+  border-radius: 13px;
+}
+.ui-tab {
+  border: 0;
+  background: transparent;
+  color: #b7b8c0;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 16px;
+  border-radius: 9px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: 0.2s;
+}
+.ui-tab:hover {
+  color: #fff;
+}
+.ui-tab.active {
+  background: linear-gradient(135deg, var(--ui-gold-2), #e8b54f);
+  color: #1b160d;
+}
+.ui-progress {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.ui-progress > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #e8b54f, var(--ui-gold-2));
+  border-radius: 5px;
+}
+.ui-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #cfd1d8;
+  background: rgba(255, 255, 255, 0.05);
+  text-transform: capitalize;
+}
+.ui-badge-success {
+  border-color: rgba(131, 215, 161, 0.35);
+  background: rgba(131, 215, 161, 0.12);
+  color: var(--ui-success);
+}
+.ui-badge-gold {
+  border-color: rgba(233, 189, 101, 0.35);
+  background: rgba(233, 189, 101, 0.12);
+  color: var(--ui-gold);
+}
+.ui-dropzone {
+  border: 1.5px dashed rgba(217, 179, 93, 0.4);
+  border-radius: 16px;
+  padding: 34px;
+  text-align: center;
+  background: rgba(233, 189, 101, 0.03);
+  transition: 0.2s;
+  cursor: pointer;
+}
+.ui-dropzone:hover {
+  border-color: rgba(233, 189, 101, 0.7);
+  background: rgba(233, 189, 101, 0.06);
+}
+

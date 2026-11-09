@@ -5,6 +5,7 @@ import type { Metadata } from "next"
 import { DM_Sans, Space_Grotesk } from "next/font/google"
 import Script from "next/script"
 import "./globals.css"
+import "./theme.css"
 import "./landing.css"
 
 // Font landing page (desain: DM Sans untuk teks, Space Grotesk untuk judul).

@@ -1,21 +1,31 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Upload, Play, Youtube, Link2, Unlink, LoaderCircle } from "lucide-react"
+import Link from "next/link"
+import { Upload, Play, Youtube, Unlink, LoaderCircle, Link2 } from "lucide-react"
 import { api } from "@/lib/api"
 
+const SAMPLE_PROJECTS = [
+  { id: 1, title: "Tutorial Memasak", status: "completed", progress: 100, clips: 5 },
+  { id: 2, title: "Review Teknologi", status: "processing", progress: 65, clips: 3 },
+  { id: 3, title: "Vlog Perjalanan", status: "queued", progress: 0, clips: 0 },
+]
+
 export default function DashboardPage() {
-  const [activeTab, setActiveTab] = useState("upload")
+  const [activeTab, setActiveTab] = useState<"upload" | "projects">("upload")
   const [youtube, setYoutube] = useState<{ connected: boolean; channel_name?: string }>({ connected: false })
   const [youtubeLoading, setYoutubeLoading] = useState(false)
   const [youtubeMessage, setYoutubeMessage] = useState("")
 
-  const getToken = () => typeof window === "undefined" ? null : localStorage.getItem("token")
+  const getToken = () => (typeof window === "undefined" ? null : localStorage.getItem("token"))
 
   useEffect(() => {
     const token = getToken()
     if (!token) return
-    api.getYouTubeStatus(token).then(setYoutube).catch(() => setYoutubeMessage("Masuk untuk melihat status YouTube."))
+    api
+      .getYouTubeStatus(token)
+      .then(setYoutube)
+      .catch(() => setYoutubeMessage("Masuk untuk melihat status YouTube."))
 
     const status = new URLSearchParams(window.location.search).get("youtube")
     if (status === "connected") setYoutubeMessage("YouTube berhasil terhubung.")
@@ -55,86 +65,184 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0F172A] text-white">
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        <div className="flex justify-between items-center mb-8">
+    <div className="ui-shell">
+      <div className="ui-container ui-nav">
+        <Link className="ui-brand" href="/">
+          <span className="ui-brand-mark">▶</span>
+          <span>
+            clipzy<em>AI</em>
+          </span>
+        </Link>
+        <nav className="ui-nav-links">
+          <Link href="/dashboard">Dashboard</Link>
+          <Link href="/pricing">Harga</Link>
+        </nav>
+        <div className="ui-nav-actions">
+          <button
+            onClick={youtube.connected ? disconnectYouTube : connectYouTube}
+            disabled={youtubeLoading}
+            className="ui-btn ui-btn-ghost"
+          >
+            {youtubeLoading ? (
+              <LoaderCircle size={15} className="animate-spin" />
+            ) : youtube.connected ? (
+              <Unlink size={15} />
+            ) : (
+              <Youtube size={15} />
+            )}
+            {youtube.connected ? `YouTube: ${youtube.channel_name || "Terhubung"}` : "Hubungkan YouTube"}
+          </button>
+        </div>
+      </div>
+
+      <main className="ui-container" style={{ padding: "38px 0 70px" }}>
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 16,
+            alignItems: "flex-end",
+            justifyContent: "space-between",
+            marginBottom: 26,
+          }}
+        >
           <div>
-            <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-pink-400">Dashboard</h1>
-            <p className="text-gray-400 mt-1">Kelola proyek video Anda</p>
+            <div className="ui-kicker">Studio</div>
+            <h1 className="ui-title" style={{ marginTop: 8 }}>
+              Dashboard
+            </h1>
+            <p className="ui-muted" style={{ marginTop: 6 }}>
+              Kelola proyek video dan hubungkan channel YouTube Anda.
+            </p>
           </div>
-          <div className="flex gap-3 items-center">
+          <div className="ui-tabs">
             <button
-              onClick={youtube.connected ? disconnectYouTube : connectYouTube}
-              disabled={youtubeLoading}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors disabled:opacity-60 ${youtube.connected ? "border-red-400/40 bg-red-500/10 text-red-200 hover:bg-red-500/20" : "border-red-400/40 bg-red-500/15 text-red-100 hover:bg-red-500/25"}`}
+              className={`ui-tab${activeTab === "upload" ? " active" : ""}`}
+              onClick={() => setActiveTab("upload")}
             >
-              {youtubeLoading ? <LoaderCircle size={16} className="animate-spin" /> : youtube.connected ? <Unlink size={16} /> : <Youtube size={16} />}
-              {youtube.connected ? `YouTube: ${youtube.channel_name || "Terhubung"}` : "Hubungkan YouTube"}
-            </button>
-            <button onClick={() => setActiveTab("upload")} className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${activeTab === "upload" ? "bg-blue-500 text-white" : "bg-white/10 border border-white/20 text-gray-300 hover:bg-white/20"}`}>
               Upload
             </button>
-            <button onClick={() => setActiveTab("projects")} className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${activeTab === "projects" ? "bg-blue-500 text-white" : "bg-white/10 border border-white/20 text-gray-300 hover:bg-white/20"}`}>
+            <button
+              className={`ui-tab${activeTab === "projects" ? " active" : ""}`}
+              onClick={() => setActiveTab("projects")}
+            >
               Proyek
             </button>
           </div>
         </div>
 
         {youtubeMessage && (
-          <div className="mb-6 rounded-lg border border-blue-400/30 bg-blue-500/10 px-4 py-3 text-sm text-blue-100 flex items-center gap-2">
-            <Link2 size={16} /> {youtubeMessage}
+          <div className="ui-alert" style={{ marginBottom: 20 }}>
+            <Link2 size={15} /> {youtubeMessage}
           </div>
         )}
 
+
         {activeTab === "upload" ? (
-          <div className="glass-card">
-            <h2 className="font-bold mb-6">Unggah Video</h2>
-            <div className="border-2 border-dashed border-white/20 rounded-xl p-8 text-center hover:border-blue-500/50 transition-colors cursor-pointer">
-              <div className="flex flex-col items-center gap-3">
-                <Upload size={48} className="text-blue-400" />
-                <p className="text-gray-300">Klik atau seret file video di sini</p>
-                <p className="text-xs text-gray-500">Maksimal 2GB • MP4, MOV, AVI</p>
-              </div>
+          <div className="ui-card">
+            <h2 className="ui-subtitle">Unggah Video</h2>
+            <p className="ui-muted" style={{ marginBottom: 20 }}>
+              Tempel tautan video atau unggah file. AI akan memilih momen terbaiknya.
+            </p>
+
+            <div className="ui-dropzone">
+              <Upload size={40} className="ui-gold" style={{ margin: "0 auto 12px" }} />
+              <p style={{ fontSize: 14, color: "#e6e7ea" }}>Klik atau seret file video di sini</p>
+              <p className="ui-hint">Maksimal 2GB · MP4, MOV, AVI</p>
             </div>
-            <div className="mt-6">
-              <label className="block text-sm font-medium text-gray-300 mb-2">Atau tempel URL video</label>
-              <div className="input-group">
-                <input type="text" placeholder="https://youtube.com/watch?v=..." className="w-full pl-4 pr-10 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
-                <button className="btn-primary px-4 py-3 ml-2 text-sm">Proses</button>
+
+            <div style={{ marginTop: 22 }}>
+              <label className="ui-label" htmlFor="video-url">
+                Atau tempel URL video
+              </label>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <input
+                  id="video-url"
+                  type="text"
+                  placeholder="https://youtube.com/watch?v=..."
+                  className="ui-input"
+                  style={{ flex: "1 1 260px" }}
+                />
+                <button className="ui-btn ui-btn-gold">
+                  <Play size={15} /> Proses
+                </button>
               </div>
+              <p className="ui-hint">
+                Biaya 1 kredit per klip. Pemrosesan berjalan di GPU cloud dan instance dihentikan
+                otomatis setelah selesai.
+              </p>
             </div>
           </div>
         ) : (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[
-              { id: 1, title: "Tutorial Memasak", status: "completed", progress: 100, clips: 5 },
-              { id: 2, title: "Review Teknologi", status: "processing", progress: 65, clips: 3 },
-              { id: 3, title: "Vlog Perjalanan", status: "queued", progress: 0, clips: 0 },
-            ].map((project) => (
-              <div key={project.id} className="glass-card hover:border-blue-500/50 transition-all duration-300">
-                <div className="flex justify-between items-start mb-4">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400">
-                      <Play size={16} />
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+              gap: 16,
+            }}
+          >
+            {SAMPLE_PROJECTS.map((project) => (
+              <article key={project.id} className="ui-card ui-card-hover">
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    marginBottom: 16,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 10,
+                        display: "grid",
+                        placeItems: "center",
+                        background: "rgba(233, 189, 101, 0.12)",
+                        color: "var(--ui-gold)",
+                      }}
+                    >
+                      <Play size={15} />
                     </div>
-                    <h3 className="font-bold">{project.title}</h3>
+                    <h3 className="ui-subtitle" style={{ margin: 0, fontSize: 16 }}>
+                      {project.title}
+                    </h3>
                   </div>
-                  <span className={`px-2 py-1 rounded text-xs font-medium ${project.status === "completed" ? "bg-green-500/20 text-green-400" : project.status === "processing" ? "bg-blue-500/20 text-blue-400" : "bg-gray-500/20 text-gray-400"}`}>
+                  <span
+                    className={`ui-badge${
+                      project.status === "completed"
+                        ? " ui-badge-success"
+                        : project.status === "processing"
+                          ? " ui-badge-gold"
+                          : ""
+                    }`}
+                  >
                     {project.status}
                   </span>
                 </div>
-                <div className="w-full bg-white/10 h-2 rounded-full overflow-hidden mb-4">
-                  <div className={`h-full bg-gradient-to-r from-blue-500 to-pink-500 transition-all duration-500`} style={{ width: `${project.progress}%` }}></div>
+
+                <div className="ui-progress" style={{ marginBottom: 12 }}>
+                  <span style={{ width: `${project.progress}%` }} />
                 </div>
-                <div className="flex justify-between items-center text-sm text-gray-400">
+
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    fontSize: 12,
+                    color: "var(--ui-muted)",
+                  }}
+                >
                   <span>{project.clips} klip</span>
                   <span>{project.progress}%</span>
                 </div>
-              </div>
+              </article>
             ))}
           </div>
         )}
-      </div>
+      </main>
     </div>
   )
 }
+

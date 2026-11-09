@@ -7,11 +7,7 @@ import { Mail, Lock, User } from "lucide-react"
 import { getApiBaseUrl } from "@/lib/env"
 
 export default function RegisterPage() {
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    password: "",
-  })
+  const [formData, setFormData] = useState({ name: "", email: "", password: "" })
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
 
@@ -38,74 +34,106 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0F172A] flex items-center justify-center px-6">
-      <div className="max-w-md w-full">
-        <div className="mb-8 text-center">
-          <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-pink-500 rounded-lg flex items-center justify-center mx-auto mb-4">
-            <span className="text-2xl">⚡</span>
-          </div>
-          <h2 className="text-2xl font-bold">Daftar Akun Baru</h2>
-          <p className="text-gray-400 mt-2">Dapatkan 5 kredit gratis untuk mencoba fitur dasar</p>
+    <div className="ui-shell">
+      <div className="ui-container ui-nav">
+        <Link className="ui-brand" href="/">
+          <span className="ui-brand-mark">▶</span>
+          <span>
+            clipzy<em>AI</em>
+          </span>
+        </Link>
+        <div className="ui-nav-actions">
+          <Link className="ui-btn ui-btn-ghost" href="/login">
+            Masuk
+          </Link>
         </div>
-
-        <form onSubmit={handleRegister} className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Nama Lengkap</label>
-            <div className="relative">
-              <User size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-                placeholder="Nama Anda"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Email</label>
-            <div className="relative">
-              <Mail size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-              <input
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-                placeholder="you@example.com"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Kata Sandi</label>
-            <div className="relative">
-              <Lock size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-              <input
-                type="password"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-                placeholder="••••••••"
-              />
-            </div>
-            <p className="text-xs text-gray-500 mt-1">Minimal 8 karakter</p>
-          </div>
-
-          {error && <p className="rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</p>}
-
-          <button type="submit" disabled={loading} className="btn-primary w-full py-3 disabled:opacity-60">
-            {loading ? "Memproses..." : "Daftar Gratis"}
-          </button>
-
-          <p className="text-center text-sm text-gray-400">
-            Sudah punya akun?{" "}
-            <Link href="/login" className="text-blue-400 hover:text-blue-300 font-medium">
-              Masuk di sini
-            </Link>
-          </p>
-        </form>
       </div>
+
+      <main
+        style={{
+          display: "grid",
+          placeItems: "center",
+          minHeight: "calc(100vh - 76px)",
+          padding: "48px 0 64px",
+        }}
+      >
+        <div style={{ width: "min(440px, calc(100vw - 44px))" }}>
+          <div style={{ textAlign: "center", marginBottom: 26 }}>
+            <div className="ui-brand-mark" style={{ margin: "0 auto 14px", width: 42, height: 42 }}>▶</div>
+            <h2 className="ui-title" style={{ fontSize: 28 }}>
+              Daftar <span className="ui-shine">Clipzy AI</span>
+            </h2>
+            <p className="ui-muted" style={{ marginTop: 8 }}>
+              Dapatkan <span className="ui-gold">5 kredit gratis</span> untuk mencoba fitur dasar.
+            </p>
+          </div>
+
+          <form onSubmit={handleRegister} className="ui-card" style={{ display: "grid", gap: 16 }}>
+            <div>
+              <label className="ui-label" htmlFor="name">Nama Lengkap</label>
+              <div className="ui-input-wrap">
+                <User size={17} />
+                <input
+                  id="name"
+                  type="text"
+                  required
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="ui-input with-icon"
+                  placeholder="Nama Anda"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="ui-label" htmlFor="email">Email</label>
+              <div className="ui-input-wrap">
+                <Mail size={17} />
+                <input
+                  id="email"
+                  type="email"
+                  required
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  className="ui-input with-icon"
+                  placeholder="you@example.com"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="ui-label" htmlFor="password">Kata Sandi</label>
+              <div className="ui-input-wrap">
+                <Lock size={17} />
+                <input
+                  id="password"
+                  type="password"
+                  required
+                  minLength={8}
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  className="ui-input with-icon"
+                  placeholder="••••••••"
+                />
+              </div>
+              <p className="ui-hint">Minimal 8 karakter</p>
+            </div>
+
+            {error && <div className="ui-alert ui-alert-error">{error}</div>}
+
+            <button type="submit" disabled={loading} className="ui-btn ui-btn-gold ui-btn-block">
+              {loading ? "Memproses..." : "Daftar Gratis"}
+            </button>
+
+            <p className="ui-muted" style={{ textAlign: "center", fontSize: 13 }}>
+              Sudah punya akun?{" "}
+              <Link href="/login" className="ui-gold" style={{ fontWeight: 700 }}>
+                Masuk di sini
+              </Link>
+            </p>
+          </form>
+        </div>
+      </main>
     </div>
   )
 }

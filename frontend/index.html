@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#090a0d" />
+  <meta name="description" content="Clipzy AI — Ubah video panjang menjadi konten pendek yang siap viral dengan bantuan AI." />
+  <title>Clipzy AI — Create More. Edit Less.</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+    :root{--bg:#090a0d;--panel:#111319;--panel2:#171a22;--gold:#f4c76b;--gold2:#ffe3a0;--text:#f5f5f2;--muted:#9b9eaa;--line:rgba(255,255,255,.09);--radius:22px}
+    *{box-sizing:border-box;margin:0;padding:0}
+    html{scroll-behavior:smooth}
+    body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);overflow-x:hidden}
+    body:before{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at 80% 0%,rgba(244,199,107,.10),transparent 35%),radial-gradient(ellipse at 0% 45%,rgba(95,75,140,.10),transparent 32%);z-index:-1}
+    a{color:inherit;text-decoration:none}
+    button{font:inherit;cursor:pointer}
+    .container{width:min(1160px,calc(100% - 44px));margin:auto}
+    .navbar{height:82px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}
+    .brand{display:flex;align-items:center;gap:11px;font:700 23px 'Space Grotesk';letter-spacing:-1px}
+    .brand-mark{width:35px;height:35px;border-radius:11px;background:linear-gradient(145deg,#ffe7a8,#d89c39);display:grid;place-items:center;color:#17120a;font-size:20px;box-shadow:0 5px 25px #e6b95733}
+    .brand span em{font-style:normal;color:var(--gold)}
+    .nav-links{display:flex;align-items:center;gap:34px;color:#b7b8c0;font-size:14px}
+    .nav-links a:hover{color:var(--gold)}
+    .nav-actions{display:flex;align-items:center;gap:12px}
+    .btn{border:0;border-radius:12px;padding:12px 19px;font-weight:700;font-size:13px;transition:.2s;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+    .btn:hover{transform:translateY(-2px)}
+    .btn-gold{background:linear-gradient(135deg,var(--gold2),#e8b54f);color:#1b160d;box-shadow:0 8px 26px #e9b54b24}
+    .btn-ghost{background:rgba(255,255,255,.04);border:1px solid var(--line);color:#eee}
+    .menu-toggle{display:none;background:none;color:white;border:0;font-size:25px}
+    .hero{padding:100px 0 85px;display:grid;grid-template-columns:1.04fr .96fr;align-items:center;gap:55px}
+    .eyebrow{display:inline-flex;align-items:center;gap:9px;padding:8px 12px;border:1px solid #e7bd6540;border-radius:30px;color:var(--gold);font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;background:#e7bd650d}
+    .pulse{width:7px;height:7px;background:#83d7a1;border-radius:50%;box-shadow:0 0 12px #83d7a1}
+    h1,h2,h3{font-family:'Space Grotesk',sans-serif}
+    h1{font-size:clamp(46px,6vw,76px);line-height:1.04;letter-spacing:-4px;margin:24px 0 22px}
+    h1 .shine{background:linear-gradient(100deg,#fff1c8 5%,#e9b64e 60%,#fff0c6);-webkit-background-clip:text;background-clip:text;color:transparent}
+    .hero-copy{color:var(--muted);font-size:16px;line-height:1.8;max-width:510px}
+    .hero-buttons{display:flex;gap:12px;margin-top:30px;flex-wrap:wrap}
+    .hero-note{display:flex;align-items:center;gap:12px;margin-top:25px;color:#777b87;font-size:12px}
+    .avatars{display:flex}
+    .avatar{width:25px;height:25px;border:2px solid var(--bg);border-radius:50%;margin-left:-7px;background:linear-gradient(135deg,#e9bd74,#73543b)}
+    .avatar:first-child{margin-left:0;background:linear-gradient(135deg,#d4e3f1,#6d829b)}
+    .avatar:nth-child(2){background:linear-gradient(135deg,#e5b2a0,#815e72)}
+    .avatar:nth-child(3){background:linear-gradient(135deg,#c4d7a1,#647c4c)}
+    .hero-visual{position:relative;min-height:450px;display:grid;place-items:center}
+    .glow{position:absolute;width:350px;height:350px;border-radius:50%;background:#e9b54b1a;filter:blur(75px)}
+    .app-window{position:relative;width:100%;max-width:490px;background:linear-gradient(145deg,#1c2029,#101218);border:1px solid #ffffff1b;border-radius:25px;padding:17px;box-shadow:0 35px 100px #0009;transform:rotate(2deg)}
+    .window-top{display:flex;align-items:center;justify-content:space-between;padding:1px 2px 15px;color:#9296a2;font-size:11px}
+    .dots{display:flex;gap:5px}.dots i{width:7px;height:7px;border-radius:50%;background:#555}.dots i:first-child{background:#ed806e}.dots i:nth-child(2){background:#e9c06b}.dots i:nth-child(3){background:#75c991}
+    .preview{height:230px;border-radius:15px;overflow:hidden;position:relative;background:linear-gradient(135deg,#292a35,#514638 45%,#161820);display:grid;place-items:center}
+    .preview:before{content:"";position:absolute;inset:0;background:linear-gradient(0deg,#08090cdd,transparent 70%),radial-gradient(circle at 50% 35%,#f0c36a55,transparent 45%)}
+    .play{position:relative;width:54px;height:54px;border-radius:50%;display:grid;place-items:center;background:#ffffff25;border:1px solid #ffffff66;backdrop-filter:blur(10px);font-size:18px;padding-left:3px}
+    .preview-label{position:absolute;bottom:15px;left:17px;font-size:11px;color:#fff}
+    .preview-label strong{display:block;font-size:14px;margin-bottom:4px}
+    .timeline{padding:17px 2px 5px}
+    .timeline-head{display:flex;justify-content:space-between;color:#a7a9b2;font-size:10px;margin-bottom:10px}
+    .tracks{display:flex;gap:5px;height:44px}
+    .track{flex:1;border-radius:6px;background:linear-gradient(135deg,#6f5540,#d2a85e 48%,#665044);position:relative;overflow:hidden}
+    .track:nth-child(2){background:linear-gradient(135deg,#4b5966,#9c9c8c,#414956)}
+    .track:nth-child(3){background:linear-gradient(135deg,#71514a,#c28a68,#493e43)}
+    .track:nth-child(4){background:linear-gradient(135deg,#56615a,#a5a77c,#46564b)}
+    .track:after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 18px,#ffffff20 19px 20px)}
+    .progress{height:4px;background:#ffffff18;border-radius:5px;margin-top:13px;overflow:hidden}.progress span{display:block;width:68%;height:100%;background:var(--gold);border-radius:5px}
+    .float-card{position:absolute;right:-18px;bottom:35px;background:#171a21;border:1px solid #ffffff20;border-radius:14px;padding:13px 16px;box-shadow:0 15px 40px #0008;font-size:11px}
+    .float-card strong{display:block;color:var(--gold);font-size:19px;margin-top:4px}
+    .section{padding:85px 0}
+    .section-head{text-align:center;max-width:650px;margin:0 auto 45px}
+    .kicker{color:var(--gold);font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase}
+    h2{font-size:clamp(30px,4vw,45px);letter-spacing:-1.8px;margin:13px 0}
+    .section-head p,.muted{color:var(--muted);line-height:1.7;font-size:14px}
+    .feature-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+    .feature{padding:27px;background:linear-gradient(145deg,#171a21,#101217);border:1px solid var(--line);border-radius:19px;transition:.25s}
+    .feature:hover{transform:translateY(-5px);border-color:#e9bd6555}
+    .feature-icon{width:43px;height:43px;border-radius:13px;display:grid;place-items:center;background:#e9bd6518;color:var(--gold);font-size:20px;margin-bottom:20px}
+    .feature h3{font-size:17px;margin-bottom:9px}.feature p{font-size:13px;line-height:1.7;color:var(--muted)}
+    .workflow{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;counter-reset:step}
+    .step{padding:24px 20px;border:1px solid var(--line);border-radius:17px;background:#111319;position:relative}
+    .step-num{font:700 12px 'Space Grotesk';color:var(--gold);margin-bottom:25px}
+    .step h3{font-size:16px;margin-bottom:8px}.step p{font-size:12px;color:var(--muted);line-height:1.7}
+    .demo-wrap{display:grid;grid-template-columns:1fr 1fr;gap:30px;align-items:center;background:linear-gradient(120deg,#191b22,#111319);border:1px solid var(--line);border-radius:25px;padding:35px}
+    .demo-wrap h2{font-size:35px}.demo-wrap p{color:var(--muted);font-size:14px;line-height:1.8;margin:12px 0 22px}
+    .upload-box{border:1px dashed #d9b35d77;border-radius:18px;padding:30px;text-align:center;background:#e9bd6508}
+    .upload-icon{font-size:31px;color:var(--gold);margin-bottom:12px}
+    .upload-box p{font-size:12px;margin:8px 0 17px}
+    .file-name{font-size:11px;color:#a9d9b4;min-height:17px;margin-top:10px}
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:15px;margin-top:50px}
+    .stat{text-align:center;padding:20px;border-right:1px solid var(--line)}.stat:last-child{border:0}
+    .stat strong{font:700 31px 'Space Grotesk';color:var(--gold)}.stat span{display:block;color:var(--muted);font-size:12px;margin-top:5px}
+    .cta{padding:55px 25px;text-align:center;border-radius:25px;border:1px solid #e9bd6533;background:radial-gradient(ellipse at 50% 0%,#e9bd651b,transparent 65%),#12141a}
+    .cta p{color:var(--muted);font-size:14px;margin:12px auto 25px;max-width:500px;line-height:1.7}
+    footer{padding:35px 0;border-top:1px solid var(--line);margin-top:80px;color:#777b87;font-size:12px}
+    .footer-inner{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap}
+    .footer-links{display:flex;gap:20px}.footer-links a:hover{color:var(--gold)}
+    @media(max-width:850px){.hero{grid-template-columns:1fr;gap:25px;padding-top:70px}.hero-visual{min-height:390px}.app-window{max-width:520px}.feature-grid{grid-template-columns:repeat(2,1fr)}.workflow{grid-template-columns:repeat(2,1fr)}.demo-wrap{grid-template-columns:1fr}}
+    @media(max-width:600px){.container{width:min(100% - 30px,1160px)}.navbar{height:70px}.nav-links{display:none;position:absolute;top:70px;left:15px;right:15px;padding:20px;background:#171a21;border:1px solid var(--line);border-radius:15px;flex-direction:column;gap:20px;z-index:5}.nav-links.open{display:flex}.nav-actions .btn-ghost{display:none}.menu-toggle{display:block}.brand{font-size:21px}h1{letter-spacing:-2.5px;font-size:49px}.hero{padding:60px 0 45px}.hero-visual{min-height:330px}.preview{height:185px}.float-card{right:-5px;bottom:12px}.section{padding:60px 0}.feature-grid,.workflow{grid-template-columns:1fr}.feature{padding:22px}.demo-wrap{padding:24px 18px}.demo-wrap h2{font-size:29px}.stats{gap:0}.stat strong{font-size:24px}.stat span{font-size:10px}.footer-inner{justify-content:center;text-align:center}.footer-links{width:100%;justify-content:center}}
+  </style>
+</head>
+<body>
+  <header class="container navbar">
+    <a class="brand" href="#home"><span class="brand-mark">▶</span><span>clipzy<em>AI</em></span></a>
+    <nav class="nav-links" id="navLinks">
+      <a href="#features">Fitur</a><a href="#how">Cara Kerja</a><a href="#demo">Coba Demo</a><a href="#about">Tentang</a>
+    </nav>
+    <div class="nav-actions">
+      <a class="btn btn-ghost" href="#features">Jelajahi</a>
+      <a class="btn btn-gold" href="#demo">Mulai Gratis <span>↗</span></a>
+      <button class="menu-toggle" id="menuToggle" aria-label="Buka menu">☰</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="container hero" id="home">
+      <div>
+        <div class="eyebrow"><span class="pulse"></span> AI-powered video creation</div>
+        <h1>Long videos.<br><span class="shine">Short moments.</span><br>Big impact.</h1>
+        <p class="hero-copy">Ubah video panjang menjadi konten Shorts, Reels, dan TikTok secara otomatis. Temukan momen terbaik, buat subtitle, dan siapkan video untuk dibagikan — lebih cepat dengan Clipzy AI.</p>
+        <div class="hero-buttons">
+          <a href="#demo" class="btn btn-gold">Mulai Sekarang <span>→</span></a>
+          <a href="#how" class="btn btn-ghost">Lihat cara kerja</a>
+        </div>
+        <div class="hero-note"><div class="avatars"><i class="avatar"></i><i class="avatar"></i><i class="avatar"></i></div><span>Workflow lebih cepat. Kreativitas tetap milikmu.</span></div>
+      </div>
+      <div class="hero-visual">
+        <div class="glow"></div>
+        <div class="app-window">
+          <div class="window-top"><div class="dots"><i></i><i></i><i></i></div><span>CLIPZY STUDIO / PREVIEW</span><span>•••</span></div>
+          <div class="preview"><div class="play">▶</div><div class="preview-label"><strong>Your next viral moment</strong>AI-selected highlight · 00:42</div></div>
+          <div class="timeline"><div class="timeline-head"><span>GENERATED CLIPS</span><span>4 clips found</span></div><div class="tracks"><div class="track"></div><div class="track"></div><div class="track"></div><div class="track"></div></div><div class="progress"><span></span></div></div>
+        </div>
+        <div class="float-card">AI HIGHLIGHT SCORE<strong>94.8 / 100</strong></div>
+      </div>
+    </section>
+
+    <section class="section container" id="features">
+      <div class="section-head"><div class="kicker">Powerful features</div><h2>Semua yang kamu butuhkan<br>untuk membuat clips.</h2><p>Fokus pada ide dan cerita. Clipzy AI membantu mempercepat proses produksi konten pendek.</p></div>
+      <div class="feature-grid">
+        <article class="feature"><div class="feature-icon">✦</div><h3>AI Moment Detection</h3><p>Temukan bagian menarik dari video panjang berdasarkan percakapan, konteks, dan momen penting.</p></article>
+        <article class="feature"><div class="feature-icon">▤</div><h3>Smart Subtitles</h3><p>Buat subtitle otomatis agar konten lebih mudah diikuti, termasuk untuk penonton tanpa suara.</p></article>
+        <article class="feature"><div class="feature-icon">▣</div><h3>Vertical Reframing</h3><p>Siapkan format vertikal untuk Shorts, Reels, dan TikTok dengan komposisi yang lebih sesuai.</p></article>
+        <article class="feature"><div class="feature-icon">◉</div><h3>AI Speaker Focus</h3><p>Bantu menjaga pembicara tetap menjadi fokus saat video disesuaikan ke rasio vertikal.</p></article>
+        <article class="feature"><div class="feature-icon">⌁</div><h3>Fast Video Workflow</h3><p>Satukan proses pemilihan momen, pemotongan, dan persiapan hasil dalam satu alur kerja.</p></article>
+        <article class="feature"><div class="feature-icon">↗</div><h3>Export & Share</h3><p>Siapkan hasil akhir untuk dibagikan ke platform video pendek favoritmu.</p></article>
+      </div>
+    </section>
+
+    <section class="section container" id="how">
+      <div class="section-head"><div class="kicker">Simple workflow</div><h2>Dari video panjang ke short clips.</h2><p>Empat langkah sederhana untuk memulai proses kreatifmu.</p></div>
+      <div class="workflow">
+        <article class="step"><div class="step-num">01 / INPUT</div><h3>Masukkan video</h3><p>Unggah video atau masukkan sumber video yang ingin kamu olah.</p></article>
+        <article class="step"><div class="step-num">02 / ANALYZE</div><h3>AI menganalisis</h3><p>AI memproses audio dan konten untuk mencari bagian yang potensial.</p></article>
+        <article class="step"><div class="step-num">03 / CREATE</div><h3>Buat clips</h3><p>Pilih momen, sesuaikan subtitle, dan atur tampilan video.</p></article>
+        <article class="step"><div class="step-num">04 / EXPORT</div><h3>Export hasilnya</h3><p>Simpan video pendek dan bagikan ke platform pilihanmu.</p></article>
+      </div>
+    </section>
+
+    <section class="section container" id="demo">
+      <div class="demo-wrap">
+        <div><div class="kicker">Try the experience</div><h2>Siap membuat konten berikutnya?</h2><p>Pilih file video dari perangkatmu untuk mencoba interaksi halaman ini. Demo ini hanya menampilkan nama file — belum mengunggah atau memproses video ke server.</p><a href="#features" class="btn btn-ghost">Jelajahi fitur <span>→</span></a></div>
+        <div class="upload-box"><div class="upload-icon">⇧</div><h3>Pilih video kamu</h3><p>MP4, MOV, atau WebM · Demo antarmuka</p><input type="file" id="videoInput" accept="video/mp4,video/quicktime,video/webm" hidden><button class="btn btn-gold" id="chooseFile">Pilih File Video</button><div class="file-name" id="fileName" aria-live="polite"></div></div>
+      </div>
+      <div class="stats"><div class="stat"><strong>AI</strong><span>Smart assistance</span></div><div class="stat"><strong>9:16</strong><span>Vertical-ready format</span></div><div class="stat"><strong>∞</strong><span>Creative possibilities</span></div></div>
+    </section>
+
+    <section class="container section" id="about">
+      <div class="cta"><div class="kicker">Create without limits</div><h2>Lebih banyak konten.<br>Lebih sedikit pekerjaan manual.</h2><p>Clipzy AI membantu kreator mengubah ide dan video panjang menjadi konten pendek dengan workflow yang lebih praktis.</p><a class="btn btn-gold" href="#demo">Mulai dengan Clipzy AI <span>↗</span></a></div>
+    </section>
+  </main>
+
+  <footer><div class="container footer-inner"><a class="brand" href="#home"><span class="brand-mark">▶</span><span>clipzy<em>AI</em></span></a><span>© <span id="year"></span> Clipzy AI. All rights reserved.</span><div class="footer-links"><a href="#features">Features</a><a href="#how">How it works</a><a href="#home">Back to top ↑</a></div></div></footer>
+
+  <script>
+    const menuToggle = document.getElementById('menuToggle');
+    const navLinks = document.getElementById('navLinks');
+    menuToggle.addEventListener('click', () => {
+      navLinks.classList.toggle('open');
+      menuToggle.textContent = navLinks.classList.contains('open') ? '✕' : '☰';
+    });
+    navLinks.querySelectorAll('a').forEach(link => link.addEventListener('click', () => {
+      navLinks.classList.remove('open');
+      menuToggle.textContent = '☰';
+    }));
+    const videoInput = document.getElementById('videoInput');
+    document.getElementById('chooseFile').addEventListener('click', () => videoInput.click());
+    videoInput.addEventListener('change', () => {
+      const file = videoInput.files && videoInput.files[0];
+      const output = document.getElementById('fileName');
+      if (!file) { output.textContent = ''; return; }
+      const size = (file.size / (1024 * 1024)).toFixed(2);
+      output.textContent = `✓ ${file.name} · ${size} MB`;
+    });
+    document.getElementById('year').textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>

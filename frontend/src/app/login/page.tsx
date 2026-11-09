@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { Mail, Lock, Globe, Twitter, Facebook } from "lucide-react"
+import { Mail, Lock } from "lucide-react"
 
 import { getApiBaseUrl } from "@/lib/env"
 
@@ -40,96 +40,103 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0F172A] flex items-center justify-center px-6">
-      <div className="max-w-md w-full">
-        <div className="mb-8 text-center">
-          <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-pink-500 rounded-lg flex items-center justify-center mx-auto mb-4">
-            <span className="text-2xl">⚡</span>
-          </div>
-          <h2 className="text-2xl font-bold">Masuk ke Clipzi AI</h2>
-          <p className="text-gray-400 mt-2">Selamat datang kembali</p>
+    <div className="ui-shell">
+      <div className="ui-container ui-nav">
+        <Link className="ui-brand" href="/">
+          <span className="ui-brand-mark">▶</span>
+          <span>
+            clipzy<em>AI</em>
+          </span>
+        </Link>
+        <div className="ui-nav-actions">
+          <Link className="ui-btn ui-btn-ghost" href="/register">
+            Daftar
+          </Link>
         </div>
-
-        <form onSubmit={handleLogin} className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Email</label>
-            <div className="relative">
-              <Mail size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-                placeholder="you@example.com"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Kata Sandi</label>
-            <div className="relative">
-              <Lock size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-                placeholder="••••••••"
-              />
-            </div>
-          </div>
-
-          {error && <p className="rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</p>}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="btn-primary w-full py-3"
-          >
-            {loading ? "Memproses..." : "Masuk"}
-          </button>
-
-          <p className="text-center text-sm text-gray-400">
-            Belum punya akun?{" "}
-            <Link href="/register" className="text-blue-400 hover:text-blue-300 font-medium">
-              Daftar gratis
-            </Link>
-          </p>
-
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-white/20"></div>
-            </div>
-            <span className="relative flex justify-center text-xs uppercase bg-[#0F172A] px-2 text-gray-500">
-              At lanjutkan dengan
-            </span>
-          </div>
-
-          <div className="grid grid-cols-3 gap-4">
-            <button
-              onClick={() => handleSocialLogin("google")}
-              className="flex items-center justify-center gap-2 p-3 bg-white/10 border border-white/20 rounded-lg hover:bg-white/20 transition-colors"
-            >
-              <Globe size={20} />
-              <span className="text-sm">Google</span>
-            </button>
-            <button
-              onClick={() => handleSocialLogin("x")}
-              className="flex items-center justify-center gap-2 p-3 bg-white/10 border border-white/20 rounded-lg hover:bg-white/20 transition-colors"
-            >
-              <Twitter size={20} />
-              <span className="text-sm">X</span>
-            </button>
-            <button
-              onClick={() => handleSocialLogin("facebook")}
-              className="flex items-center justify-center gap-2 p-3 bg-white/10 border border-white/20 rounded-lg hover:bg-white/20 transition-colors"
-            >
-              <Facebook size={20} />
-              <span className="text-sm">Facebook</span>
-            </button>
-          </div>
-        </form>
       </div>
+
+      <main
+        style={{
+          display: "grid",
+          placeItems: "center",
+          minHeight: "calc(100vh - 76px)",
+          padding: "48px 0 64px",
+        }}
+      >
+        <div style={{ width: "min(420px, calc(100vw - 44px))" }}>
+          <div style={{ textAlign: "center", marginBottom: 26 }}>
+            <div className="ui-brand-mark" style={{ margin: "0 auto 14px", width: 42, height: 42 }}>▶</div>
+            <h2 className="ui-title" style={{ fontSize: 28 }}>
+              Masuk ke <span className="ui-shine">Clipzy AI</span>
+            </h2>
+            <p className="ui-muted" style={{ marginTop: 8 }}>
+              Selamat datang kembali. Lanjutkan membuat klip.
+            </p>
+          </div>
+
+          <form onSubmit={handleLogin} className="ui-card" style={{ display: "grid", gap: 16 }}>
+            <div>
+              <label className="ui-label" htmlFor="email">Email</label>
+              <div className="ui-input-wrap">
+                <Mail size={17} />
+                <input
+                  id="email"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="ui-input with-icon"
+                  placeholder="you@example.com"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="ui-label" htmlFor="password">Kata Sandi</label>
+              <div className="ui-input-wrap">
+                <Lock size={17} />
+                <input
+                  id="password"
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="ui-input with-icon"
+                  placeholder="••••••••"
+                />
+              </div>
+            </div>
+
+            {error && <div className="ui-alert ui-alert-error">{error}</div>}
+
+            <button type="submit" disabled={loading} className="ui-btn ui-btn-gold ui-btn-block">
+              {loading ? "Memproses..." : "Masuk"}
+            </button>
+
+            <p className="ui-muted" style={{ textAlign: "center", fontSize: 13 }}>
+              Belum punya akun?{" "}
+              <Link href="/register" className="ui-gold" style={{ fontWeight: 700 }}>
+                Daftar gratis
+              </Link>
+            </p>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#6f7381", fontSize: 11 }}>
+              <span style={{ flex: 1, height: 1, background: "var(--ui-line)" }} />
+              atau lanjutkan dengan
+              <span style={{ flex: 1, height: 1, background: "var(--ui-line)" }} />
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
+              <button type="button" onClick={() => handleSocialLogin("google")} className="ui-btn ui-btn-ghost">
+                Google
+              </button>
+              <button type="button" onClick={() => handleSocialLogin("x")} className="ui-btn ui-btn-ghost">
+                X
+              </button>
+            </div>
+          </form>
+        </div>
+      </main>
     </div>
   )
 }
