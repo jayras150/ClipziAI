@@ -1,14 +1,14 @@
 # =============================================================================
-# OPSIONAL — transkripsi Whisper di GPU worker (Vast.ai), model HuggingFace.
+# OPSIONAL — transkripsi Whisper di GPU worker (Vast.ai).
 #
-# Dipakai bila TRANSCRIPTION_PROVIDER=gpu (atau "auto" saat CUDA tersedia).
-# Model default openai/whisper-large-v3-turbo (±1,6 GB, cepat); bisa diganti ke
-# openai/whisper-large-v3 lewat env GPU_WHISPER_MODEL.
+# Dipakai bila CUDA tersedia (worker GPU). Mesin: CTranslate2 (faster-whisper)
+# dengan lib CUDA dari paket pip, BUKAN torch — total ±0,8 GB, jauh lebih ringan
+# daripada torch cu121 (±3 GB) dan inferensinya juga lebih cepat.
 #
-# Ukuran: torch cu121 ±2,3 GB + transformers ±0,3 GB. Karena itu dipasang lewat
-# build-arg INSTALL_GPU_WHISPER (lihat Dockerfile), bukan default ringan.
+# Model tetap Whisper large-v3 (versi CTranslate2 dari openai/whisper-large-v3).
+# Atur lewat env GPU_WHISPER_MODEL: "large-v3" (akurasi maksimum) atau "turbo"
+# (lebih cepat, akurasi hampir sama).
 # =============================================================================
---extra-index-url https://download.pytorch.org/whl/cu121
-torch>=2.3,<2.7
-transformers>=4.44
-sentencepiece>=0.2.0
+faster-whisper>=1.1.1
+nvidia-cublas-cu12>=12.1
+nvidia-cudnn-cu12>=9.0

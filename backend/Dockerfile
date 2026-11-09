@@ -64,7 +64,7 @@ ARG INSTALL_GPU_WHISPER=1
 COPY requirements-gpu-whisper.txt ./
 RUN if [ "$INSTALL_GPU_WHISPER" = "1" ]; then \
         pip install -r requirements-gpu-whisper.txt && \
-        python -c "import torch; print('torch', torch.__version__, 'cuda build:', torch.version.cuda)" ; \
+        python -c "import faster_whisper, ctranslate2; print('ct2', ctranslate2.__version__, 'gpu libs siap')" ; \
     else \
         echo "INSTALL_GPU_WHISPER=0 -> transkripsi GPU dilewati"; \
     fi
@@ -122,6 +122,11 @@ COPY --from=builder /opt/venv /opt/venv
 # transkripsi lokal error "Permission denied: /opt/whisper-cache/...".
 ENV HF_HOME=/opt/whisper-cache
 COPY --from=builder --chown=clipzi:clipzi /opt/whisper-cache /opt/whisper-cache
+
+# Lib CUDA (cuBLAS/cuDNN) dari paket pip untuk CTranslate2 GPU.
+# Tanpa LD_LIBRARY_PATH ini, faster-whisper gagal memuat cudnn/cublas meski
+# wheel-nya sudah terpasang.
+ENV LD_LIBRARY_PATH="/opt/venv/lib/python3.11/site-packages/nvidia/cublas/lib:/opt/venv/lib/python3.11/site-packages/nvidia/cudnn/lib:${LD_LIBRARY_PATH}"
 
 WORKDIR $APP_HOME
 COPY . .

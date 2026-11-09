@@ -46,47 +46,47 @@ class AudioTranscriber:
 
     @staticmethod
     def _cuda_available() -> bool:
-        """True bila torch terpasang DAN ada GPU CUDA yang bisa dipakai."""
+        """
+        True bila ada GPU CUDA yang bisa dipakai.
+
+        Menggunakan CTranslate2 (dipakai faster-whisper) sebagai deteksi — tidak
+        butuh torch.
+        """
         try:
-            import torch
+            import ctranslate2
         except Exception:
             return False
         try:
-            return bool(torch.cuda.is_available())
+            return int(ctranslate2.get_cuda_device_count()) > 0
         except Exception:
             return False
 
-    def _gpu_pipeline(self):
-        """
-        Muat pipeline ASR Whisper di GPU (HuggingFace transformers), sekali saja.
+    @staticmethod
+    def _map_gpu_model(name: str) -> str:
+        """Petakan nama model HuggingFace ke nama model faster-whisper.
 
-        Model default dari settings.GPU_WHISPER_MODEL (openai/whisper-large-v3-turbo).
-        Model diunduh otomatis saat pertama dipakai (di-cache HF_HOME).
+        Contoh: 'openai/whisper-large-v3'        -> 'large-v3'
+                'openai/whisper-large-v3-turbo'  -> 'turbo'
+                'large-v3'                       -> 'large-v3'
         """
+        short = (name or "large-v3").split("/")[-1]
+        short = short.replace("whisper-", "")
+        if short.endswith("turbo"):
+            return "turbo"
+        return short or "large-v3"
+
+    def _get_gpu_model(self):
+        """Muat model Whisper di GPU (CTranslate2 float16), sekali saja."""
         if getattr(self, "_gpu_model", None) is not None:
             return self._gpu_model
 
-        import torch
-        from transformers import pipeline as hf_pipeline
+        from faster_whisper import WhisperModel
 
-        model_id = settings.GPU_WHISPER_MODEL or "openai/whisper-large-v3-turbo"
-        dtype_name = (settings.GPU_WHISPER_DTYPE or "float16").lower()
-        torch_dtype = torch.float16 if dtype_name == "float16" else torch.float32
-        device = 0 if self._cuda_available() else -1
-
+        model_name = self._map_gpu_model(settings.GPU_WHISPER_MODEL)
         logger.info(
-            "Memuat Whisper GPU: model=%s device=%s dtype=%s",
-            model_id, "cuda:0" if device == 0 else "cpu", dtype_name,
+            "Memuat Whisper GPU: model=%s device=cuda compute_type=float16", model_name
         )
-
-        self._gpu_model = hf_pipeline(
-            "automatic-speech-recognition",
-            model=model_id,
-            device=device,
-            torch_dtype=torch_dtype if device == 0 else torch.float32,
-            chunk_length_s=30,
-            return_timestamps=True,
-        )
+        self._gpu_model = WhisperModel(model_name, device="cuda", compute_type="float16")
         return self._gpu_model
 
     async def _transcribe_gpu(
@@ -94,50 +94,29 @@ class AudioTranscriber:
         audio_path: str,
         language: Optional[str],
     ) -> Dict[str, Any]:
-        """Transkripsi memakai Whisper large di GPU worker (transformers)."""
+        """
+        Transkripsi Whisper large-v3 di GPU worker (Vast.ai), tanpa biaya API.
+
+        Memakai CTranslate2 lewat faster-whisper (float16) — jauh lebih cepat
+        daripada CPU dan tidak memerlukan torch.
+        """
         loop = asyncio.get_event_loop()
+        model = self._get_gpu_model()
+        segments, info = await loop.run_in_executor(
+            None,
+            self._transcribe_sync,
+            model,
+            audio_path,
+            language,
+        )
 
-        def _run() -> Dict[str, Any]:
-            asr = self._gpu_pipeline()
-            generate_kwargs: Dict[str, Any] = {}
-            if language:
-                generate_kwargs["language"] = language
-                generate_kwargs["task"] = "transcribe"
-            result = asr(audio_path, generate_kwargs=generate_kwargs or None)
-
-            chunks = result.get("chunks") or []
-            segments: List[Dict[str, Any]] = []
-            for index, chunk in enumerate(chunks):
-                stamp = chunk.get("timestamp") or (0.0, 0.0)
-                start = float(stamp[0] or 0.0)
-                end = float(stamp[1] if stamp[1] is not None else start + 1.0)
-                text_value = (chunk.get("text") or "").strip()
-                if not text_value:
-                    continue
-                segments.append(
-                    {
-                        "id": index,
-                        "start": round(start, 3),
-                        "end": round(max(end, start + 0.2), 3),
-                        "text": text_value,
-                        "words": [],
-                    }
-                )
-
-            text = (result.get("text") or "").strip()
-            duration = self._audio_duration(audio_path)
-            if not segments and text:
-                segments = self._synthesize_segments(text, duration)
-
-            return {
-                "language": language,
-                "language_probability": None,
-                "duration": duration or None,
-                "segments": segments,
-                "full_text": text or " ".join(s["text"] for s in segments),
-            }
-
-        return await loop.run_in_executor(None, _run)
+        return {
+            "language": info.language,
+            "language_probability": info.language_probability,
+            "duration": info.duration,
+            "segments": self._split_long_segments(segments),
+            "full_text": " ".join(seg.get("text", "") for seg in segments),
+        }
 
 
     def _get_remote_client(self) -> openai.AsyncOpenAI:

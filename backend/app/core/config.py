@@ -56,12 +56,10 @@ class Settings(BaseSettings):
     TRANSCRIPTION_BASE_URL: Optional[str] = None
     TRANSCRIPTION_MODEL: Optional[str] = None
 
-    # Transkripsi Whisper di GPU worker (HuggingFace transformers).
-    # Model default -turbo: akurasi hampir setara large-v3 tapi jauh lebih cepat.
-    # Ganti ke "openai/whisper-large-v3" bila ingin akurasi maksimum (lebih berat).
-    GPU_WHISPER_MODEL: str = "openai/whisper-large-v3-turbo"
-    GPU_WHISPER_DEVICE: str = "cuda"
-    GPU_WHISPER_DTYPE: str = "float16"
+    # Transkripsi Whisper di GPU worker (CTranslate2/faster-whisper, tanpa torch).
+    # Nama model HuggingFace juga diterima: openai/whisper-large-v3 -> large-v3,
+    # openai/whisper-large-v3-turbo -> turbo (lebih cepat, akurasi hampir sama).
+    GPU_WHISPER_MODEL: str = "large-v3"
 
     # Duitku Payment
     DUITKU_MERCHANT_CODE: Optional[str] = None
