@@ -310,6 +310,9 @@ select.ui-input option {
 }
 .ui-opt select.ui-input {
   padding-right: 32px;
+  background-color: rgba(9, 10, 14, 0.55);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23a6a9b6' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-repeat: no-repeat;
   background-position: right 10px center;
 }
 .ui-opt-panel {
