@@ -83,6 +83,11 @@ export default function ClipModal({
       setNotice(regenerate ? "Membuat versi baru dari transkrip…" : "AI membaca transkrip klip…")
       try {
         const data = await api.generateClipMetadata(token, clipId, regenerate)
+        if (data.status === "failed") {
+          setNotice("")
+          setError(data.message || "Transkrip klip ini tidak tersedia, metadata tidak dibuat.")
+          return
+        }
         if (data.status === "preparing") {
           // Klip lama: transkrip dibuat di latar belakang (bisa >1 menit).
           setNotice(data.message || "Transkrip klip sedang dibuat…")
@@ -120,6 +125,11 @@ export default function ClipModal({
       await new Promise((resolve) => setTimeout(resolve, 6000))
       try {
         const data = await api.generateClipMetadata(token, clipId, false)
+        if (data.status === "failed") {
+          setNotice("")
+          setError(data.message || "Transkrip klip ini tidak tersedia, metadata tidak dibuat.")
+          return
+        }
         if (data.status === "preparing" || !data.title) {
           await pollPrepared(attempt + 1)
           return

@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import tempfile
 from typing import Optional, Tuple
 from uuid import UUID
@@ -94,17 +95,72 @@ async def _transcribe_clip_url(url: str) -> str:
         return text
 
 
+_SRT_TIME = re.compile(r"^\d{1,2}:\d{2}(?::\d{2})?[,.]\d{1,3}\s*-->")
+_TAG = re.compile(r"<[^>]+>")
+
+
+def _parse_subtitle(text: str) -> str:
+    """Ambil teks dari file SRT/VTT (buang nomor urut, timestamp, dan tag HTML)."""
+    pieces: list[str] = []
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if not line or line.isdigit() or _SRT_TIME.match(line):
+            continue
+        if line.upper().startswith("WEBVTT"):
+            continue
+        clean = _TAG.sub("", line).strip()
+        if clean:
+            pieces.append(clean)
+    # Buang pengulangan kata yang sering muncul di caption karaoke.
+    deduped: list[str] = []
+    for piece in pieces:
+        if not deduped or deduped[-1] != piece:
+            deduped.append(piece)
+    return " ".join(deduped).strip()
+
+
+def _subtitle_text(url: str) -> str:
+    """Unduh subtitle klip (SRT/VTT) dari R2 lalu ambil teksnya."""
+    with requests.get(url, timeout=90) as response:
+        response.raise_for_status()
+        return _parse_subtitle(response.text)
+
+
+
+async def _store_transcript(clip: Clip, db: AsyncSession, text: str, source: str) -> None:
+    """Simpan transkrip ringkas di JSONB `viral_factors` (tanpa kolom baru)."""
+    factors = dict(clip.viral_factors or {})
+    factors["transcript"] = text[:2000]
+    factors["transcript_words"] = len(text.split())
+    factors["transcript_source"] = source
+    clip.viral_factors = factors
+    await db.commit()
+
 
 async def _ensure_transcript(clip: Clip, db: AsyncSession) -> Tuple[str, str]:
     """
     Pastikan ada transkrip untuk klip ini.
 
-    Return `(transcript, source)` dengan source `stored` (dari pipeline) atau
-    `whisper` (ditranskripsi saat permintaan datang).
+    Urutan sumber:
+      1. `viral_factors.transcript` — hasil Whisper saat pipeline render.
+      2. File subtitle (SRT/VTT) klip — teks asli ucapan, cepat, tanpa biaya.
+      3. Transkripsi ulang klip dengan Whisper (bisa lambat / butuh kredit).
+
+    Return `(transcript, source)`.
     """
     text = _stored_transcript(clip)
     if len(text.split()) >= MIN_TRANSCRIPT_WORDS:
         return text, "stored"
+
+    if clip.subtitle_url:
+        try:
+            subtitle = await asyncio.to_thread(_subtitle_text, clip.subtitle_url)
+        except Exception as exc:
+            logger.warning("Gagal membaca subtitle klip %s: %s", clip.id, str(exc)[:200])
+            subtitle = ""
+        if len(subtitle.split()) >= MIN_TRANSCRIPT_WORDS:
+            await _store_transcript(clip, db, subtitle, "subtitle")
+            return subtitle, "subtitle"
 
     if not clip.download_url:
         raise HTTPException(
@@ -131,13 +187,7 @@ async def _ensure_transcript(clip: Clip, db: AsyncSession) -> Tuple[str, str]:
             ),
         )
 
-    factors = dict(clip.viral_factors or {})
-    # Simpan versi ringkas di JSONB (kolomnya bukan TEXT panjang).
-    factors["transcript"] = text[:2000]
-    factors["transcript_words"] = len(words)
-    factors["transcript_source"] = "on_demand_whisper"
-    clip.viral_factors = factors
-    await db.commit()
+    await _store_transcript(clip, db, text, "on_demand_whisper")
     return text, "whisper"
 
 
@@ -150,6 +200,8 @@ def _hook_of(clip: Clip) -> Optional[str]:
 # Klip lama tanpa transkrip diproses di latar belakang (transkripsi bisa >100 detik,
 # lebih lama dari batas timeout Cloudflare), jadi statusnya dilacak di sini.
 _PREPARING: set[UUID] = set()
+# Pesan kegagalan terakhir per klip supaya UI tidak menunggu selamanya.
+_PREPARE_ERROR: dict[UUID, str] = {}
 
 
 async def _prepare_metadata_bg(clip_id: UUID, user_id: UUID) -> None:
@@ -173,11 +225,17 @@ async def _prepare_metadata_bg(clip_id: UUID, user_id: UUID) -> None:
             factors["ai_language"] = result.get("language")
             clip.viral_factors = factors
             await db.commit()
+            _PREPARE_ERROR.pop(clip_id, None)
             logger.info("Metadata klip %s siap (dibuat di latar belakang).", clip_id)
+    except HTTPException as exc:
+        _PREPARE_ERROR[clip_id] = str(exc.detail)[:300]
+        logger.warning("Persiapan metadata klip %s gagal: %s", clip_id, str(exc.detail)[:300])
     except Exception as exc:
+        _PREPARE_ERROR[clip_id] = str(exc)[:300]
         logger.warning("Persiapan metadata klip %s gagal: %s", clip_id, str(exc)[:300])
     finally:
         _PREPARING.discard(clip_id)
+
 
 
 
@@ -271,6 +329,21 @@ async def generate_clip_metadata(
 
     stored = _stored_transcript(clip)
     if len(stored.split()) < MIN_TRANSCRIPT_WORDS:
+        failure = _PREPARE_ERROR.get(clip.id)
+        if failure and not options.regenerate:
+            return _metadata_response(
+                clip,
+                transcript="",
+                transcript_source="unavailable",
+                generated_by="ai",
+                status_value="failed",
+                message=(
+                    "Transkrip klip ini tidak tersedia sehingga metadata tidak dibuat: "
+                    f"{failure}"
+                ),
+            )
+        if options.regenerate:
+            _PREPARE_ERROR.pop(clip.id, None)
         # Transkripsi klip bisa memakan >100 detik (batas timeout Cloudflare),
         # jadi jalankan di latar belakang dan minta klien menanyakan lagi.
         if clip.id not in _PREPARING:
@@ -279,13 +352,12 @@ async def generate_clip_metadata(
         return _metadata_response(
             clip,
             transcript="",
-            transcript_source="whisper",
+            transcript_source="preparing",
             generated_by="ai",
             status_value="preparing",
             message=(
-                "Transkrip klip ini belum ada. Sedang dibuat dengan Whisper di "
-                "latar belakang, lalu judul/deskripsi/tag dibuat AI — biasanya "
-                "1-2 menit."
+                "Menyiapkan transkrip klip (SRT/Whisper) lalu metadata dibuat AI. "
+                "Biasanya selesai dalam 1-2 menit."
             ),
         )
 

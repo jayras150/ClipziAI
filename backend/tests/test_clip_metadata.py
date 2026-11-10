@@ -4,6 +4,7 @@ import asyncio
 import pytest
 from fastapi import HTTPException
 
+from app.api.clips import _parse_subtitle
 from app.services.metadata_generator import (
     MetadataGenerationError,
     MetadataGenerator,
@@ -119,3 +120,24 @@ def test_upload_youtube_butuh_sumber_video():
         asyncio.run(service.upload_video(access_token="token", title="Tes"))
     assert excinfo.value.status_code == 400
     assert "Sumber video" in str(excinfo.value.detail)
+
+
+def test_parse_subtitle_srt_membuang_timestamp_dan_duplikat():
+    srt = (
+        "1\n"
+        "00:00:00,000 --> 00:00:02,000\n"
+        "Halo semuanya\n\n"
+        "2\n"
+        "00:00:02,000 --> 00:00:04,500\n"
+        "<i>hari ini</i> kita masak mie\n\n"
+        "3\n"
+        "00:00:02,000 --> 00:00:04,500\n"
+        "<i>hari ini</i> kita masak mie\n"
+    )
+    assert _parse_subtitle(srt) == "Halo semuanya hari ini kita masak mie"
+
+
+def test_parse_subtitle_vtt_membuang_header():
+    vtt = "WEBVTT\n\n00:00.000 --> 00:02.000\nResep mie goreng pedas\n"
+    assert _parse_subtitle(vtt) == "Resep mie goreng pedas"
+
