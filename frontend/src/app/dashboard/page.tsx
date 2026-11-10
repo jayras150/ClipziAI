@@ -1073,7 +1073,7 @@ export default function DashboardPage() {
                       style={{ gap: 5 }}
                       title="All free-plan clips include the Clipzy watermark. Upgrade to remove it."
                     >
-                      <Droplets size={12} /> Watermark Clipzy aktif
+                      <Droplets size={12} /> Clipzy watermark active
                     </span>
                   )}
                   <span className="ui-hint" style={{ margin: 0 }}>

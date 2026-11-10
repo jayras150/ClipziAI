@@ -273,7 +273,7 @@ export default function AdminPage() {
                 </button>
               ))}
               <button className="ui-tab" onClick={() => switchTab(tab)} disabled={busy}>
-                <RefreshCw size={13} /> {busy ? "Memuat…" : "Muat ulang"}
+                <RefreshCw size={13} /> {busy ? "Loading…" : "Refresh"}
               </button>
             </div>
 
@@ -507,7 +507,7 @@ export default function AdminPage() {
                     <Users size={16} /> Pengguna ({users.length})
                   </h2>
                   <button className="ui-btn ui-btn-ghost" onClick={() => load(token, "users")} disabled={busy}>
-                    <RefreshCw size={13} /> {busy ? "Memuat…" : "Muat ulang"}
+                    <RefreshCw size={13} /> {busy ? "Loading…" : "Refresh"}
                   </button>
                 </div>
                 <table className="ui-table" style={{ marginTop: 12 }}>
@@ -568,7 +568,7 @@ export default function AdminPage() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <h2 className="ui-subtitle" style={{ margin: 0 }}>Audit log</h2>
                   <button className="ui-btn ui-btn-ghost" onClick={() => load(token, "audit")} disabled={busy}>
-                    <RefreshCw size={13} /> {busy ? "Memuat…" : "Muat ulang"}
+                    <RefreshCw size={13} /> {busy ? "Loading…" : "Refresh"}
                   </button>
                 </div>
                 <table className="ui-table" style={{ marginTop: 12 }}>
