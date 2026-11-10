@@ -15,13 +15,8 @@
 	# --- API FastAPI ---
 	# Catatan: JANGAN pakai handle_path (itu membuang prefix /api),
 	# karena rute backend memang /api/...
-	# Admin API DIBLOKIR di edge: hanya bisa diakses lewat site admin
-	# (admin.proxyai.live, IP allowlist). Kalau tidak, siapa pun bisa
-	# memetakan endpoint admin walau aplikasinya sudah pakai token.
-	handle /api/admin/* {
-		respond 404
-	}
-
+	# Admin API boleh diakses dari frontend (token + cek email di server).
+	# Blokir hanya dokumentasi API yang memudahkan pemetaan endpoint.
 	handle /api/* {
 		reverse_proxy backend:8000
 	}

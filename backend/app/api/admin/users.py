@@ -1,4 +1,4 @@
-"""
+﻿"""
 Admin user management endpoints
 """
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,7 +8,6 @@ from sqlalchemy import select
 from uuid import UUID
 
 from app.api.deps import get_db_session
-from app.models.admin_user import AdminUser
 from app.models.user import User
 from app.models.user_profile import UserProfile
 from app.models.credit_transaction import CreditTransaction, CreditTransactionType
@@ -21,7 +20,7 @@ router = APIRouter(dependencies=[Depends(get_current_admin)])
 @router.get("/", response_model=List[dict])
 async def list_users(
     db: AsyncSession = Depends(get_db_session),
-    current_admin: AdminUser = Depends(get_current_admin),
+    current_admin: User = Depends(get_current_admin),
 ):
     result = await db.execute(select(User))
     users = result.scalars().all()

@@ -84,6 +84,9 @@ class Settings(BaseSettings):
     MAX_FILE_SIZE_MB: int = 2000
     OUTPUT_FPS: int = 30
     OUTPUT_RESOLUTION: str = "1080x1920"
+    # Email yang otomatis punya akses admin dashboard (pisah koma).
+    # Contoh: ADMIN_EMAILS=owner@clipzy.ai,partner@gmail.com
+    ADMIN_EMAILS: str = ""
 
     # yt-dlp (download video dari YouTube/TikTok/IG/FB/Vimeo)
     # Cookies OPSIONAL. Isi salah satu saja:

@@ -1,7 +1,7 @@
-"""
+﻿"""
 Setelan platform versi admin (Batch B): watermark.
 
-Semua endpoint di sini WAJIB token admin (cookie HttpOnly / Bearer) — lihat
+Semua endpoint di sini WAJIB token admin (cookie HttpOnly / Bearer) â€” lihat
 `app/api/admin/deps.py`. Setiap perubahan dicatat ke `audit_logs`.
 """
 from typing import List, Optional
@@ -12,8 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.admin.deps import get_current_admin
 from app.api.deps import get_db_session
-from app.models.admin_user import AdminUser
 from app.models.audit_log import ActorType, AuditLog
+from app.models.user import User
 from app.services.platform_settings import (
     PLANS,
     POSITIONS,
@@ -52,16 +52,14 @@ class WatermarkConfigIn(BaseModel):
         return value
 
 
-def _require_manager(admin: AdminUser) -> None:
-    """Moderator tidak boleh mengubah branding platform."""
-    role = getattr(admin.role, "value", admin.role)
-    if str(role) not in ("super_admin", "admin"):
-        raise HTTPException(status_code=403, detail="Butuh role admin/super_admin")
+def _require_manager(admin: User) -> None:
+    """Semua email di ADMIN_EMAILS boleh mengubah branding platform."""
+    return None
 
 
 @router.get("/watermark")
 async def read_watermark(
-    current_admin: AdminUser = Depends(get_current_admin),
+    current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db_session),
 ):
     return await get_watermark_config(db)
@@ -71,7 +69,7 @@ async def read_watermark(
 async def update_watermark(
     payload: WatermarkConfigIn,
     request: Request,
-    current_admin: AdminUser = Depends(get_current_admin),
+    current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db_session),
 ):
     _require_manager(current_admin)
@@ -103,7 +101,7 @@ async def update_watermark(
 
 @router.post("/watermark/reset")
 async def reset_watermark(
-    current_admin: AdminUser = Depends(get_current_admin),
+    current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db_session),
 ):
     _require_manager(current_admin)

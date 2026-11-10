@@ -20,6 +20,7 @@ class UserProfileResponse(BaseModel):
     is_active: bool
     email_verified: bool
     two_factor_enabled: bool
+    is_admin: bool = False
     created_at: datetime
 
     class Config:

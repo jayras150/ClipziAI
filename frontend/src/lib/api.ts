@@ -16,7 +16,63 @@ export interface UserProfileData {
   is_active: boolean
   email_verified: boolean
   two_factor_enabled: boolean
+  is_admin: boolean
   created_at: string
+}
+
+/** Statistik ringkas untuk dashboard admin. */
+export interface AdminStatsData {
+  total_users: number
+  banned_users: number
+  total_tasks: number
+  total_clips: number
+  credits_spent: number
+  completed_tasks: number
+  tasks_by_status: Record<string, number>
+  tasks_per_day: { date: string | null; count: number }[]
+  recent_tasks: {
+    id: string
+    source_type: string
+    status: string
+    progress: number
+    total_clips: number | null
+    user_email: string | null
+    created_at: string | null
+  }[]
+}
+
+/** Konfigurasi watermark platform (diatur admin). */
+export interface WatermarkConfigData {
+  enabled: boolean
+  plans: string[]
+  image_url: string | null
+  text: string | null
+  position: string
+  opacity: number
+  scale: number
+  text_color: string
+  margin: number
+}
+
+export interface AdminUserRow {
+  id: string
+  email: string | null
+  name: string
+  provider?: string
+  is_active: boolean
+  is_banned: boolean
+  created_at: string | null
+}
+
+export interface AuditRow {
+  id: string
+  actor_type: string
+  actor_email: string | null
+  action: string
+  resource_type: string | null
+  resource_id: string | null
+  ip_address: string | null
+  created_at: string | null
 }
 
 export interface MusicTrackData {
@@ -270,6 +326,79 @@ export class ApiClient {
       `/api/youtube/viral-score/${clipId}${force ? "?force=true" : ""}`,
       { headers: { Authorization: `Bearer ${token}` } },
     )
+    return response.data
+  }
+
+  /* ---------- Admin (akses ditentukan ADMIN_EMAILS di server) ---------- */
+  async getAdminStats(token: string): Promise<AdminStatsData> {
+    const response = await this.client.get<AdminStatsData>("/api/admin/system/stats", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return response.data
+  }
+
+  async getWatermarkConfig(token: string): Promise<WatermarkConfigData> {
+    const response = await this.client.get<WatermarkConfigData>("/api/admin/settings/watermark", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return response.data
+  }
+
+  async updateWatermarkConfig(
+    token: string,
+    payload: Partial<WatermarkConfigData>,
+  ): Promise<WatermarkConfigData> {
+    const response = await this.client.put<WatermarkConfigData>(
+      "/api/admin/settings/watermark",
+      payload,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    return response.data
+  }
+
+  async listAdminUsers(token: string): Promise<AdminUserRow[]> {
+    const response = await this.client.get<AdminUserRow[]>("/api/admin/users/", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return response.data
+  }
+
+  /** Ban/unban memakai query param (sesuai endpoint backend). */
+  async banAdminUser(token: string, userId: string, reason: string): Promise<{ message: string }> {
+    const response = await this.client.post(
+      `/api/admin/users/${userId}/ban?reason=${encodeURIComponent(reason)}`,
+      null,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    return response.data
+  }
+
+  async unbanAdminUser(token: string, userId: string): Promise<{ message: string }> {
+    const response = await this.client.post(`/api/admin/users/${userId}/unban`, null, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return response.data
+  }
+
+  async adjustUserCredits(
+    token: string,
+    userId: string,
+    amount: number,
+    description: string,
+  ): Promise<{ message: string; new_balance: number }> {
+    const qs = new URLSearchParams({ amount: String(amount), description }).toString()
+    const response = await this.client.post(
+      `/api/admin/users/${userId}/credits/adjust?${qs}`,
+      null,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    return response.data
+  }
+
+  async listAuditLogs(token: string, limit = 50): Promise<AuditRow[]> {
+    const response = await this.client.get<AuditRow[]>(`/api/admin/audit/?limit=${limit}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
     return response.data
   }
 

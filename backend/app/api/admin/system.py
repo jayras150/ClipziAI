@@ -1,4 +1,4 @@
-"""
+﻿"""
 Admin system health + statistik nyata (bukan stub 0).
 
 Dipakai dashboard admin (Batch D) untuk kartu statistik & grafik "task per hari".
@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.admin.deps import get_current_admin
 from app.api.deps import get_db_session
-from app.models.admin_user import AdminUser
 from app.models.clip import Clip
 from app.models.task import Task, TaskStatus
 from app.models.user import User

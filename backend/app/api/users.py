@@ -1,4 +1,4 @@
-"""
+﻿"""
 User endpoints - Profile, credits, plan
 """
 from fastapi import APIRouter, Depends, HTTPException
@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.api.deps import get_db_session, get_current_user
+from app.api.admin.deps import is_admin_email
 from app.core.security import hash_password, verify_password
 from app.models.user import User
 from app.models.user_profile import UserProfile
@@ -44,6 +45,7 @@ async def get_profile(
         is_active=current_user.is_active,
         email_verified=current_user.email_verified,
         two_factor_enabled=current_user.two_factor_enabled,
+        is_admin=is_admin_email(current_user.email),
         created_at=profile.created_at,
     )
 
@@ -84,6 +86,7 @@ async def update_profile(
         is_active=current_user.is_active,
         email_verified=current_user.email_verified,
         two_factor_enabled=current_user.two_factor_enabled,
+        is_admin=is_admin_email(current_user.email),
         created_at=profile.created_at,
     )
 

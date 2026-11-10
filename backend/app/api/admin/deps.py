@@ -1,65 +1,49 @@
 """
-Dependency autentikasi admin.
+Akses admin berbasis email (tanpa akun admin terpisah).
 
-Admin punya tabel sendiri (`admin_users`), jadi token user biasa TIDAK boleh
-dipakai. Token admin dibuat oleh `create_access_token` dengan claim `role`,
-dan di sini claim itu wajib ada.
+User yang login normal otomatis jadi admin kalau emailnya terdaftar di
+environment `ADMIN_EMAILS` (dipisah koma). Semua endpoint admin memanggil
+dependency ini di server, jadi UI tidak bisa "dipaksa" membuka akses.
+
+Kenapa begini: menghindari login admin kedua, TOTP terpisah, subdomain, dan IP
+allowlist. Satu sistem login (user) + daftar email di env.
 """
 from typing import Optional
-from uuid import UUID
 
-from fastapi import Depends, HTTPException, Request, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import Depends, HTTPException, status
 
-from app.api.deps import get_db_session
-from app.core.security import decode_token
-from app.models.admin_user import AdminUser
+from app.api.deps import get_current_user
+from app.core.config import get_settings
+from app.models.user import User
 
-ADMIN_COOKIE = "clipzi_admin"
-admin_security = HTTPBearer(auto_error=False)
+settings = get_settings()
 
 
-def _extract_token(
-    request: Request, credentials: Optional[HTTPAuthorizationCredentials]
-) -> Optional[str]:
-    if credentials and credentials.credentials:
-        return credentials.credentials
-    return request.cookies.get(ADMIN_COOKIE)
+def admin_emails() -> set[str]:
+    """Daftar email admin dari env (`ADMIN_EMAILS=a@x.com,b@y.com`)."""
+    raw = getattr(settings, "ADMIN_EMAILS", "") or ""
+    return {item.strip().lower() for item in raw.split(",") if item.strip()}
 
 
-async def get_current_admin(
-    request: Request,
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(admin_security),
-    db: AsyncSession = Depends(get_db_session),
-) -> AdminUser:
-    token = _extract_token(request, credentials)
-    if not token:
+def is_admin_email(email: Optional[str]) -> bool:
+    if not email:
+        return False
+    return email.strip().lower() in admin_emails()
+
+
+async def get_current_admin(user: User = Depends(get_current_user)) -> User:
+    """Dependency admin: user login biasa + emailnya ada di allowlist."""
+    if not user.is_active:
+        raise HTTPException(status_code=401, detail="Akun tidak aktif")
+    if not is_admin_email(user.email):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Admin authentication required",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Akun ini tidak punya akses admin",
         )
-
-    payload = decode_token(token)
-    if not payload or payload.get("type") != "access" or not payload.get("role"):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired admin token",
-        )
-
-    admin_id = payload.get("sub")
-    try:
-        admin = await db.get(AdminUser, UUID(str(admin_id)))
-    except (ValueError, AttributeError, TypeError):
-        admin = None
-
-    if not admin or not admin.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Admin account not found or inactive",
-        )
-    return admin
+    return user
 
 
-__all__ = ["ADMIN_COOKIE", "get_current_admin"]
+# Alias supaya pemanggilan lama (`require_admin`) tetap jalan.
+require_admin = get_current_admin
+
+__all__ = ["admin_emails", "is_admin_email", "get_current_admin", "require_admin"]
