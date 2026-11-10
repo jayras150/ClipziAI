@@ -430,7 +430,7 @@ export default function ClipModal({
                   ) : (
                     <Youtube size={15} />
                   )}
-                  {uploadUrl ? "Re-upload to YouTube" : "Upload ke YouTube"}
+                  {uploadUrl ? "Re-upload to YouTube" : "Upload to YouTube"}
                 </button>
               ) : (
                 <button
@@ -439,6 +439,17 @@ export default function ClipModal({
                   onClick={onConnectYouTube}
                 >
                   <Youtube size={15} /> Connect YouTube first
+                </button>
+              )}
+
+              {youtubeConnected && (
+                <button
+                  type="button"
+                  className="ui-btn ui-btn-ghost clip-modal-upload"
+                  onClick={onConnectYouTube}
+                  disabled={busy}
+                >
+                  Reconnect YouTube (fixes expired access)
                 </button>
               )}
 
