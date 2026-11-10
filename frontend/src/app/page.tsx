@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import LandingAuth from "@/components/LandingAuth"
 import { useEffect, useRef, useState } from "react"
 
 const FEATURES = [
@@ -125,10 +126,7 @@ export default function LandingPage() {
           <Link href="/pricing" onClick={closeMenu}>Pricing</Link>
         </nav>
         <div className="nav-actions">
-          <Link className="btn btn-ghost" href="/login">Sign in</Link>
-          <Link className="btn btn-gold" href="/register">
-            Start free <span>→</span>
-          </Link>
+          <LandingAuth />
           <button
             className="menu-toggle"
             aria-label="Toggle menu"

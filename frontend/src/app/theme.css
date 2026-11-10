@@ -1542,3 +1542,60 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
   opacity: 0.6;
   pointer-events: none;
 }
+
+/* =====================================================================
+   Kartu pratinjau subtitle (frame video + caption sesuai preset)
+   ===================================================================== */
+.subtitle-preview {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  margin-top: 14px;
+}
+.subtitle-preview-frame {
+  position: relative;
+  width: 100%;
+  max-width: 220px;
+  aspect-ratio: 9 / 16;
+  border-radius: 14px;
+  border: 1px solid rgba(244, 199, 107, 0.28);
+  background-color: #0a0d13;
+  background-size: cover;
+  background-position: center;
+  overflow: hidden;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+}
+.subtitle-preview-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(4, 6, 10, 0.2), rgba(4, 6, 10, 0.5));
+  pointer-events: none;
+}
+.subtitle-preview-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(6, 8, 12, 0.72);
+  font-family: var(--ui-mono);
+  font-size: 9px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: #ffe6b0;
+}
+.subtitle-preview-caption {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  z-index: 2;
+  max-width: calc(100% - 20px);
+  margin: 0 auto;
+  text-align: center;
+}
+.subtitle-preview-caption.bottom { bottom: 14px; }
+.subtitle-preview-caption.center { top: 50%; transform: translateY(-50%); }
+.subtitle-preview-caption.top { top: 36px; }
