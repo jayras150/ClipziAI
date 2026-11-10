@@ -189,18 +189,22 @@ class MetadataGenerator:
             )
 
         last_error: Optional[Exception] = None
-        for attempt in range(2):
+        # 3 percobaan: model kadang membalas kosong (GLM/OpenRouter) dan sebagian
+        # provider menolak `response_format`, jadi percobaan terakhir tanpa itu.
+        for attempt in range(3):
+            request_kwargs: Dict[str, Any] = {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "temperature": (0.35, 0.6, 0.45)[attempt],
+                "max_tokens": 900,
+            }
+            if attempt < 2:
+                request_kwargs["response_format"] = {"type": "json_object"}
             try:
-                response = await self.client.chat.completions.create(  # type: ignore[union-attr]
-                    model=self.model,
-                    messages=[
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    temperature=0.35 if attempt == 0 else 0.6,
-                    max_tokens=900,
-                    response_format={"type": "json_object"},
-                )
+                response = await self.client.chat.completions.create(**request_kwargs)  # type: ignore[union-attr]
                 content = response.choices[0].message.content or ""
                 payload = _extract_json(content)
                 return self._validate(payload, transcript=text, variation=variation)
@@ -212,7 +216,8 @@ class MetadataGenerator:
                 logger.warning("Metadata AI gagal (percobaan %s): %s", attempt + 1, str(exc)[:300])
 
         raise MetadataGenerationError(
-            f"Gagal membuat metadata dari transkrip: {str(last_error)[:240]}"
+            "AI tidak berhasil membuat metadata dari transkrip (balasan kosong/terputus). "
+            f"Coba lagi. Detail: {str(last_error)[:200]}"
         )
 
     def _validate(
