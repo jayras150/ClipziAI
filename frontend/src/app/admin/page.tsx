@@ -291,7 +291,7 @@ export default function AdminPage() {
                     <small>{stats?.completed_tasks ?? 0} completed</small>
                   </div>
                   <div className="ui-stat">
-                    <span>Klip</span>
+                    <span>Clips</span>
                     <b>{stats?.total_clips ?? "—"}</b>
                     <small>total generated</small>
                   </div>
@@ -323,7 +323,7 @@ export default function AdminPage() {
                       <tr>
                         <th>User</th>
                         <th>Status</th>
-                        <th>Klip</th>
+                        <th>Clips</th>
                         <th>Time</th>
                       </tr>
                     </thead>
