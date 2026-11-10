@@ -1,0 +1,11 @@
+# =============================================================================
+# Whisper LOKAL untuk container API (CPU, int8) — dipakai saat provider
+# transkripsi berbasis API tidak bisa dipakai (mis. OpenRouter 402 "credits")
+# atau saat klip lama belum punya transkrip/ SRT.
+#
+# Berbeda dengan requirements-gpu-whisper.txt (worker Vast.ai), di sini TIDAK
+# ada lib CUDA sehingga tambahan image hanya ±250 MB. Model tidak dibaking ke
+# image; diunduh sekali saat runtime ke cache HF (HF_HOME) lalu dipakai ulang.
+# =============================================================================
+faster-whisper>=1.1.1
+av>=15

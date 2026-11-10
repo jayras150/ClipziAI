@@ -4,7 +4,8 @@ import asyncio
 import pytest
 from fastapi import HTTPException
 
-from app.api.clips import _parse_subtitle
+from app.api.clips import _friendly_transcription_error, _parse_subtitle
+from app.services.transcriber import _is_billing_error
 from app.services.metadata_generator import (
     MetadataGenerationError,
     MetadataGenerator,
@@ -140,4 +141,29 @@ def test_parse_subtitle_srt_membuang_timestamp_dan_duplikat():
 def test_parse_subtitle_vtt_membuang_header():
     vtt = "WEBVTT\n\n00:00.000 --> 00:02.000\nResep mie goreng pedas\n"
     assert _parse_subtitle(vtt) == "Resep mie goreng pedas"
+
+
+def test_is_billing_error_mendeteksi_kredit_habis():
+    assert _is_billing_error(
+        Exception("Error code: 402 - This request's maximum cost exceeds your available credits.")
+    )
+    assert _is_billing_error(Exception("insufficient_quota: check your plan and billing details"))
+    assert not _is_billing_error(Exception("Connection reset by peer"))
+
+
+def test_friendly_transcription_error_tidak_menampilkan_error_mentah():
+    raw = (
+        "Gagal membuat transkrip klip: Transkripsi gagal: provider 'openrouter' error "
+        "(402 credits) dan fallback lokal juga gagal (Transkripsi lokal butuh paket faster-whisper)"
+    )
+    message = _friendly_transcription_error(raw)
+    assert "Whisper lokal gagal dimuat" in message
+    assert "openrouter" not in message
+    assert len(message) <= 300
+
+
+def test_friendly_transcription_error_kredit_habis():
+    message = _friendly_transcription_error("Error code: 402 - credits habis")
+    assert "Kredit" in message
+
 

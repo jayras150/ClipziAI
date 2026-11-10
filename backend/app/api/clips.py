@@ -126,6 +126,26 @@ def _subtitle_text(url: str) -> str:
         return _parse_subtitle(response.text)
 
 
+_BILLING_WORDS = ("402", "credit", "kredit", "quota", "kuota", "billing", "payment")
+
+
+def _friendly_transcription_error(message: str) -> str:
+    """Ubah error teknis transkripsi menjadi pesan yang bisa ditindaklanjuti."""
+    low = (message or "").lower()
+    if "fallback lokal juga gagal" in low or "whisper lokal" in low:
+        return (
+            "Transkrip klip gagal dibuat: provider Whisper menolak (kredit habis) "
+            "dan Whisper lokal gagal dimuat. Coba lagi beberapa saat, atau proses "
+            "ulang video agar transkrip tersimpan."
+        )
+    if any(word in low for word in _BILLING_WORDS):
+        return (
+            "Kredit layanan Whisper habis. Metadata tidak dibuat agar tidak "
+            "mengarang isi video; top up kredit atau proses ulang video."
+        )
+    return (message or "Transkripsi gagal.")[:260]
+
+
 
 async def _store_transcript(clip: Clip, db: AsyncSession, text: str, source: str) -> None:
     """Simpan transkrip ringkas di JSONB `viral_factors` (tanpa kolom baru)."""
@@ -174,7 +194,7 @@ async def _ensure_transcript(clip: Clip, db: AsyncSession) -> Tuple[str, str]:
         logger.warning("Transkripsi ulang klip %s gagal: %s", clip.id, str(exc)[:300])
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Gagal membuat transkrip klip: {str(exc)[:220]}",
+            detail=_friendly_transcription_error(f"Gagal membuat transkrip klip: {str(exc)[:300]}"),
         )
 
     words = text.split()

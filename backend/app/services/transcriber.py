@@ -1,6 +1,7 @@
 """Audio transcription service for local or OpenAI-compatible providers."""
 import asyncio
 import logging
+import os
 import re
 import subprocess
 from typing import Dict, Any, List, Optional
@@ -12,6 +13,15 @@ from app.core.config import get_settings
 settings = get_settings()
 
 logger = logging.getLogger(__name__)
+
+# Penanda error kredit/kuota dari provider (OpenRouter 402, OpenAI insufficient_quota).
+_BILLING_HINTS = ("402", "credit", "insufficient_quota", "quota", "billing", "payment")
+
+
+def _is_billing_error(exc: BaseException) -> bool:
+    """True bila error berasal dari kredit/kuota provider (tidak akan pulih)."""
+    text = f"{type(exc).__name__} {exc}".lower()
+    return any(hint in text for hint in _BILLING_HINTS)
 
 
 class AudioTranscriber:
@@ -155,8 +165,21 @@ class AudioTranscriber:
                 self.model_size if self._is_local() else (settings.WHISPER_MODEL or "small"),
                 device="cpu",
                 compute_type="int8",
+                download_root=self._cache_dir(),
             )
         return self._model
+
+    @staticmethod
+    def _cache_dir() -> Optional[str]:
+        """Folder cache model (WHISPER_CACHE_DIR); None = default HuggingFace."""
+        cache_dir = settings.WHISPER_CACHE_DIR
+        if not cache_dir:
+            return None
+        try:
+            os.makedirs(cache_dir, exist_ok=True)
+        except OSError:
+            return None
+        return cache_dir
     
     async def transcribe(
         self,
@@ -277,6 +300,13 @@ class AudioTranscriber:
             except Exception as exc:
                 errors.append(f"percobaan {index + 1} ({extra or 'default'}): {exc}")
                 logger.warning("Transkripsi %s gagal: %s", self.provider, errors[-1])
+                # Error kredit/kuota tidak akan sembuh dengan format lain, dan
+                # setiap percobaan bisa makan puluhan detik. Langsung jatuh ke
+                # Whisper lokal agar pengguna tidak menunggu lama.
+                if _is_billing_error(exc):
+                    raise RuntimeError(
+                        f"Provider '{self.provider}' menolak karena kredit/kuota: {str(exc)[:200]}"
+                    ) from exc
                 continue
 
             candidate = (

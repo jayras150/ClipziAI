@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = None
     # Local faster-whisper fallback model (legacy-compatible)
     WHISPER_MODEL: str = "small"
+    # Folder cache model Whisper lokal. Kosong = default HuggingFace
+    # (~/.cache/huggingface). Di container API diisi /app/.cache/huggingface
+    # supaya model tidak diunduh ulang setiap container dibuat.
+    WHISPER_CACHE_DIR: Optional[str] = None
 
     # AI Provider (any OpenAI-compatible LLM provider)
     # Provider: openai | groq | openrouter | together | deepseek | mistral | azure | ollama | custom

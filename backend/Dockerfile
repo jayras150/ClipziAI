@@ -47,6 +47,20 @@ RUN pip install -r requirements-gpu-whisper.txt && \
     python -c "import faster_whisper, ctranslate2; print('ct2', ctranslate2.__version__, 'gpu libs siap')"
 
 # -----------------------------------------------------------------------------
+# Stage 2b: dependency Whisper CPU untuk TARGET `api`
+#
+# API ikut men-transkripsi klip lama (belum punya transkrip pipeline / SRT)
+# supaya metadata AI tetap bisa dibuat walau provider transkripsi berbasis API
+# kehabisan kredit. Model Whisper TIDAK dibaking; diunduh saat runtime ke
+# HF_HOME (volume cache) dan dipakai ulang pada request berikutnya.
+# -----------------------------------------------------------------------------
+FROM builder AS builder-api-whisper
+
+COPY requirements-whisper-cpu.txt ./
+RUN pip install -r requirements-whisper-cpu.txt && \
+    python -c "import faster_whisper; print('faster-whisper siap (cpu)')"
+
+# -----------------------------------------------------------------------------
 # Stage 2: runtime image (tanpa toolchain, ukuran lebih kecil)
 # -----------------------------------------------------------------------------
 FROM python:3.11-slim AS runtime
@@ -133,12 +147,15 @@ ENTRYPOINT ["/usr/local/bin/clipzi-entrypoint.sh"]
 # =============================================================================
 # TARGET "api" — untuk VPS (hosting backend + frontend).
 #
-# LEAN: tanpa lib CUDA, tanpa Whisper, tanpa cache model. Beban berat (render
-# ffmpeg & transkripsi) TIDAK dijalankan di sini — semuanya di worker Vast.ai.
+# Whisper CPU (faster-whisper int8) ikut dipasang karena API perlu men-transkripsi
+# klip lama yang belum punya transkrip/ SRT agar metadata AI tetap bisa dibuat
+# tanpa kredit provider. Tanpa lib CUDA dan tanpa model yang dibaking, jadi
+# tambahan image ±250 MB dan model diunduh ke volume cache saat pertama dipakai.
+# Render video berat tetap hanya di worker Vast.ai.
 # =============================================================================
 FROM runtime AS api
 
-COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder-api-whisper /opt/venv /opt/venv
 
 # =============================================================================
 # TARGET "worker" — untuk Vast.ai serverless (GPU).

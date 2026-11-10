@@ -21,8 +21,15 @@ services:
       - "8000"
     volumes:
       # cache cookies yt-dlp (token hasil rotasi ikut tersimpan antar restart)
+      # + cache model Whisper lokal fallback transkripsi (HF_HOME di bawah)
       - clipzi_cache:/app/.cache
-    mem_limit: 512m
+    environment:
+      # Model faster-whisper diunduh sekali ke volume ini (tidak ikut hilang saat
+      # container dibuat ulang). Ukuran model kecil (~150-500 MB).
+      HF_HOME: /app/.cache/huggingface
+      WHISPER_CACHE_DIR: /app/.cache/huggingface
+    # Whisper CPU butuh memori ekstra saat transkripsi klip lama; 512m tidak cukup.
+    mem_limit: 900m
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/health"]
