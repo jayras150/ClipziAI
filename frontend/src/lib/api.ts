@@ -577,6 +577,7 @@ export class ApiClient {
       description: string
       tags: string[]
       privacy_status: string
+      category_id?: string
       force?: boolean
     },
   ): Promise<YouTubeUploadResult> {
@@ -591,6 +592,7 @@ export class ApiClient {
           description: payload.description,
           tags: payload.tags,
           privacy_status: payload.privacy_status,
+          category_id: payload.category_id ?? "22",
         },
       },
       { headers: { Authorization: `Bearer ${token}` } },

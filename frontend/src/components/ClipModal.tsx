@@ -41,7 +41,8 @@ export default function ClipModal({
   const [description, setDescription] = useState("")
   const [tagsText, setTagsText] = useState("")
   const [transcript, setTranscript] = useState("")
-  const [privacy, setPrivacy] = useState("public")
+  const [privacy, setPrivacy] = useState("unlisted")
+  const [category, setCategory] = useState("22")
   const [generating, setGenerating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -218,6 +219,7 @@ export default function ClipModal({
         description,
         tags,
         privacy_status: privacy,
+        category_id: category,
         force: Boolean(uploadUrl),
       })
       if (!result.success) {
@@ -403,6 +405,28 @@ export default function ClipModal({
             </div>
 
             <div className="clip-modal-youtube">
+              <label className="clip-modal-label" htmlFor="clip-modal-category">
+                YouTube category
+              </label>
+              <select
+                id="clip-modal-category"
+                className="ui-input"
+                value={category}
+                onChange={(event) => setCategory(event.target.value)}
+                disabled={busy}
+              >
+                <option value="22">People &amp; Blogs</option>
+                <option value="24">Entertainment</option>
+                <option value="23">Comedy</option>
+                <option value="27">Education</option>
+                <option value="28">Science &amp; Technology</option>
+                <option value="26">Howto &amp; Style</option>
+                <option value="20">Gaming</option>
+                <option value="10">Music</option>
+                <option value="17">Sports</option>
+                <option value="25">News &amp; Politics</option>
+              </select>
+
               <label className="clip-modal-label" htmlFor="clip-modal-privacy">
                 YouTube privacy
               </label>
@@ -413,8 +437,8 @@ export default function ClipModal({
                 onChange={(event) => setPrivacy(event.target.value)}
                 disabled={busy}
               >
-                <option value="public">Public</option>
                 <option value="unlisted">Unlisted (link only)</option>
+                <option value="public">Public</option>
                 <option value="private">Private</option>
               </select>
 

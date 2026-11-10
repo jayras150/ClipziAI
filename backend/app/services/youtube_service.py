@@ -2,6 +2,7 @@
 YouTube Service - OAuth2, Data API v3 upload
 """
 import asyncio
+import logging
 import os
 import time
 from datetime import datetime, timedelta, timezone
@@ -12,8 +13,10 @@ import requests
 from fastapi import HTTPException, status
 
 from app.core.config import get_settings
+from app.services.youtube_metadata import build_snippet, normalize_privacy
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 # Cache hasil preflight OAuth (redirect URI terdaftar atau tidak) selama 5 menit.
 PREFLIGHT_TTL_SECONDS = 300
@@ -261,6 +264,21 @@ class YouTubeService:
         source_url: Optional[str],
     ) -> Dict[str, Any]:
         """Bagian sinkron dari resumable upload (dijalankan di thread)."""
+        snippet = build_snippet(
+            title=title,
+            description=description,
+            tags=tags or [],
+            category_id=category_id,
+        )
+        privacy = normalize_privacy(privacy)
+        logger.info(
+            "YouTube upload: title=%r tags=%s category=%s privacy=%s",
+            snippet["title"][:60],
+            len(snippet["tags"]),
+            snippet["categoryId"],
+            privacy,
+        )
+
         init_response = requests.post(
             "https://www.googleapis.com/upload/youtube/v3/videos",
             params={"uploadType": "resumable", "part": "snippet,status"},
@@ -270,12 +288,7 @@ class YouTubeService:
                 "X-Upload-Content-Type": "video/mp4",
             },
             json={
-                "snippet": {
-                    "title": (title or "Shorts")[:100],
-                    "description": (description or "")[:4900],
-                    "tags": [str(tag)[:60] for tag in (tags or [])][:15],
-                    "categoryId": str(category_id or "24"),
-                },
+                "snippet": snippet,
                 "status": {
                     "privacyStatus": privacy,
                     "selfDeclaredMadeForKids": bool(made_for_kids),
@@ -285,6 +298,14 @@ class YouTubeService:
         )
         if not init_response.ok:
             reason = self._google_error(init_response)
+            logger.warning(
+                "YouTube rejected upload session (status=%s): %s | title=%r tags=%s category=%s",
+                init_response.status_code,
+                reason,
+                snippet["title"][:80],
+                snippet["tags"],
+                snippet["categoryId"],
+            )
             if init_response.status_code in (401, 403):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,

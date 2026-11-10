@@ -1,6 +1,10 @@
 ﻿"""
 YouTube endpoints - OAuth, upload, status
 """
+import asyncio
+import logging
+
+import requests
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
@@ -36,6 +40,43 @@ from app.services.viral import score_clip
 router = APIRouter()
 settings = get_settings()
 youtube_service = YouTubeService()
+logger = logging.getLogger(__name__)
+
+
+def _check_video_source(url: str) -> None:
+    """
+    Pastikan URL klip benar-benar berkas video sebelum dikirim ke YouTube.
+
+    Tanpa ini, kalau URL mengembalikan HTML/error, YouTube menjawab 400 dengan
+    pesan yang membingungkan ("invalid video"). Lebih baik gagal cepat dengan
+    pesan yang jelas.
+    """
+    try:
+        response = requests.head(url, allow_redirects=True, timeout=20)
+        if response.status_code != 200:
+            response.close()
+            response = requests.get(
+                url, stream=True, timeout=20, headers={"Range": "bytes=0-2047"}
+            )
+        status_code = response.status_code
+        content_type = (response.headers.get("Content-Type") or "").lower()
+        content_length = int(response.headers.get("Content-Length") or 0)
+        response.close()
+    except requests.RequestException as exc:
+        raise HTTPException(
+            status_code=502, detail=f"Could not reach the clip file: {str(exc)[:200]}"
+        ) from exc
+
+    if status_code not in (200, 206):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Clip file is not available (HTTP {status_code}). Re-render the clip and try again.",
+        )
+    if not content_type.startswith("video/") or (content_length and content_length < 10_000):
+        raise HTTPException(
+            status_code=400,
+            detail="Clip file is not a valid video (wrong content type or too small).",
+        )
 
 
 def _create_oauth_state(user_id: UUID) -> str:
@@ -351,24 +392,28 @@ async def upload_to_youtube(
         title = clip.ai_suggested_title
         description = clip.ai_suggested_description or ""
         tags = list(clip.ai_suggested_tags or [])
-        category_id = "24"
+        category_id = "22"
         made_for_kids = False
-        privacy = upload_data.privacy_status or "public"
+        privacy = upload_data.privacy_status or "unlisted"
     elif metadata is not None:
         title = metadata.title
         description = metadata.description
         tags = list(metadata.tags or [])
-        category_id = metadata.category_id or "24"
+        category_id = metadata.category_id or "22"
         made_for_kids = bool(metadata.made_for_kids)
-        privacy = metadata.privacy_status or upload_data.privacy_status or "public"
+        privacy = metadata.privacy_status or upload_data.privacy_status or "unlisted"
     else:
         # Tanpa AI dan tanpa metadata eksplisit: pakai yang sudah tersimpan.
         title = clip.ai_suggested_title or clip.title or "Shorts"
         description = clip.ai_suggested_description or ""
         tags = list(clip.ai_suggested_tags or [])
-        category_id = "24"
+        category_id = "22"
         made_for_kids = False
-        privacy = upload_data.privacy_status or "public"
+        privacy = upload_data.privacy_status or "unlisted"
+
+    if not clip.download_url:
+        raise HTTPException(status_code=400, detail="This clip has no video file to upload.")
+    await asyncio.to_thread(_check_video_source, clip.download_url)
 
     try:
         uploaded = await youtube_service.upload_video(
@@ -389,6 +434,13 @@ async def upload_to_youtube(
     clip.youtube_uploaded = True
     clip.youtube_video_id = uploaded["video_id"]
     await db.commit()
+    logger.info(
+        "YouTube upload OK: clip=%s video=%s category=%s privacy=%s",
+        clip.id,
+        uploaded["video_id"],
+        category_id,
+        privacy,
+    )
 
     return YouTubeUploadResponse(
         success=True,

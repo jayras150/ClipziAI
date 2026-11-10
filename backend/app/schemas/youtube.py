@@ -10,7 +10,7 @@ class YouTubeMetadata(BaseModel):
     description: str
     tags: List[str] = []
     category_id: str = "22"
-    privacy_status: str = "public"
+    privacy_status: str = "unlisted"
     made_for_kids: bool = False
 
 
