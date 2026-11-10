@@ -1,4 +1,4 @@
-/* =============================================================================
+﻿/* =============================================================================
    Tema aplikasi Clipzy AI (dipakai halaman login, register, dashboard, pricing).
    Token & kelas di-prefix `ui-` agar tidak bentrok dengan utility Tailwind atau
    dengan `.landing` (halaman utama).
@@ -856,7 +856,7 @@ select.ui-input option:hover {
 }
 
 /* =============================================================================
-   Dashboard v3 — susunan baru: kartu upload di ATAS → form paste link → opsi.
+   Dashboard v3 â€” susunan baru: kartu upload di ATAS â†’ form paste link â†’ opsi.
    Semua kartu memakai sudut diagonal dengan garis emas, tetapi warna aksen
    dibedakan per blok (lihat var --opt-line/--opt-tint di atas).
    ============================================================================= */
@@ -1033,141 +1033,6 @@ select.ui-input option:hover {
   white-space: nowrap;
 }
 
-/* ---------- Skor viral di kartu klip ---------- */
-.ui-viral-badge {
-  position: absolute;
-  right: 10px;
-  top: 10px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.2px;
-  padding: 3px 8px;
-  border-radius: 9px 2px 9px 2px;
-  pointer-events: auto;
-  border: 1px solid rgba(244, 199, 107, 0.45);
-  background: rgba(9, 10, 14, 0.72);
-  color: #f4d99a;
-  backdrop-filter: blur(4px);
-}
-.ui-viral-badge.excellent {
-  border-color: rgba(131, 215, 161, 0.65);
-  color: #a8e6bd;
-}
-.ui-viral-badge.good {
-  border-color: rgba(244, 199, 107, 0.6);
-  color: var(--ui-gold-2);
-}
-.ui-viral-badge.fair {
-  border-color: rgba(255, 178, 120, 0.55);
-  color: #ffc79a;
-}
-.ui-viral-badge.low {
-  border-color: rgba(240, 138, 122, 0.55);
-  color: #f0a3a3;
-}
-
-.ui-score {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 9px;
-  border-radius: 12px 3px 12px 3px;
-  border: 1px solid rgba(244, 199, 107, 0.25);
-  background: linear-gradient(155deg, rgba(244, 199, 107, 0.09), rgba(255, 255, 255, 0.015));
-  cursor: help;
-}
-.ui-score-label {
-  font-size: 9.5px;
-  font-weight: 800;
-  letter-spacing: 0.8px;
-  text-transform: uppercase;
-  color: #8b8f9d;
-}
-.ui-score-num {
-  font-size: 15px;
-  font-weight: 800;
-  line-height: 1;
-  color: #f4d99a;
-}
-.ui-score-num small {
-  font-size: 9px;
-  font-weight: 600;
-  color: #7f8492;
-  margin-left: 1px;
-}
-.ui-score-track {
-  flex: 1 1 40px;
-  height: 6px;
-  min-width: 36px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.1);
-  overflow: hidden;
-}
-.ui-score-track i {
-  display: block;
-  height: 100%;
-  border-radius: 4px;
-  background: linear-gradient(90deg, #e8b54f, #ffe3a0);
-  transition: width 0.3s;
-}
-.ui-score-tag {
-  font-size: 10px;
-  font-weight: 700;
-  color: #cfd1d8;
-  white-space: nowrap;
-}
-.ui-score-btn {
-  flex: 0 0 auto;
-  display: inline-grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border-radius: 7px 2px 7px 2px;
-  border: 1px solid rgba(244, 199, 107, 0.3);
-  background: rgba(244, 199, 107, 0.1);
-  color: var(--ui-gold-2);
-  cursor: pointer;
-}
-.ui-score-btn:hover {
-  border-color: rgba(244, 199, 107, 0.65);
-  background: rgba(244, 199, 107, 0.2);
-}
-.ui-score-btn:disabled {
-  opacity: 0.5;
-  cursor: progress;
-}
-.ui-score.excellent {
-  border-color: rgba(131, 215, 161, 0.4);
-  background: linear-gradient(155deg, rgba(131, 215, 161, 0.1), rgba(255, 255, 255, 0.015));
-}
-.ui-score.excellent .ui-score-num {
-  color: #a8e6bd;
-}
-.ui-score.excellent .ui-score-track i {
-  background: linear-gradient(90deg, #6cc792, #a8e6bd);
-}
-.ui-score.fair {
-  border-color: rgba(255, 178, 120, 0.4);
-  background: linear-gradient(155deg, rgba(255, 178, 120, 0.09), rgba(255, 255, 255, 0.015));
-}
-.ui-score.fair .ui-score-num {
-  color: #ffc79a;
-}
-.ui-score.low {
-  border-color: rgba(240, 138, 122, 0.4);
-  background: linear-gradient(155deg, rgba(240, 138, 122, 0.09), rgba(255, 255, 255, 0.015));
-}
-.ui-score.low .ui-score-num {
-  color: #f0a3a3;
-}
-.ui-score.low .ui-score-track i {
-  background: linear-gradient(90deg, #d9645a, #f0a3a3);
-}
-
 /* --- Navigasi: lebih banyak tautan, tetap rapi di layar sempit --- */
 .ui-nav-links {
   flex-wrap: wrap;
@@ -1215,4 +1080,248 @@ select.ui-input option:hover {
     flex: 1;
   }
 }
+
+
+/* =============================================================================
+   BATCH A â€” Kartu klip v3: 3 per baris, bubble viral di pojok kanan atas.
+   Lebar kartu dibatasi ~343px supaya tidak jadi raksasa di monitor lebar.
+   ============================================================================= */
+.clip-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-width: 1060px;
+  margin-top: 14px;
+}
+@media (max-width: 900px) {
+  .clip-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 620px) {
+  .clip-grid { grid-template-columns: 1fr; max-width: 360px; }
+}
+
+.clip-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 22px;
+  background: linear-gradient(160deg, #151821, #0d0f15);
+  border: 1px solid rgba(244, 199, 107, 0.18);
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.28s, box-shadow 0.28s;
+}
+.clip-card:hover {
+  transform: translateY(-5px);
+  border-color: rgba(244, 199, 107, 0.45);
+  box-shadow: 0 26px 50px rgba(0, 0, 0, 0.5);
+}
+.clip-media {
+  position: relative;
+  aspect-ratio: 9 / 16;
+  overflow: hidden;
+  background: #0b0d12;
+}
+.clip-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.5s ease;
+}
+.clip-card:hover .clip-video { transform: scale(1.04); }
+.clip-shade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(7, 8, 11, 0.72) 0%,
+    rgba(7, 8, 11, 0) 34%,
+    rgba(7, 8, 11, 0.15) 62%,
+    rgba(7, 8, 11, 0.92) 100%
+  );
+}
+.clip-index {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #e9d7ab;
+  background: rgba(9, 10, 14, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 3px 8px;
+  border-radius: 9px 2px 9px 2px;
+  backdrop-filter: blur(6px);
+}
+
+/* --- Viral Index bubble (conic ring) --- */
+.viral-bubble {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px 5px 6px;
+  border-radius: 50px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(11, 13, 20, 0.72);
+  backdrop-filter: blur(14px) saturate(160%);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.42);
+  cursor: pointer;
+  font-family: inherit;
+  --ring: #f4c76b;
+  transition: 0.2s;
+}
+.viral-bubble:hover { border-color: rgba(255, 255, 255, 0.32); transform: translateY(-1px); }
+.viral-bubble:disabled { cursor: progress; opacity: 0.7; }
+.viral-ring {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: conic-gradient(var(--ring) calc(var(--viral, 0) * 1%), rgba(255, 255, 255, 0.1) 0);
+}
+.viral-ring::before {
+  content: "";
+  position: absolute;
+  inset: 2.5px;
+  border-radius: 50%;
+  background: #0d0f17;
+}
+.viral-num {
+  position: relative;
+  font: 800 11px/1 var(--font-space), "Space Grotesk", sans-serif;
+  color: #fff;
+  letter-spacing: -0.3px;
+}
+.viral-num sup { font-size: 7px; color: #cfd1d8; margin-left: 1px; }
+.viral-meta { display: flex; flex-direction: column; line-height: 1.15; text-align: left; }
+.viral-cap {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--ring);
+}
+.viral-state { font-size: 10.5px; font-weight: 700; color: #fff; white-space: nowrap; }
+.viral-bubble.excellent { --ring: #10f49c; }
+.viral-bubble.good { --ring: #f4c76b; }
+.viral-bubble.fair { --ring: #ffb178; }
+.viral-bubble.low { --ring: #f08a7a; }
+
+
+.clip-hook {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  margin: 0;
+  display: flex;
+  justify-content: center;
+}
+.clip-hook > span {
+  font: 800 12px/1.3 var(--font-space), "Space Grotesk", sans-serif;
+  text-transform: uppercase;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 5px 10px;
+  border-radius: 10px;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.42);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-align: center;
+}
+.clip-body { padding: 10px 12px 12px; display: grid; gap: 8px; }
+.clip-meta { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #93979f; }
+.clip-meta b { font-size: 8px; color: #5f6470; }
+.clip-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+.clip-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  color: #b9bcc7;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.clip-pick input { accent-color: #f4c76b; width: 13px; height: 13px; margin: 0; }
+.clip-split { display: flex; align-items: center; gap: 4px; flex: 1 1 auto; min-width: 0; }
+.clip-split-input {
+  width: 100%;
+  min-width: 44px;
+  height: 26px;
+  padding: 4px 6px;
+  font-size: 11px;
+  border-radius: 8px 2px 8px 2px;
+  background: rgba(9, 10, 14, 0.6);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #dcdde4;
+}
+.clip-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 8px 2px 8px 2px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: #dcdde4;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  transition: 0.18s;
+}
+.clip-icon-btn:hover {
+  border-color: rgba(244, 199, 107, 0.55);
+  color: #ffe3a0;
+  background: rgba(244, 199, 107, 0.1);
+}
+.clip-icon-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.clip-icon-btn.gold {
+  border-color: rgba(244, 199, 107, 0.45);
+  background: rgba(244, 199, 107, 0.14);
+  color: #ffe3a0;
+}
+.clip-files { display: flex; gap: 5px; flex: 0 0 auto; }
+
+/* --- Grid project (task) 3 per baris --- */
+.task-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-width: 1100px;
+}
+@media (max-width: 1000px) {
+  .task-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 620px) {
+  .task-grid { grid-template-columns: 1fr; }
+}
+
+/* --- Skala lebih rapat (permintaan: layout terlalu besar) --- */
+.ui-container-wide { width: min(1440px, calc(100% - 40px)); }
+.ui-card { padding: 18px; border-radius: 22px 6px 22px 6px; }
+.ui-title { font-size: clamp(21px, 2.2vw, 27px); letter-spacing: -0.8px; }
+.ui-subtitle { font-size: 16.5px; }
+.ui-opt-grid { gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.ui-opt { padding: 10px 12px 11px; }
+.ui-upload-hero .ui-dropzone { padding: 26px 18px; }
+.ui-drop-icon { width: 46px; height: 46px; margin-bottom: 10px; }
+.ui-drop-title { font-size: 14.5px; }
 

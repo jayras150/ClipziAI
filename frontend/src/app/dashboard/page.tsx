@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
@@ -22,6 +22,8 @@ import {
   ClipboardPaste,
   Eraser,
   Zap,
+  RotateCcw,
+  Droplets,
 } from "lucide-react"
 
 import { api, ClipData, MusicTrackData, TaskData } from "@/lib/api"
@@ -36,7 +38,7 @@ const ACTIVE_STATUSES = ["queued", "processing"]
 /**
  * Opsi gaya subtitle yang dikirim sebagai `editing_options.caption_style`.
  * Nilainya dipetakan ke preset CAPTION_STYLES di backend
- * (`app/services/processor.py`) — warna, garis tepi, kotak latar, dan posisi.
+ * (`app/services/processor.py`) â€” warna, garis tepi, kotak latar, dan posisi.
  */
 const SUBTITLE_STYLE_OPTIONS = [
   { value: "", label: "Bawaan" },
@@ -132,7 +134,7 @@ function viralBand(score: number): "excellent" | "good" | "fair" | "low" {
 function viralTooltip(factors: Record<string, any> | null | undefined): string {
   if (!factors) return "Skor viral belum dihitung"
   const pct = (key: string) =>
-    typeof factors[key] === "number" ? `${Math.round(factors[key] * 100)}%` : "—"
+    typeof factors[key] === "number" ? `${Math.round(factors[key] * 100)}%` : "â€”"
   const lines = [
     `Hook: ${pct("hook")}`,
     `Durasi pas: ${pct("duration")}`,
@@ -141,7 +143,7 @@ function viralTooltip(factors: Record<string, any> | null | undefined): string {
     `Kejelasan: ${pct("clarity")}`,
   ]
   if (factors.reasoning) lines.push("", String(factors.reasoning))
-  if (factors.estimated) lines.push("", "(estimasi — klip lama tanpa transkrip tersimpan)")
+  if (factors.estimated) lines.push("", "(estimasi â€” klip lama tanpa transkrip tersimpan)")
   return lines.join("\n")
 }
 
@@ -151,6 +153,8 @@ export default function DashboardPage() {
   const [youtube, setYoutube] = useState<{ connected: boolean; channel_name?: string }>({ connected: false })
   const [youtubeLoading, setYoutubeLoading] = useState(false)
   const [youtubeMessage, setYoutubeMessage] = useState("")
+  // Plan user aktif — dipakai untuk chip "Watermark Clipzy aktif" (plan free).
+  const [planType, setPlanType] = useState("")
   // Konfirmasi wajib sebelum memutus koneksi YouTube (menghapus token tersimpan).
   const [confirmDisconnect, setConfirmDisconnect] = useState(false)
 
@@ -192,7 +196,7 @@ export default function DashboardPage() {
   const [composeTransition, setComposeTransition] = useState("fade")
   const [splitAt, setSplitAt] = useState<Record<string, string>>({})
   const [editingBusy, setEditingBusy] = useState(false)
-  // Skor viral: tombol ↻ per klip sedang menghitung ulang?
+  // Skor viral: tombol â†» per klip sedang menghitung ulang?
   const [scoreBusy, setScoreBusy] = useState<Record<string, boolean>>({})
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -237,6 +241,11 @@ export default function DashboardPage() {
       .getYouTubeStatus(stored)
       .then(setYoutube)
       .catch(() => setYoutubeMessage("Could not load your YouTube status."))
+
+    api
+      .getProfile(stored)
+      .then((profile) => setPlanType(profile.plan_type))
+      .catch(() => setPlanType(""))
 
     // Library musik latar (track disimpan di R2).
     api
@@ -295,7 +304,7 @@ export default function DashboardPage() {
       }
 
       try {
-        setYoutubeMessage("Opening Google consent…")
+        setYoutubeMessage("Opening Google consentâ€¦")
         const diagnostics = await api.getYouTubeDiagnostics(stored)
         const accessToken = await requestYouTubeAccessToken(
           diagnostics.gis_client_id || diagnostics.client_id || "",
@@ -389,7 +398,7 @@ export default function DashboardPage() {
       if (task.status === "error") {
         setTaskError(task.error_message || "The task was created but could not be sent to a GPU worker.")
       } else {
-        setNotice("Task created — Clipzy AI is processing your video.")
+        setNotice("Task created â€” Clipzy AI is processing your video.")
       }
       await refreshTasks(stored)
       setActiveTab("projects")
@@ -410,7 +419,7 @@ export default function DashboardPage() {
       if (!navigator.clipboard?.readText) throw new Error("Clipboard API tidak tersedia")
       const text = (await navigator.clipboard.readText()).trim()
       if (!text) {
-        setNotice("Clipboard kosong — salin link video dulu.")
+        setNotice("Clipboard kosong â€” salin link video dulu.")
         return
       }
       setUrlValue(text)
@@ -426,6 +435,31 @@ export default function DashboardPage() {
     setTaskError("")
     setNotice("")
     document.getElementById("video-url")?.focus()
+  }
+
+  /** Reset semua opsi editing (URL tidak ikut dihapus — itu fungsi Clear). */
+  const resetEditingOptions = () => {
+    setStartTimeValue("")
+    setEndTimeValue("")
+    setAspectRatioValue("9:16")
+    setCaptionTextValue("")
+    setCaptionStyle("")
+    setSpeedValue("1.0")
+    setFilterPreset("none")
+    setBlurFill(false)
+    setTrimSilence(false)
+    setCleanAudio(false)
+    setWatermarkUrl("")
+    setWatermarkPosition("bottom-right")
+    setIntroUrl("")
+    setOutroUrl("")
+    setAutoZoom("off")
+    setZoomLevel("1.3")
+    setMusicUrl("")
+    setMusicVolume("0.22")
+    setMusicDucking(true)
+    setTaskError("")
+    setNotice("Opsi editing dikembalikan ke default.")
   }
 
   /** Kembali ke halaman sebelumnya; kalau tidak ada riwayat, ke landing. */
@@ -459,7 +493,7 @@ export default function DashboardPage() {
     )
   }
 
-  /** Hitung ulang skor viral satu klip (tombol ↻ di kartu klip). */
+  /** Hitung ulang skor viral satu klip (tombol â†» di kartu klip). */
   const recalcViralScore = async (clip: ClipData) => {
     if (!openTaskId) return
     setScoreBusy((current) => ({ ...current, [clip.id]: true }))
@@ -534,19 +568,32 @@ export default function DashboardPage() {
     if (!file) return
     setTaskError("")
     setNotice(
-      `"${file.name}" selected. Direct file upload is not available yet — paste a YouTube, TikTok or Instagram link above to start processing.`,
+      `"${file.name}" selected. Direct file upload is not available yet â€” paste a YouTube, TikTok or Instagram link above to start processing.`,
     )
   }
 
   const openTaskData = tasks.find((task) => task.id === openTaskId) || null
   // Contoh teks pratinjau: pakai caption yang diketik user agar terasa nyata.
   const subtitlePreviewText = (captionTextValue.trim() || "Contoh caption").slice(0, 24)
+  // Estimasi kasar untuk user; kalau trim diisi, hitung dari durasi potongan.
+  const trimSeconds = (() => {
+    const start = parseFloat(startTimeValue)
+    const end = parseFloat(endTimeValue)
+    if (!Number.isNaN(start) && !Number.isNaN(end) && end > start) return end - start
+    return null
+  })()
+  const renderEstimate = trimSeconds
+    ? `≈ ${trimSeconds.toFixed(1)}s per klip · estimasi render ±${Math.max(
+        2,
+        Math.round((trimSeconds * 3) / 60),
+      )} menit`
+    : "3 klip · estimasi render ±3–5 menit · 1 credit/klip"
 
   return (
     <div className="ui-shell">
       <header className="ui-container ui-container-wide ui-nav">
         <Link className="ui-brand" href="/">
-          <span className="ui-brand-mark">▶</span>
+          <span className="ui-brand-mark">â–¶</span>
           <span>
             clipzy<em>AI</em>
           </span>
@@ -595,7 +642,7 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <main className="ui-container ui-container-wide" style={{ padding: "38px 0 70px" }}>
+      <main className="ui-container ui-container-wide" style={{ padding: "24px 0 52px" }}>
         <div
           style={{
             display: "flex",
@@ -653,7 +700,7 @@ export default function DashboardPage() {
 
         {activeTab === "upload" ? (
           <div className="ui-stack">
-            {/* 1) Kartu upload — selalu paling atas. */}
+            {/* 1) Kartu upload â€” selalu paling atas. */}
             <section className="ui-card ui-upload-hero">
               <div
                 className="ui-dropzone"
@@ -669,7 +716,7 @@ export default function DashboardPage() {
                 </div>
                 <p className="ui-drop-title">Drop your video here</p>
                 <p className="ui-hint" style={{ marginTop: 6 }}>
-                  Click to browse or drag a file — you can also paste a link below.
+                  Click to browse or drag a file â€” you can also paste a link below.
                 </p>
                 <div className="ui-drop-formats">
                   <span>MP4</span>
@@ -686,7 +733,7 @@ export default function DashboardPage() {
                 onChange={(event) => onPickFile(event.target.files?.[0] ?? null)}
               />
               <p className="ui-hint" style={{ textAlign: "center", marginTop: 10 }}>
-                Direct file upload is still rolling out — paste a link below for now.
+                Direct file upload is still rolling out â€” paste a link below for now.
               </p>
             </section>
 
@@ -735,7 +782,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Opsi editing manual (Fase 1) — setiap kontrol jadi kartu sendiri. */}
+              {/* Opsi editing manual (Fase 1) â€” setiap kontrol jadi kartu sendiri. */}
               <div className="ui-opt-grid">
                 <div className="ui-opt">
                   <label className="ui-opt-label" htmlFor="start-time">Mulai detik</label>
@@ -815,16 +862,16 @@ export default function DashboardPage() {
                     onChange={(e) => setSpeedValue(e.target.value)}
                     className="ui-input"
                   >
-                    <option value="0.25">0.25×</option>
-                    <option value="0.5">0.5×</option>
-                    <option value="1">1×</option>
-                    <option value="1.5">1.5×</option>
-                    <option value="2">2×</option>
-                    <option value="4">4×</option>
+                    <option value="0.25">0.25Ã—</option>
+                    <option value="0.5">0.5Ã—</option>
+                    <option value="1">1Ã—</option>
+                    <option value="1.5">1.5Ã—</option>
+                    <option value="2">2Ã—</option>
+                    <option value="4">4Ã—</option>
                   </select>
                 </div>
               </div>
-                {/* Opsi lanjutan (Fase 2) — kartu per kontrol. */}
+                {/* Opsi lanjutan (Fase 2) â€” kartu per kontrol. */}
                 <details className="ui-opt-details" style={{ marginTop: 14 }}>
                   <summary>Opsi editing lanjutan</summary>
                   <div className="ui-opt-panel">
@@ -893,10 +940,10 @@ export default function DashboardPage() {
                             onChange={(e) => setZoomLevel(e.target.value)}
                             className="ui-input"
                           >
-                            <option value="1">1.0×</option>
-                            <option value="1.3">1.3×</option>
-                            <option value="1.6">1.6×</option>
-                            <option value="2">2.0×</option>
+                            <option value="1">1.0Ã—</option>
+                            <option value="1.3">1.3Ã—</option>
+                            <option value="1.6">1.6Ã—</option>
+                            <option value="2">2.0Ã—</option>
                           </select>
                         </div>
                       )}
@@ -912,7 +959,7 @@ export default function DashboardPage() {
                           {musicLibrary.map((track) => (
                             <option key={track.id} value={track.url}>
                               {track.name}
-                              {track.mood ? ` · ${track.mood}` : ""}
+                              {track.mood ? ` Â· ${track.mood}` : ""}
                             </option>
                           ))}
                         </select>
@@ -988,10 +1035,28 @@ export default function DashboardPage() {
                 <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                   <button type="submit" className="ui-btn ui-btn-gold" disabled={submitting}>
                     {submitting ? <LoaderCircle size={15} className="animate-spin" /> : <Play size={15} />}
-                    {submitting ? "Starting…" : "Process"}
+                    {submitting ? "Startingâ€¦" : "Process"}
                   </button>
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn-ghost"
+                    onClick={resetEditingOptions}
+                    disabled={submitting}
+                    title="Kembalikan semua opsi editing ke default"
+                  >
+                    <RotateCcw size={14} /> Reset opsi
+                  </button>
+                  {planType === "free" && (
+                    <span
+                      className="ui-badge ui-badge-gold"
+                      style={{ gap: 5 }}
+                      title="Semua klip plan free otomatis diberi watermark Clipzy. Upgrade untuk menghapus."
+                    >
+                      <Droplets size={12} /> Watermark Clipzy aktif
+                    </span>
+                  )}
                   <span className="ui-hint" style={{ margin: 0 }}>
-                    YouTube, TikTok, Instagram, Facebook and X links are supported. 1 credit per clip.
+                    {renderEstimate}
                   </span>
                 </div>
             </form>
@@ -1003,7 +1068,7 @@ export default function DashboardPage() {
                 Projects
               </h2>
               <button className="ui-btn ui-btn-ghost" onClick={() => refreshTasks(token)} disabled={tasksLoading}>
-                <RefreshCw size={14} /> {tasksLoading ? "Loading…" : "Refresh"}
+                <RefreshCw size={14} /> {tasksLoading ? "Loadingâ€¦" : "Refresh"}
               </button>
             </div>
 
@@ -1021,7 +1086,7 @@ export default function DashboardPage() {
                 </button>
               </div>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
+              <div className="task-grid">
                 {tasks.map((task) => (
                   <article key={task.id} className="ui-card ui-card-hover">
                     <div
@@ -1070,7 +1135,7 @@ export default function DashboardPage() {
                             {sourceHost(task.source_url)}
                           </h3>
                           <span className="ui-hint">
-                            {task.source_type} · {formatDate(task.created_at)}
+                            {task.source_type} Â· {formatDate(task.created_at)}
                           </span>
                         </div>
                       </div>
@@ -1136,7 +1201,7 @@ export default function DashboardPage() {
                   }}
                 >
                   <h3 className="ui-subtitle" style={{ margin: 0, fontSize: 17 }}>
-                    Clips · {sourceHost(openTaskData.source_url)}
+                    Clips Â· {sourceHost(openTaskData.source_url)}
                   </h3>
                   <span className={statusBadgeClass(openTaskData.status)} style={statusBadgeStyle(openTaskData.status)}>
                     {STATUS_LABEL[openTaskData.status] ?? openTaskData.status}
@@ -1145,13 +1210,13 @@ export default function DashboardPage() {
 
                 {clipsLoading ? (
                   <p className="ui-hint" style={{ marginTop: 14 }}>
-                    Loading clips…
+                    Loading clipsâ€¦
                   </p>
                 ) : clips.length === 0 ? (
                   <p className="ui-hint" style={{ marginTop: 14 }}>
                     {openTaskData.status === "error"
                       ? openTaskData.error_message || "This task failed before producing clips."
-                      : "No clips yet — this panel refreshes automatically while the task runs."}
+                      : "No clips yet â€” this panel refreshes automatically while the task runs."}
                   </p>
                 ) : (
                   <>
@@ -1200,196 +1265,165 @@ export default function DashboardPage() {
                         </button>
                       </div>
                     )}
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
-                        gap: 14,
-                        marginTop: 16,
-                      }}
-                    >
-                    {clips.map((clip) => (
-                      <div
-                        key={clip.id}
-                        style={{
-                          border: "1px solid rgba(255,255,255,.08)",
-                          borderRadius: 14,
-                          overflow: "hidden",
-                          background: "#12141a",
-                        }}
-                      >
-                        <div
-                          style={{
-                            aspectRatio: "9 / 16",
-                            position: "relative",
-                            background: clip.thumbnail_url
-                              ? `url(${clip.thumbnail_url}) center / cover`
-                              : "linear-gradient(160deg,#2a2213,#141821)",
-                          }}
-                        >
-                          {/* Player asli (bukan hanya thumbnail) supaya klip bisa
-                              ditonton langsung dari dashboard. */}
-                          {clip.download_url && (
-                            <video
-                              src={clip.download_url}
-                              poster={clip.thumbnail_url || undefined}
-                              controls
-                              playsInline
-                              loop
-                              muted
-                              preload="metadata"
-                              style={{
-                                position: "absolute",
-                                inset: 0,
-                                width: "100%",
-                                height: "100%",
-                                objectFit: "cover",
-                                display: "block",
-                                background: "#0b0d12",
-                              }}
-                            />
-                          )}
-                          <span
-                            style={{
-                              position: "absolute",
-                              left: 10,
-                              top: 10,
-                              fontSize: 11,
-                              padding: "3px 8px",
-                              borderRadius: 999,
-                              background: "rgba(0,0,0,.6)",
-                              color: "#f4d99a",
-                              pointerEvents: "none",
-                            }}
-                          >
-                            #{clip.clip_index + 1}
-                          </span>
-                          {typeof clip.viral_score === "number" && (
-                            <span
-                              className={`ui-viral-badge ${viralBand(clip.viral_score)}`}
-                              title={viralTooltip(clip.viral_factors)}
-                            >
-                              <Zap size={11} />
-                              {clip.viral_factors?.estimated ? "≈" : ""}
-                              {Math.round(clip.viral_score)}
-                            </span>
-                          )}
-                        </div>
-                        <div style={{ padding: 12, display: "grid", gap: 8 }}>
-                          <strong style={{ fontSize: 13.5 }}>
-                            {clip.title || `Clip ${clip.clip_index + 1}`}
-                          </strong>
-                          <span style={{ fontSize: 11.5, color: "var(--ui-muted)" }}>
-                            {formatDuration(clip.duration)}
-                            {clip.file_size ? ` · ${formatSize(clip.file_size)}` : ""}
-                          </span>
-
-                          {/* Skor viral: angka + bar + label + tombol hitung ulang.
-                              Hover untuk breakdown faktor (hook, pacing, emosi, dll). */}
-                          <div
-                            className={`ui-score ${viralBand(clip.viral_score ?? 0)}`}
-                            title={viralTooltip(clip.viral_factors)}
-                          >
-                            <span className="ui-score-label">Viral</span>
-                            <span className="ui-score-num">
-                              {typeof clip.viral_score === "number" ? Math.round(clip.viral_score) : "—"}
-                              <small>/100</small>
-                            </span>
-                            <span className="ui-score-track">
-                              <i
-                                style={{
-                                  width: `${Math.max(0, Math.min(100, clip.viral_score ?? 0))}%`,
-                                }}
-                              />
-                            </span>
-                            <span className="ui-score-tag">
-                              {clip.viral_factors?.label || "belum dinilai"}
-                            </span>
-                            <button
-                              type="button"
-                              className="ui-score-btn"
-                              title="Hitung ulang skor viral"
-                              aria-label="Hitung ulang skor viral"
-                              disabled={Boolean(scoreBusy[clip.id])}
-                              onClick={() => recalcViralScore(clip)}
-                            >
-                              {scoreBusy[clip.id] ? (
-                                <LoaderCircle size={12} className="animate-spin" />
+                    <div className="clip-grid">
+                      {clips.map((clip) => {
+                        const score = typeof clip.viral_score === "number" ? clip.viral_score : null
+                        const band = viralBand(score ?? 0)
+                        const factorLabel =
+                          typeof clip.viral_factors?.label === "string" ? clip.viral_factors.label : ""
+                        const estimated = Boolean(clip.viral_factors?.estimated)
+                        // Judul default pipeline ("Clip 2 - youtube") tidak layak jadi hook.
+                        const hookText =
+                          clip.ai_suggested_title ||
+                          (/^Clip \d+ - /i.test(clip.title || "") ? "" : clip.title)
+                        return (
+                          <article key={clip.id} className="clip-card">
+                            <div className="clip-media">
+                              {clip.download_url ? (
+                                <video
+                                  className="clip-video"
+                                  src={clip.download_url}
+                                  poster={clip.thumbnail_url || undefined}
+                                  muted
+                                  loop
+                                  playsInline
+                                  preload="metadata"
+                                  onMouseEnter={(event) => {
+                                    void event.currentTarget.play().catch(() => {})
+                                  }}
+                                  onMouseLeave={(event) => {
+                                    event.currentTarget.pause()
+                                    event.currentTarget.currentTime = 0
+                                  }}
+                                />
                               ) : (
-                                <RefreshCw size={12} />
+                                <div
+                                  className="clip-video"
+                                  style={{
+                                    background: clip.thumbnail_url
+                                      ? `url(${clip.thumbnail_url}) center / cover`
+                                      : "linear-gradient(160deg,#2a2213,#141821)",
+                                  }}
+                                />
                               )}
-                            </button>
-                          </div>
-                          <label
-                            style={{
-                              display: "flex",
-                              gap: 6,
-                              alignItems: "center",
-                              fontSize: 11.5,
-                              color: "var(--ui-muted)",
-                              cursor: "pointer",
-                            }}
-                          >
-                            <input
-                              type="checkbox"
-                              className="clip-select"
-                              checked={selectedClips.includes(clip.id)}
-                              onChange={() => toggleClipSelection(clip.id)}
-                            />
-                            pilih untuk gabung
-                          </label>
-                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.5"
-                              placeholder={`${(clip.duration / 2).toFixed(1)}`}
-                              value={splitAt[clip.id] ?? ""}
-                              onChange={(e) =>
-                                setSplitAt((current) => ({ ...current, [clip.id]: e.target.value }))
-                              }
-                              className="ui-input"
-                              style={{ width: 72, padding: "6px 8px", fontSize: 12 }}
-                            />
-                            <button
-                              type="button"
-                              className="ui-btn ui-btn-ghost"
-                              style={{ fontSize: 12, padding: "8px 12px" }}
-                              disabled={editingBusy}
-                              onClick={() => splitClipAt(clip)}
-                            >
-                              <Scissors size={13} /> Split
-                            </button>
-                          </div>
+                              <div className="clip-shade" />
+                              <span className="clip-index">#{clip.clip_index + 1}</span>
 
+                              {/* Viral Index bubble â€” klik = hitung ulang skor */}
+                              <button
+                                type="button"
+                                className={`viral-bubble ${band}`}
+                                style={
+                                  {
+                                    "--viral": `${Math.max(0, Math.min(100, score ?? 0))}`,
+                                  } as React.CSSProperties
+                                }
+                                title={viralTooltip(clip.viral_factors)}
+                                disabled={Boolean(scoreBusy[clip.id])}
+                                onClick={() => recalcViralScore(clip)}
+                              >
+                                <span className="viral-ring">
+                                  <span className="viral-num">
+                                    {score === null ? "â€”" : Math.round(score)}
+                                    {estimated && score !== null ? <sup>â‰ˆ</sup> : null}
+                                  </span>
+                                </span>
+                                <span className="viral-meta">
+                                  <span className="viral-cap">Viral Index</span>
+                                  <span className="viral-state">
+                                    {scoreBusy[clip.id] ? "Menghitungâ€¦" : factorLabel || "Belum dinilai"}
+                                  </span>
+                                </span>
+                              </button>
 
-                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                            {clip.download_url && (
-                              <a
-                                className="ui-btn ui-btn-gold"
-                                style={{ fontSize: 12, padding: "8px 12px" }}
-                                href={clip.download_url}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                <Download size={13} /> MP4
-                              </a>
-                            )}
-                            {clip.subtitle_url && (
-                              <a
-                                className="ui-btn ui-btn-ghost"
-                                style={{ fontSize: 12, padding: "8px 12px" }}
-                                href={clip.subtitle_url}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                SRT
-                              </a>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                              {hookText && (
+                                <p className="clip-hook">
+                                  <span>{hookText}</span>
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="clip-body">
+                              <div className="clip-meta">
+                                <span>{formatDuration(clip.duration)}</span>
+                                {clip.file_size ? (
+                                  <>
+                                    <b>â€¢</b>
+                                    <span>{formatSize(clip.file_size)}</span>
+                                  </>
+                                ) : null}
+                                {clip.subtitle_url ? (
+                                  <>
+                                    <b>â€¢</b>
+                                    <span>subtitle</span>
+                                  </>
+                                ) : null}
+                              </div>
+
+                              <div className="clip-actions">
+                                <label className="clip-pick" title="Pilih untuk digabung">
+                                  <input
+                                    type="checkbox"
+                                    className="clip-select"
+                                    checked={selectedClips.includes(clip.id)}
+                                    onChange={() => toggleClipSelection(clip.id)}
+                                  />
+                                  <span>Gabung</span>
+                                </label>
+
+                                <div className="clip-split">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.5"
+                                    placeholder={`${(clip.duration / 2).toFixed(1)}`}
+                                    value={splitAt[clip.id] ?? ""}
+                                    onChange={(e) =>
+                                      setSplitAt((current) => ({ ...current, [clip.id]: e.target.value }))
+                                    }
+                                    className="ui-input clip-split-input"
+                                    title="Titik potong (detik)"
+                                  />
+                                  <button
+                                    type="button"
+                                    className="clip-icon-btn"
+                                    title="Split di titik ini"
+                                    disabled={editingBusy}
+                                    onClick={() => splitClipAt(clip)}
+                                  >
+                                    <Scissors size={13} />
+                                  </button>
+                                </div>
+
+                                <div className="clip-files">
+                                  {clip.download_url && (
+                                    <a
+                                      className="clip-icon-btn gold"
+                                      href={clip.download_url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      title="Download MP4"
+                                    >
+                                      <Download size={13} />
+                                    </a>
+                                  )}
+                                  {clip.subtitle_url && (
+                                    <a
+                                      className="clip-icon-btn"
+                                      href={clip.subtitle_url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      title="Download SRT"
+                                    >
+                                      SRT
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </article>
+                        )
+                      })}
                     </div>
                   </>
                 )}
@@ -1407,7 +1441,7 @@ export default function DashboardPage() {
           <>
             Clipzy AI will stop auto-uploading clips to{" "}
             <strong>{youtube.channel_name || "your YouTube channel"}</strong> and the stored access token will be
-            removed. Your clips and projects stay untouched — you can reconnect anytime.
+            removed. Your clips and projects stay untouched â€” you can reconnect anytime.
           </>
         }
         confirmLabel="Yes, disconnect"
