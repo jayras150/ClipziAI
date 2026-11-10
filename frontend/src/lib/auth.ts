@@ -139,7 +139,8 @@ export async function ensureSession(): Promise<string | null> {
 
   const result = await refreshAccessToken()
   if (result.token) return result.token
-  // Gangguan sesaat: pakai token lama kalau masih (hampir) valid.
-  if (result.transient && token && !accessTokenNeedsRefresh(0)) return token
+  // Gangguan sesaat: tetap di halaman dan pakai token yang ada supaya pengguna
+  // tidak terlempar ke login hanya karena server/ jaringan sedang bermasalah.
+  if (result.transient) return token
   return null
 }
