@@ -69,3 +69,6 @@ cookies.txt
 # --- Temp ---
 tmp/
 *.tmp
+
+# --- Catatan internal (TODO/roadmap pribadi, jangan dipublikasikan) ---
+TODO.md
