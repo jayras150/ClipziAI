@@ -1,4 +1,4 @@
-export const DEFAULT_LOCALE = "id" as const
+export const DEFAULT_LOCALE = "en" as const
 
 export const SUPPORTED_LOCALES = [
   "id", "en", "es", "fr", "de", "ja", "ko", "pt", "ru",

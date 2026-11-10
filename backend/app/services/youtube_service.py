@@ -35,9 +35,9 @@ class YouTubeService:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=(
-                    "YouTube belum dikonfigurasi. Administrator harus mengisi "
-                    "YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, dan "
-                    "YOUTUBE_REDIRECT_URI di environment server."
+                    "YouTube is not configured yet. An administrator must set "
+                    "YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET and "
+                    "YOUTUBE_REDIRECT_URI in the server environment."
                 ),
             )
     
@@ -113,13 +113,13 @@ class YouTubeService:
             if not response.ok:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Google menolak otorisasi YouTube: {response.text[:300]}",
+                    detail=f"Google rejected the YouTube authorization: {response.text[:300]}",
                 )
             payload = response.json()
             if not payload.get("access_token"):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Google tidak mengembalikan access token YouTube.",
+                    detail="Google did not return a YouTube access token.",
                 )
             return payload
 
@@ -137,13 +137,13 @@ class YouTubeService:
             if not response.ok:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Gagal membaca channel YouTube: {response.text[:300]}",
+                    detail=f"Could not read the YouTube channel: {response.text[:300]}",
                 )
             items = response.json().get("items", [])
             if not items:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Akun Google ini belum memiliki channel YouTube yang dapat digunakan.",
+                    detail="This Google account has no usable YouTube channel.",
                 )
             channel = items[0]
             return {
@@ -165,8 +165,8 @@ class YouTubeService:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=(
-                    "Token YouTube sudah kedaluwarsa dan tidak ada refresh token. "
-                    "Hubungkan ulang akun YouTube dari halaman Profil/Dashboard."
+                    "The YouTube token expired and no refresh token is available. "
+                    "Reconnect your YouTube account from the Profile or Dashboard page."
                 ),
             )
 
@@ -185,8 +185,8 @@ class YouTubeService:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail=(
-                        "Gagal memperbarui token YouTube. Hubungkan ulang akun "
-                        f"YouTube. ({response.text[:200]})"
+                        "Could not refresh the YouTube token. Reconnect your "
+                        f"YouTube account. ({response.text[:200]})"
                     ),
                 )
             return response.json()
@@ -214,7 +214,7 @@ class YouTubeService:
         if not video_path and not source_url:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Sumber video tidak tersedia (file maupun URL kosong).",
+                detail="No video source available (empty file and URL).",
             )
 
         allowed_privacy = {"public", "unlisted", "private"}
@@ -231,6 +231,22 @@ class YouTubeService:
             made_for_kids,
             source_url,
         )
+
+    @staticmethod
+    def _google_error(response: requests.Response) -> str:
+        """Ambil pesan error asli dari Google (JSON) agar UI bisa menampilkannya."""
+        try:
+            payload = response.json()
+        except Exception:  # noqa: BLE001
+            return response.text[:300]
+        error = payload.get("error") if isinstance(payload, dict) else None
+        if isinstance(error, dict):
+            message = error.get("message") or ""
+            errors = error.get("errors") or []
+            reason = errors[0].get("reason") if errors and isinstance(errors[0], dict) else ""
+            detail = " ".join(part for part in (reason, message) if part)
+            return (detail or str(payload))[:300]
+        return str(error or payload)[:300]
 
     def _upload_sync(
         self,
@@ -268,16 +284,25 @@ class YouTubeService:
             timeout=60,
         )
         if not init_response.ok:
+            reason = self._google_error(init_response)
+            if init_response.status_code in (401, 403):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail=(
+                        "YouTube rejected the upload session. Reconnect your YouTube "
+                        f"account and try again. ({reason})"
+                    ),
+                )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"YouTube menolak sesi upload: {init_response.text[:400]}",
+                detail=f"YouTube rejected the upload metadata: {reason}",
             )
 
         upload_url = init_response.headers.get("Location")
         if not upload_url:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="YouTube tidak mengembalikan URL upload.",
+                detail="YouTube did not return an upload URL.",
             )
 
         handle = None
@@ -310,7 +335,7 @@ class YouTubeService:
             if content_length <= 0:
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail="Ukuran file video tidak diketahui; upload dibatalkan.",
+                    detail="The video size could not be determined, so the upload was cancelled.",
                 )
 
             put_response = requests.put(
@@ -326,12 +351,18 @@ class YouTubeService:
                 download.close()
 
         if put_response.status_code not in (200, 201):
+            reason = self._google_error(put_response)
+            if put_response.status_code in (401, 403):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail=(
+                        "YouTube rejected the video upload. Reconnect your YouTube "
+                        f"account and try again. ({reason})"
+                    ),
+                )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    f"Upload ke YouTube gagal ({put_response.status_code}): "
-                    f"{put_response.text[:400]}"
-                ),
+                detail=f"YouTube upload failed ({put_response.status_code}): {reason}",
             )
 
         payload = put_response.json()
@@ -339,7 +370,7 @@ class YouTubeService:
         if not video_id:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="YouTube tidak mengembalikan video id.",
+                detail="YouTube did not return a video id.",
             )
         return {
             "success": True,

@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
@@ -42,13 +42,13 @@ const ACTIVE_STATUSES = ["queued", "processing"]
  * (`app/services/processor.py`) â€” warna, garis tepi, kotak latar, dan posisi.
  */
 const SUBTITLE_STYLE_OPTIONS = [
-  { value: "", label: "Bawaan" },
-  { value: "classic", label: "Classic putih" },
-  { value: "gold", label: "Gold tebal" },
-  { value: "boxed", label: "Kotak hitam" },
+  { value: "", label: "Default" },
+  { value: "classic", label: "Classic white" },
+  { value: "gold", label: "Bold gold" },
+  { value: "boxed", label: "Black box" },
   { value: "neon", label: "Neon cyan" },
-  { value: "top", label: "Atas bersih" },
-  { value: "center", label: "Hook tengah" },
+  { value: "top", label: "Clean top" },
+  { value: "center", label: "Center hook" },
 ]
 
 /** Pratinjau kecil di kartu "Style subtitle" agar gaya terlihat sebelum proses. */
@@ -138,13 +138,13 @@ function viralTooltip(factors: Record<string, any> | null | undefined): string {
     typeof factors[key] === "number" ? `${Math.round(factors[key] * 100)}%` : "â€”"
   const lines = [
     `Hook: ${pct("hook")}`,
-    `Durasi pas: ${pct("duration")}`,
+    `Duration fit: ${pct("duration")}`,
     `Pacing: ${pct("pacing")}`,
     `Emosi: ${pct("emotion")}`,
     `Kejelasan: ${pct("clarity")}`,
   ]
   if (factors.reasoning) lines.push("", String(factors.reasoning))
-  if (factors.estimated) lines.push("", "(estimasi â€” klip lama tanpa transkrip tersimpan)")
+  if (factors.estimated) lines.push("", "(estimated - older clip without a stored transcript)")
   return lines.join("\n")
 }
 
@@ -430,14 +430,14 @@ export default function DashboardPage() {
     setTaskError("")
     setNotice("")
     try {
-      if (!navigator.clipboard?.readText) throw new Error("Clipboard API tidak tersedia")
+      if (!navigator.clipboard?.readText) throw new Error("Clipboard API is not available")
       const text = (await navigator.clipboard.readText()).trim()
       if (!text) {
-        setNotice("Clipboard kosong â€” salin link video dulu.")
+        setNotice("Clipboard is empty - copy a video link first.")
         return
       }
       setUrlValue(text)
-      setNotice("Link ditempel dari clipboard.")
+      setNotice("Link pasted from clipboard.")
     } catch {
       setTaskError("Browser memblokir akses clipboard. Klik kolom URL lalu tekan Ctrl+V.")
     }
@@ -473,7 +473,7 @@ export default function DashboardPage() {
     setMusicVolume("0.22")
     setMusicDucking(true)
     setTaskError("")
-    setNotice("Opsi editing dikembalikan ke default.")
+    setNotice("Editing options reset to default.")
   }
 
   /** Kembali ke halaman sebelumnya; kalau tidak ada riwayat, ke landing. */
@@ -515,7 +515,7 @@ export default function DashboardPage() {
     setNotice("")
     try {
       const result = await api.getViralScore(token, clip.id, true)
-      setNotice(`Skor viral klip #${clip.clip_index + 1} diperbarui: ${Math.round(result.score)}/100`)
+      setNotice(`Viral score for clip #${clip.clip_index + 1} updated: ${Math.round(result.score)}/100`)
       await loadClips(token, openTaskId)
     } catch (error: any) {
       setTaskError(readApiError(error.response?.data, "Could not recalculate the viral score."))
@@ -537,8 +537,8 @@ export default function DashboardPage() {
       const task = await api.composeClips(token, openTaskId, selectedClips, composeTransition)
       setNotice(
         task.status === "error"
-          ? task.error_message || "Compose dibuat tetapi gagal dikirim ke worker."
-          : `Gabungan ${selectedClips.length} klip sedang diproses.`,
+          ? task.error_message || "Merge created but it could not be sent to the worker."
+          : `Merging ${selectedClips.length} clip(s) — processing.`,
       )
       setSelectedClips([])
       await refreshTasks(token)
@@ -554,7 +554,7 @@ export default function DashboardPage() {
     if (!openTaskId) return
     const value = parseFloat(splitAt[clip.id] || "")
     if (Number.isNaN(value) || value <= 0 || value >= clip.duration) {
-      setTaskError(`Titik potong harus antara 0 dan ${clip.duration.toFixed(1)} detik.`)
+      setTaskError(`Split point must be between 0 and ${clip.duration.toFixed(1)} seconds.`)
       return
     }
     setEditingBusy(true)
@@ -564,8 +564,8 @@ export default function DashboardPage() {
       const task = await api.splitClip(token, openTaskId, clip.id, value)
       setNotice(
         task.status === "error"
-          ? task.error_message || "Split dibuat tetapi gagal dikirim ke worker."
-          : `Klip #${clip.clip_index} dipotong di ${value.toFixed(1)} detik.`,
+          ? task.error_message || "Split created but it could not be sent to the worker."
+          : `Clip #${clip.clip_index} split at ${value.toFixed(1)} seconds.`,
       )
       await refreshTasks(token)
       setActiveTab("projects")
@@ -597,11 +597,11 @@ export default function DashboardPage() {
     return null
   })()
   const renderEstimate = trimSeconds
-    ? `≈ ${trimSeconds.toFixed(1)}s per klip · estimasi render ±${Math.max(
+    ? `≈ ${trimSeconds.toFixed(1)}s per clip · estimated render ±${Math.max(
         2,
         Math.round((trimSeconds * 3) / 60),
-      )} menit`
-    : "3 klip · estimasi render ±3–5 menit · 1 credit/klip"
+      )} min`
+    : "3 clips · estimated render ±3–5 min · 1 credit/clip"
 
   return (
     <div className="ui-shell">
@@ -668,8 +668,8 @@ export default function DashboardPage() {
           }}
         >
           <div>
-            <button type="button" className="ui-back" onClick={goBack} title="Kembali ke halaman sebelumnya">
-              <ArrowLeft size={14} /> Kembali
+            <button type="button" className="ui-back" onClick={goBack} title="Go back to the previous page">
+              <ArrowLeft size={14} /> Back
             </button>
             <div className="ui-kicker" style={{ marginTop: 14 }}>Studio</div>
             <h1 className="ui-title" style={{ marginTop: 8 }}>
@@ -799,7 +799,7 @@ export default function DashboardPage() {
               {/* Opsi editing manual (Fase 1) â€” setiap kontrol jadi kartu sendiri. */}
               <div className="ui-opt-grid">
                 <div className="ui-opt">
-                  <label className="ui-opt-label" htmlFor="start-time">Mulai detik</label>
+                  <label className="ui-opt-label" htmlFor="start-time">Start (s)</label>
                   <input
                     id="start-time"
                     type="number"
@@ -812,7 +812,7 @@ export default function DashboardPage() {
                   />
                 </div>
                 <div className="ui-opt">
-                  <label className="ui-opt-label" htmlFor="end-time">Akhir detik</label>
+                  <label className="ui-opt-label" htmlFor="end-time">End (s)</label>
                   <input
                     id="end-time"
                     type="number"
@@ -832,9 +832,9 @@ export default function DashboardPage() {
                     onChange={(e) => setAspectRatioValue(e.target.value)}
                     className="ui-input"
                   >
-                    <option value="9:16">9:16 vertikal</option>
-                    <option value="1:1">1:1 persegi</option>
-                    <option value="16:9">16:9 landskap</option>
+                    <option value="9:16">9:16 vertical</option>
+                    <option value="1:1">1:1 square</option>
+                    <option value="16:9">16:9 landscape</option>
                   </select>
                 </div>
                 <div className="ui-opt">
@@ -842,34 +842,41 @@ export default function DashboardPage() {
                   <input
                     id="caption-text"
                     type="text"
-                    placeholder="teks overlay"
+                    placeholder="overlay text"
                     value={captionTextValue}
                     onChange={(e) => setCaptionTextValue(e.target.value)}
                     className="ui-input"
                   />
                 </div>
-                {/* Gaya subtitle: mengatur warna/ketebalan/posisi subtitle SRT
-                    yang dibakar (force_style) sekaligus caption teks di atas. */}
-                <div className="ui-opt">
-                  <label className="ui-opt-label" htmlFor="caption-style">Style subtitle</label>
-                  <select
-                    id="caption-style"
-                    value={captionStyle}
-                    onChange={(e) => setCaptionStyle(e.target.value)}
-                    className="ui-input"
-                  >
-                    {SUBTITLE_STYLE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="ui-sub-preview" aria-hidden="true">
-                    <span style={subtitlePreviewStyle(captionStyle)}>{subtitlePreviewText}</span>
+                {/* Subtitle style: kartu berjejer (bukan dropdown) supaya setiap
+                    gaya langsung terlihat sebelum render. */}
+                <div className="ui-opt ui-opt-wide">
+                  <span className="ui-opt-label">Subtitle style</span>
+                  <div className="style-card-grid" role="radiogroup" aria-label="Subtitle style">
+                    {SUBTITLE_STYLE_OPTIONS.map((option) => {
+                      const selected = captionStyle === option.value
+                      return (
+                        <button
+                          key={option.value || "default"}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          className={`style-card${selected ? " selected" : ""}`}
+                          onClick={() => setCaptionStyle(option.value)}
+                        >
+                          <span className="style-card-label">{option.label}</span>
+                          <span className="style-card-preview" aria-hidden="true">
+                            <span style={subtitlePreviewStyle(option.value)}>
+                              {subtitlePreviewText}
+                            </span>
+                          </span>
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
                 <div className="ui-opt">
-                  <label className="ui-opt-label" htmlFor="speed">Kecepatan</label>
+                  <label className="ui-opt-label" htmlFor="speed">Speed</label>
                   <select
                     id="speed"
                     value={speedValue}
@@ -887,7 +894,7 @@ export default function DashboardPage() {
               </div>
                 {/* Opsi lanjutan (Fase 2) â€” kartu per kontrol. */}
                 <details className="ui-opt-details" style={{ marginTop: 14 }}>
-                  <summary>Opsi editing lanjutan</summary>
+                  <summary>Advanced editing options</summary>
                   <div className="ui-opt-panel">
                     <div className="ui-opt-grid">
                       <div className="ui-opt">
@@ -919,7 +926,7 @@ export default function DashboardPage() {
                         />
                       </div>
                       <div className="ui-opt">
-                        <label className="ui-opt-label" htmlFor="watermark-position">Posisi watermark</label>
+                        <label className="ui-opt-label" htmlFor="watermark-position">Watermark position</label>
                         <select
                           id="watermark-position"
                           value={watermarkPosition}
@@ -962,14 +969,14 @@ export default function DashboardPage() {
                         </div>
                       )}
                       <div className="ui-opt">
-                        <label className="ui-opt-label" htmlFor="music-track">Musik</label>
+                        <label className="ui-opt-label" htmlFor="music-track">Music</label>
                         <select
                           id="music-track"
                           value={musicUrl}
                           onChange={(e) => setMusicUrl(e.target.value)}
                           className="ui-input"
                         >
-                          <option value="">tanpa musik</option>
+                          <option value="">no music</option>
                           {musicLibrary.map((track) => (
                             <option key={track.id} value={track.url}>
                               {track.name}
@@ -980,7 +987,7 @@ export default function DashboardPage() {
                       </div>
                       {musicUrl && (
                         <div className="ui-opt">
-                          <label className="ui-opt-label" htmlFor="music-volume">Volume musik</label>
+                          <label className="ui-opt-label" htmlFor="music-volume">Music volume</label>
                           <select
                             id="music-volume"
                             value={musicVolume}
@@ -1029,7 +1036,7 @@ export default function DashboardPage() {
                       </label>
                       <label className="ui-switch">
                         <input type="checkbox" id="clean-audio" checked={cleanAudio} onChange={(e) => setCleanAudio(e.target.checked)} />
-                        <span>Perbaiki audio</span>
+                        <span>Clean audio</span>
                       </label>
                       {musicUrl && (
                         <label className="ui-switch">
@@ -1039,7 +1046,7 @@ export default function DashboardPage() {
                             checked={musicDucking}
                             onChange={(e) => setMusicDucking(e.target.checked)}
                           />
-                          <span>Ducking musik saat bicara</span>
+                          <span>Duck music while speaking</span>
                         </label>
                       )}
                     </div>
@@ -1056,15 +1063,15 @@ export default function DashboardPage() {
                     className="ui-btn ui-btn-ghost"
                     onClick={resetEditingOptions}
                     disabled={submitting}
-                    title="Kembalikan semua opsi editing ke default"
+                    title="Reset all editing options to default"
                   >
-                    <RotateCcw size={14} /> Reset opsi
+                    <RotateCcw size={14} /> Reset options
                   </button>
                   {planType === "free" && (
                     <span
                       className="ui-badge ui-badge-gold"
                       style={{ gap: 5 }}
-                      title="Semua klip plan free otomatis diberi watermark Clipzy. Upgrade untuk menghapus."
+                      title="All free-plan clips include the Clipzy watermark. Upgrade to remove it."
                     >
                       <Droplets size={12} /> Watermark Clipzy aktif
                     </span>
@@ -1246,7 +1253,7 @@ export default function DashboardPage() {
                         }}
                       >
                         <span style={{ fontSize: 12, color: "var(--ui-muted)" }}>
-                          Centang klip untuk digabung ({selectedClips.length} dipilih)
+                          Select clips to merge ({selectedClips.length} selected)
                         </span>
                         <select
                           id="compose-transition"
@@ -1275,7 +1282,7 @@ export default function DashboardPage() {
                           disabled={selectedClips.length < 2 || editingBusy}
                           onClick={mergeSelectedClips}
                         >
-                          <Layers size={13} /> Gabung {selectedClips.length || ""}
+                          <Layers size={13} /> Merge {selectedClips.length || ""}
                         </button>
                       </div>
                     )}
@@ -1324,8 +1331,8 @@ export default function DashboardPage() {
                               <button
                                 type="button"
                                 className="clip-open"
-                                aria-label={`Buka klip ${clip.clip_index + 1}`}
-                                title="Buka video, metadata AI, download, upload YouTube"
+                                aria-label={`Open clip ${clip.clip_index + 1}`}
+                                title="Open video, AI metadata, download, upload to YouTube"
                                 onClick={() => setModalClipId(clip.id)}
                               />
                               <span className="clip-index">#{clip.clip_index + 1}</span>
@@ -1382,14 +1389,14 @@ export default function DashboardPage() {
                               </div>
 
                               <div className="clip-actions">
-                                <label className="clip-pick" title="Pilih untuk digabung">
+                                <label className="clip-pick" title="Select for merge">
                                   <input
                                     type="checkbox"
                                     className="clip-select"
                                     checked={selectedClips.includes(clip.id)}
                                     onChange={() => toggleClipSelection(clip.id)}
                                   />
-                                  <span>Gabung</span>
+                                  <span>Merge</span>
                                 </label>
 
                                 <div className="clip-split">
@@ -1403,12 +1410,12 @@ export default function DashboardPage() {
                                       setSplitAt((current) => ({ ...current, [clip.id]: e.target.value }))
                                     }
                                     className="ui-input clip-split-input"
-                                    title="Titik potong (detik)"
+                                    title="Split point (seconds)"
                                   />
                                   <button
                                     type="button"
                                     className="clip-icon-btn"
-                                    title="Split di titik ini"
+                                    title="Split at this point"
                                     disabled={editingBusy}
                                     onClick={() => splitClipAt(clip)}
                                   >

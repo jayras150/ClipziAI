@@ -70,6 +70,7 @@ export default function AdminPage() {
   const [watermark, setWatermark] = useState<WatermarkConfigData | null>(null)
   const [busy, setBusy] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [logoBusy, setLogoBusy] = useState(false)
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
 
@@ -82,7 +83,7 @@ export default function AdminPage() {
       if (which === "users") setUsers(await api.listAdminUsers(stored))
       if (which === "audit") setAudit(await api.listAuditLogs(stored))
     } catch (err: any) {
-      setError(readApiError(err.response?.data, "Gagal memuat data admin."))
+      setError(readApiError(err.response?.data, "Could not load admin data."))
     } finally {
       setBusy(false)
     }
@@ -118,9 +119,40 @@ export default function AdminPage() {
     try {
       const saved = await api.updateWatermarkConfig(token, watermark)
       setWatermark(saved)
-      setNotice("Pengaturan watermark disimpan.")
+      setNotice("Watermark settings saved.")
     } catch (err: any) {
-      setError(readApiError(err.response?.data, "Gagal menyimpan watermark."))
+      setError(readApiError(err.response?.data, "Could not save watermark."))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const uploadLogo = async (file: File | null) => {
+    if (!file || !token) return
+    setLogoBusy(true)
+    setError("")
+    setNotice("")
+    try {
+      const saved = await api.uploadWatermarkLogo(token, file)
+      setWatermark(saved)
+      setNotice("Logo uploaded to storage and applied to the watermark.")
+    } catch (err: any) {
+      setError(readApiError(err.response?.data, "Could not upload the logo."))
+    } finally {
+      setLogoBusy(false)
+    }
+  }
+
+  const clearLogo = async () => {
+    if (!watermark || !token) return
+    setSaving(true)
+    setError("")
+    try {
+      const saved = await api.updateWatermarkConfig(token, { ...watermark, image_url: null })
+      setWatermark(saved)
+      setNotice("Logo removed. Text watermark stays active.")
+    } catch (err: any) {
+      setError(readApiError(err.response?.data, "Could not remove the logo."))
     } finally {
       setSaving(false)
     }
@@ -134,32 +166,32 @@ export default function AdminPage() {
         await api.unbanAdminUser(token, row.id)
         setNotice(`User ${row.email} di-unban.`)
       } else {
-        const reason = window.prompt(`Alasan ban untuk ${row.email}:`, "manual ban")
+        const reason = window.prompt(`Ban reason for ${row.email}:`, "manual ban")
         if (!reason) return
         await api.banAdminUser(token, row.id, reason)
         setNotice(`User ${row.email} dibanned.`)
       }
       await load(token, "users")
     } catch (err: any) {
-      setError(readApiError(err.response?.data, "Gagal mengubah status user."))
+      setError(readApiError(err.response?.data, "Could not update user status."))
     }
   }
 
   const adjustCredits = async (row: AdminUserRow) => {
     if (!token) return
-    const raw = window.prompt(`Tambah/kurangi kredit ${row.email} (contoh: 5 atau -3):`, "5")
+    const raw = window.prompt(`Add/subtract credits for ${row.email} (e.g. 5 or -3):`, "5")
     if (!raw) return
     const amount = Number(raw)
     if (!Number.isFinite(amount) || amount === 0) {
-      setError("Jumlah kredit tidak valid.")
+      setError("Invalid credit amount.")
       return
     }
     try {
       const result = await api.adjustUserCredits(token, row.id, amount, "admin adjustment")
-      setNotice(`Kredit ${row.email}: ${amount > 0 ? "+" : ""}${amount} → saldo ${result.new_balance}`)
+      setNotice(`Credits ${row.email}: ${amount > 0 ? "+" : ""}${amount} → balance ${result.new_balance}`)
       await load(token, "audit")
     } catch (err: any) {
-      setError(readApiError(err.response?.data, "Gagal menyesuaikan kredit."))
+      setError(readApiError(err.response?.data, "Could not adjust credits."))
     }
   }
 
@@ -193,7 +225,7 @@ export default function AdminPage() {
         </div>
         <h1 className="ui-title" style={{ marginTop: 8 }}>Admin panel</h1>
         <p className="ui-muted" style={{ marginTop: 4 }}>
-          Kelola watermark platform, pantau aktivitas, dan atur pengguna.
+          Manage the platform watermark, monitor activity, and manage users.
         </p>
 
         {error && (
@@ -213,12 +245,12 @@ export default function AdminPage() {
           </div>
         ) : !allowed ? (
           <div className="ui-card" style={{ marginTop: 18 }}>
-            <h2 className="ui-subtitle">Akses ditolak</h2>
+            <h2 className="ui-subtitle">Access denied</h2>
             <p className="ui-muted" style={{ marginTop: 6 }}>
-              Email akun ini tidak terdaftar di <code>ADMIN_EMAILS</code> pada server.
+              This account email is not listed in <code>ADMIN_EMAILS</code> on the server.
             </p>
             <Link className="ui-btn ui-btn-ghost" href="/dashboard" style={{ marginTop: 14 }}>
-              <ArrowLeft size={14} /> Kembali
+              <ArrowLeft size={14} /> Back
             </Link>
           </div>
         ) : (
@@ -226,9 +258,9 @@ export default function AdminPage() {
             <div className="ui-tabs" style={{ marginTop: 18 }}>
               {(
                 [
-                  ["overview", "Ringkasan"],
+                  ["overview", "Overview"],
                   ["watermark", "Watermark"],
-                  ["users", "Pengguna"],
+                  ["users", "Users"],
                   ["audit", "Audit"],
                 ] as [Tab, string][]
               ).map(([key, label]) => (
@@ -249,29 +281,29 @@ export default function AdminPage() {
               <section style={{ marginTop: 16, display: "grid", gap: 14 }}>
                 <div className="ui-admin-grid">
                   <div className="ui-stat">
-                    <span>Total user</span>
+                    <span>Total users</span>
                     <b>{stats?.total_users ?? "—"}</b>
                     <small>{stats?.banned_users ?? 0} banned</small>
                   </div>
                   <div className="ui-stat">
                     <span>Task</span>
                     <b>{stats?.total_tasks ?? "—"}</b>
-                    <small>{stats?.completed_tasks ?? 0} selesai</small>
+                    <small>{stats?.completed_tasks ?? 0} completed</small>
                   </div>
                   <div className="ui-stat">
                     <span>Klip</span>
                     <b>{stats?.total_clips ?? "—"}</b>
-                    <small>total dihasilkan</small>
+                    <small>total generated</small>
                   </div>
                   <div className="ui-stat">
-                    <span>Kredit terpakai</span>
+                    <span>Credits used</span>
                     <b>{stats?.credits_spent ?? "—"}</b>
-                    <small>kumulatif</small>
+                    <small>cumulative</small>
                   </div>
                 </div>
 
                 <div className="ui-card">
-                  <h2 className="ui-subtitle">Task per hari · 14 hari</h2>
+                  <h2 className="ui-subtitle">Tasks per day · 14 days</h2>
                   <div className="ui-bars">
                     {(stats?.tasks_per_day || []).map((day) => (
                       <span
@@ -280,19 +312,19 @@ export default function AdminPage() {
                         style={{ height: `${Math.min(100, 8 + day.count * 12)}%` }}
                       />
                     ))}
-                    {!stats?.tasks_per_day?.length && <span className="ui-muted">Belum ada data</span>}
+                    {!stats?.tasks_per_day?.length && <span className="ui-muted">No data yet</span>}
                   </div>
                 </div>
 
                 <div className="ui-card">
-                  <h2 className="ui-subtitle">Task terbaru</h2>
+                  <h2 className="ui-subtitle">Latest tasks</h2>
                   <table className="ui-table">
                     <thead>
                       <tr>
                         <th>User</th>
                         <th>Status</th>
                         <th>Klip</th>
-                        <th>Waktu</th>
+                        <th>Time</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -313,9 +345,9 @@ export default function AdminPage() {
             {tab === "watermark" && (
               <section className="ui-admin-split" style={{ marginTop: 16 }}>
                 <div className="ui-card">
-                  <h2 className="ui-subtitle">Watermark platform</h2>
+                  <h2 className="ui-subtitle">Platform watermark</h2>
                   <p className="ui-hint" style={{ marginBottom: 12 }}>
-                    Diterapkan otomatis ke plan terpilih (default free), termasuk hasil merge/split.
+                    Applied automatically to the selected plans (default: free), including merge/split results.
                   </p>
                   {!watermark ? (
                     <LoaderCircle className="animate-spin" size={20} />
@@ -327,12 +359,12 @@ export default function AdminPage() {
                           checked={watermark.enabled}
                           onChange={(e) => setWatermark({ ...watermark, enabled: e.target.checked })}
                         />
-                        <span>Aktifkan watermark wajib</span>
+                        <span>Enable mandatory watermark</span>
                       </label>
 
                       <div className="ui-opt-grid">
                         <div className="ui-opt">
-                          <label className="ui-opt-label" htmlFor="wm-text">Teks</label>
+                          <label className="ui-opt-label" htmlFor="wm-text">Text</label>
                           <input
                             id="wm-text"
                             className="ui-input"
@@ -341,17 +373,40 @@ export default function AdminPage() {
                           />
                         </div>
                         <div className="ui-opt">
-                          <label className="ui-opt-label" htmlFor="wm-image">URL logo (opsional)</label>
+                          <label className="ui-opt-label" htmlFor="wm-logo">Logo image</label>
                           <input
-                            id="wm-image"
-                            className="ui-input"
-                            placeholder="https://cdn.../logo.png"
-                            value={watermark.image_url || ""}
-                            onChange={(e) => setWatermark({ ...watermark, image_url: e.target.value || null })}
+                            id="wm-logo"
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp"
+                            className="ui-input wm-file"
+                            disabled={logoBusy}
+                            onChange={(event) => {
+                              const file = event.target.files?.[0] ?? null
+                              event.target.value = ""
+                              void uploadLogo(file)
+                            }}
                           />
+                          <span className="ui-hint">
+                            PNG, JPEG or WEBP · max 2 MB · uploaded to storage
+                          </span>
+                          {logoBusy && <span className="ui-hint">Uploading…</span>}
+                          {watermark.image_url && (
+                            <div className="wm-logo-row">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={watermark.image_url} alt="Watermark logo" />
+                              <button
+                                type="button"
+                                className="ui-btn ui-btn-ghost"
+                                onClick={() => void clearLogo()}
+                                disabled={saving || logoBusy}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          )}
                         </div>
                         <div className="ui-opt">
-                          <label className="ui-opt-label" htmlFor="wm-position">Posisi</label>
+                          <label className="ui-opt-label" htmlFor="wm-position">Position</label>
                           <select
                             id="wm-position"
                             className="ui-input"
@@ -373,7 +428,7 @@ export default function AdminPage() {
                           />
                         </div>
                         <div className="ui-opt">
-                          <label className="ui-opt-label" htmlFor="wm-scale">Ukuran</label>
+                          <label className="ui-opt-label" htmlFor="wm-scale">Size</label>
                           <input
                             id="wm-scale" type="number" min="0.05" max="0.6" step="0.01"
                             className="ui-input"
@@ -391,7 +446,7 @@ export default function AdminPage() {
                           />
                         </div>
                         <div className="ui-opt">
-                          <label className="ui-opt-label" htmlFor="wm-color">Warna teks</label>
+                          <label className="ui-opt-label" htmlFor="wm-color">Text color</label>
                           <input
                             id="wm-color" type="color"
                             className="ui-input"
@@ -401,7 +456,7 @@ export default function AdminPage() {
                         </div>
                       </div>
                       <div style={{ marginTop: 12 }}>
-                        <span className="ui-opt-label">Berlaku untuk plan</span>
+                        <span className="ui-opt-label">Applies to plans</span>
                         <div className="ui-switch-list">
                           {PLANS.map((plan) => (
                             <label className="ui-switch" key={plan}>
@@ -424,9 +479,9 @@ export default function AdminPage() {
                       <div style={{ marginTop: 14, display: "flex", gap: 10, alignItems: "center" }}>
                         <button className="ui-btn ui-btn-gold" onClick={saveWatermark} disabled={saving}>
                           {saving ? <LoaderCircle size={14} className="animate-spin" /> : <Save size={14} />}
-                          Simpan
+                          Save
                         </button>
-                        <span className="ui-hint">Berlaku ±60 detik (cache worker).</span>
+                        <span className="ui-hint">Takes effect within ~60s (worker cache).</span>
                       </div>
                     </>
                   )}
@@ -459,9 +514,9 @@ export default function AdminPage() {
                   <thead>
                     <tr>
                       <th>Email</th>
-                      <th>Nama</th>
+                      <th>Name</th>
                       <th>Status</th>
-                      <th>Aksi</th>
+                      <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -473,9 +528,9 @@ export default function AdminPage() {
                           {row.is_banned ? (
                             <span className="ui-badge" style={{ color: "#f0a3a3" }}>banned</span>
                           ) : row.is_active ? (
-                            <span className="ui-badge ui-badge-success">aktif</span>
+                            <span className="ui-badge ui-badge-success">active</span>
                           ) : (
-                            <span className="ui-badge">nonaktif</span>
+                            <span className="ui-badge">inactive</span>
                           )}
                         </td>
                         <td>
@@ -489,7 +544,7 @@ export default function AdminPage() {
                             </button>
                             <button
                               className="clip-icon-btn"
-                              title="Sesuaikan kredit"
+                              title="Adjust credits"
                               onClick={() => adjustCredits(row)}
                             >
                               <Coins size={13} />
@@ -500,7 +555,7 @@ export default function AdminPage() {
                     ))}
                     {!users.length && (
                       <tr>
-                        <td colSpan={4} className="ui-muted">Belum ada data.</td>
+                        <td colSpan={4} className="ui-muted">No data yet.</td>
                       </tr>
                     )}
                   </tbody>
@@ -519,9 +574,9 @@ export default function AdminPage() {
                 <table className="ui-table" style={{ marginTop: 12 }}>
                   <thead>
                     <tr>
-                      <th>Waktu</th>
-                      <th>Aktor</th>
-                      <th>Aksi</th>
+                      <th>Time</th>
+                      <th>Actor</th>
+                      <th>Action</th>
                       <th>IP</th>
                     </tr>
                   </thead>
@@ -536,7 +591,7 @@ export default function AdminPage() {
                     ))}
                     {!audit.length && (
                       <tr>
-                        <td colSpan={4} className="ui-muted">Belum ada aktivitas.</td>
+                        <td colSpan={4} className="ui-muted">No activity yet.</td>
                       </tr>
                     )}
                   </tbody>

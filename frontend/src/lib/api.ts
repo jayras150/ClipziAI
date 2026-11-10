@@ -1,6 +1,38 @@
-import axios, { AxiosInstance } from "axios"
+import axios, { AxiosInstance, InternalAxiosRequestConfig } from "axios"
 
 import { getApiBaseUrl } from "./env"
+
+/**
+ * Access token Clipzi hanya berumur 15 menit. Tanpa refresh, memindahkan tab
+ * (atau idle) membuat request pertama gagal 401 dan pengguna terlempar ke
+ * halaman login. Helper ini menukar refresh token sekali per gelombang 401
+ * (single-flight) supaya sesi tetap hidup.
+ */
+let refreshPromise: Promise<string | null> | null = null
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (typeof window === "undefined") return null
+  const storedRefresh = localStorage.getItem("refresh_token")
+  if (!storedRefresh) return null
+  if (!refreshPromise) {
+    refreshPromise = axios
+      .post(`${getApiBaseUrl()}/api/auth/refresh`, { refresh_token: storedRefresh })
+      .then((response) => {
+        const access = response.data?.access_token as string | undefined
+        const nextRefresh = response.data?.refresh_token as string | undefined
+        if (!access) return null
+        localStorage.setItem("token", access)
+        if (nextRefresh) localStorage.setItem("refresh_token", nextRefresh)
+        return access
+      })
+      .catch(() => null)
+      .finally(() => {
+        refreshPromise = null
+      })
+  }
+  return refreshPromise
+}
+
 
 export interface UserProfileData {
   id: string
@@ -214,17 +246,39 @@ export class ApiClient {
 
     this.client.interceptors.response.use(
       (res) => res,
-      (error) => {
-        if (error.response?.status === 401) {
-          // Token expired or invalid
-          if (typeof window !== "undefined") {
-            localStorage.removeItem("token")
+      async (error) => {
+        const status = error.response?.status
+        const original = error.config as
+          | (InternalAxiosRequestConfig & { _retried?: boolean })
+          | undefined
+        const url = typeof original?.url === "string" ? original.url : ""
+        const isAuthCall = url.includes("/api/auth/")
+
+        // 401 karena access token kedaluwarsa? Tukar refresh token lalu ulangi
+        // request sekali. Hanya kalau refresh juga gagal pengguna diarahkan login.
+        if (status === 401 && original && !original._retried && !isAuthCall) {
+          const freshToken = await refreshAccessToken()
+          if (freshToken) {
+            original._retried = true
+            original.headers = {
+              ...(original.headers || {}),
+              Authorization: `Bearer ${freshToken}`,
+            } as InternalAxiosRequestConfig["headers"]
+            return this.client.request(original)
+          }
+        }
+
+        if (status === 401 && !isAuthCall && typeof window !== "undefined") {
+          localStorage.removeItem("token")
+          localStorage.removeItem("refresh_token")
+          if (!window.location.pathname.startsWith("/login")) {
             window.location.href = "/login"
           }
         }
         return Promise.reject(error)
       }
     )
+
   }
 
   setToken(token: string) {
@@ -384,6 +438,23 @@ export class ApiClient {
       "/api/admin/settings/watermark",
       payload,
       { headers: { Authorization: `Bearer ${token}` } },
+    )
+    return response.data
+  }
+
+  /** Upload file logo watermark ke R2 (bukan menempel URL). */
+  async uploadWatermarkLogo(token: string, file: File): Promise<WatermarkConfigData> {
+    const form = new FormData()
+    form.append("file", file)
+    const response = await this.client.post<WatermarkConfigData>(
+      "/api/admin/settings/watermark/logo",
+      form,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "multipart/form-data",
+        },
+      },
     )
     return response.data
   }

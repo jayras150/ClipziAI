@@ -98,18 +98,18 @@ def _extract_json(raw: str) -> Dict[str, Any]:
     """Ambil objek JSON pertama dari balasan model (termasuk blok ```json)."""
     text = (raw or "").strip()
     if not text:
-        raise MetadataGenerationError("AI membalas kosong.")
+        raise MetadataGenerationError("AI returned an empty response.")
     text = re.sub(r"^```(?:json)?", "", text, flags=re.IGNORECASE).strip()
     text = re.sub(r"```$", "", text).strip()
     start, end = text.find("{"), text.rfind("}")
     if start == -1 or end <= start:
-        raise MetadataGenerationError("Balasan AI bukan JSON.")
+        raise MetadataGenerationError("AI response is not JSON.")
     try:
         payload = json.loads(text[start : end + 1])
     except json.JSONDecodeError as exc:
-        raise MetadataGenerationError(f"JSON dari AI tidak valid: {exc.msg}") from exc
+        raise MetadataGenerationError(f"AI returned invalid JSON: {exc.msg}") from exc
     if not isinstance(payload, dict):
-        raise MetadataGenerationError("JSON dari AI bukan objek.")
+        raise MetadataGenerationError("AI JSON is not an object.")
     return payload
 
 
@@ -139,8 +139,8 @@ class MetadataGenerator:
         """Lempar error jelas bila AI belum dikonfigurasi di server."""
         if not self.available or self.client is None:
             raise MetadataGenerationError(
-                "AI belum dikonfigurasi di server (isi AI_PROVIDER/AI_API_KEY). "
-                "Metadata tidak dibuat agar tidak asal-asalan."
+                "AI is not configured on the server (set AI_PROVIDER/AI_API_KEY). "
+                "No metadata was generated to avoid inventing content."
             )
 
     async def generate(
@@ -165,8 +165,8 @@ class MetadataGenerator:
         words = text.split()
         if len(words) < MIN_TRANSCRIPT_WORDS:
             raise MetadataGenerationError(
-                "Transkrip klip terlalu pendek untuk dijadikan dasar metadata. "
-                "Proses ulang video dengan transkripsi Whisper aktif."
+                "The clip transcript is too short to ground the metadata. "
+                "Reprocess the video with Whisper transcription enabled."
             )
 
         # Transkrip panjang dipotong agar tetap cepat & murah, tapi bagian awal
@@ -216,8 +216,8 @@ class MetadataGenerator:
                 logger.warning("Metadata AI gagal (percobaan %s): %s", attempt + 1, str(exc)[:300])
 
         raise MetadataGenerationError(
-            "AI tidak berhasil membuat metadata dari transkrip (balasan kosong/terputus). "
-            f"Coba lagi. Detail: {str(last_error)[:200]}"
+            "AI could not produce metadata from the transcript (empty or truncated response). "
+            f"Please try again. Detail: {str(last_error)[:200]}"
         )
 
     def _validate(
@@ -235,17 +235,17 @@ class MetadataGenerator:
         tags = _clean_tags(payload.get("tags"))
 
         if not title:
-            raise MetadataGenerationError("AI tidak menghasilkan judul.")
+            raise MetadataGenerationError("AI did not produce a title.")
         if len(title) > MAX_TITLE_LENGTH:
             title = title[:MAX_TITLE_LENGTH].rstrip()
 
         lowered = f"{title} {description}".lower()
         for phrase in BANNED_PHRASES:
             if phrase in lowered:
-                raise MetadataGenerationError("AI memakai kalimat template; metadata ditolak.")
+                raise MetadataGenerationError("AI used template wording, so the metadata was rejected.")
 
         if not description:
-            raise MetadataGenerationError("AI tidak menghasilkan deskripsi.")
+            raise MetadataGenerationError("AI did not produce a description.")
         description = description[:MAX_DESCRIPTION_LENGTH]
 
         # --- Grounding: judul wajib berbagi kata bermakna dengan transkrip.
@@ -254,7 +254,7 @@ class MetadataGenerator:
         title_words = _significant_words(title)
         if transcript_words and not (title_words & transcript_words):
             raise MetadataGenerationError(
-                "Judul dari AI tidak nyambung dengan isi transkrip; metadata ditolak."
+                "The AI title does not match the transcript, so the metadata was rejected."
             )
 
         # --- Tag: minimal 3 yang benar-benar muncul di transkrip/judul/deskripsi.
@@ -265,10 +265,10 @@ class MetadataGenerator:
         ]
         if len(grounded) < 3:
             raise MetadataGenerationError(
-                "Tag dari AI terlalu umum / tidak terkait isi video; metadata ditolak."
+                "The AI tags are too generic or unrelated to the video, so the metadata was rejected."
             )
         if all(tag in GENERIC_TAGS for tag in grounded):
-            raise MetadataGenerationError("Semua tag generik; metadata ditolak.")
+            raise MetadataGenerationError("All tags are generic, so the metadata was rejected.")
 
         if not hook:
             hook = title

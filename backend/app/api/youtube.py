@@ -59,7 +59,7 @@ def _decode_oauth_state(state: str) -> UUID:
             raise ValueError("Invalid OAuth state purpose")
         return UUID(payload["sub"])
     except (JWTError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail="State OAuth YouTube tidak valid atau sudah kedaluwarsa.") from exc
+        raise HTTPException(status_code=400, detail="The YouTube OAuth state is invalid or has expired.") from exc
 
 
 @router.get("/auth-url", response_model=YouTubeAuthUrl)
@@ -286,7 +286,7 @@ async def upload_to_youtube(
         )
 
     if not clip.download_url:
-        raise HTTPException(status_code=400, detail="Klip ini tidak punya file video untuk diunggah.")
+        raise HTTPException(status_code=400, detail="This clip has no video file to upload.")
 
     result = await db.execute(
         select(YouTubeCredential).where(YouTubeCredential.user_id == current_user.id)
@@ -295,7 +295,7 @@ async def upload_to_youtube(
     if credential is None:
         raise HTTPException(
             status_code=400,
-            detail="Akun YouTube belum terhubung. Hubungkan dulu dari halaman Profil/Dashboard.",
+            detail="YouTube is not connected yet. Connect it from the Profile or Dashboard page first.",
         )
 
     access_token = decrypt_field(credential.access_token_encrypted)
@@ -325,8 +325,8 @@ async def upload_to_youtube(
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    "Transkrip klip belum siap. Buka popup klip, tekan "
-                    "\"Generate ulang AI\" sampai judul muncul, lalu upload lagi."
+                    "The clip transcript is not ready. Open the clip popup, click "
+                    "\"Regenerate with AI\" until a title appears, then upload again."
                 ),
             )
         transcript = stored
@@ -384,7 +384,7 @@ async def upload_to_youtube(
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Upload YouTube gagal: {str(exc)[:300]}")
+        raise HTTPException(status_code=502, detail=f"YouTube upload failed: {str(exc)[:300]}")
 
     clip.youtube_uploaded = True
     clip.youtube_video_id = uploaded["video_id"]

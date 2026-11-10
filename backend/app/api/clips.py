@@ -55,7 +55,7 @@ async def _load_clip(db: AsyncSession, clip_id: str, user_id: UUID) -> Tuple[Cli
     try:
         cid = UUID(clip_id)
     except (ValueError, AttributeError, TypeError):
-        raise HTTPException(status_code=400, detail="ID klip tidak valid.")
+        raise HTTPException(status_code=400, detail="Invalid clip id.")
 
     result = await db.execute(
         select(Clip, Task)
@@ -64,7 +64,7 @@ async def _load_clip(db: AsyncSession, clip_id: str, user_id: UUID) -> Tuple[Cli
     )
     row = result.first()
     if not row:
-        raise HTTPException(status_code=404, detail="Klip tidak ditemukan.")
+        raise HTTPException(status_code=404, detail="Clip not found.")
     clip, task = row
     return clip, task
 
@@ -132,18 +132,17 @@ _BILLING_WORDS = ("402", "credit", "kredit", "quota", "kuota", "billing", "payme
 def _friendly_transcription_error(message: str) -> str:
     """Ubah error teknis transkripsi menjadi pesan yang bisa ditindaklanjuti."""
     low = (message or "").lower()
-    if "fallback lokal juga gagal" in low or "whisper lokal" in low:
+    if "local whisper" in low or "fallback lokal juga gagal" in low or "whisper lokal" in low:
         return (
-            "Transkrip klip gagal dibuat: provider Whisper menolak (kredit habis) "
-            "dan Whisper lokal gagal dimuat. Coba lagi beberapa saat, atau proses "
-            "ulang video agar transkrip tersimpan."
+            "Could not create the clip transcript: the Whisper provider refused the request (out of credit) "
+            "and the local Whisper model could not load. Try again shortly, or reprocess the video so a transcript is stored."
         )
     if any(word in low for word in _BILLING_WORDS):
         return (
-            "Kredit layanan Whisper habis. Metadata tidak dibuat agar tidak "
-            "mengarang isi video; top up kredit atau proses ulang video."
+            "The Whisper transcription credit is exhausted. No metadata was generated to avoid inventing content; "
+            "top up the credit or reprocess the video."
         )
-    return (message or "Transkripsi gagal.")[:260]
+    return (message or "Transcription failed.")[:260]
 
 
 
@@ -185,7 +184,7 @@ async def _ensure_transcript(clip: Clip, db: AsyncSession) -> Tuple[str, str]:
     if not clip.download_url:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Klip ini belum punya file video, jadi transkrip tidak bisa dibuat.",
+            detail="This clip has no video file, so a transcript cannot be created.",
         )
 
     try:
@@ -194,7 +193,7 @@ async def _ensure_transcript(clip: Clip, db: AsyncSession) -> Tuple[str, str]:
         logger.warning("Transkripsi ulang klip %s gagal: %s", clip.id, str(exc)[:300])
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=_friendly_transcription_error(f"Gagal membuat transkrip klip: {str(exc)[:300]}"),
+            detail=_friendly_transcription_error(f"Could not create the clip transcript: {str(exc)[:300]}"),
         )
 
     words = text.split()
@@ -202,8 +201,7 @@ async def _ensure_transcript(clip: Clip, db: AsyncSession) -> Tuple[str, str]:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                "Audio klip ini tidak mengandung ucapan yang cukup, jadi metadata "
-                "tidak bisa dibuat dari transkrip (tidak mau dikarang)."
+                "This clip has too little speech to ground the metadata, so nothing was generated."
             ),
         )
 
@@ -358,7 +356,7 @@ async def generate_clip_metadata(
                 generated_by="ai",
                 status_value="failed",
                 message=(
-                    "Transkrip klip ini tidak tersedia sehingga metadata tidak dibuat: "
+                    "This clip has no transcript, so no metadata was created: "
                     f"{failure}"
                 ),
             )
@@ -376,8 +374,8 @@ async def generate_clip_metadata(
             generated_by="ai",
             status_value="preparing",
             message=(
-                "Menyiapkan transkrip klip (SRT/Whisper) lalu metadata dibuat AI. "
-                "Biasanya selesai dalam 1-2 menit."
+                "Preparing the clip transcript (SRT/Whisper); AI metadata follows. "
+                "This usually takes 1-2 minutes."
             ),
         )
 

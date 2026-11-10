@@ -1577,3 +1577,182 @@ select.ui-input option:hover {
   color: #ffe3a0;
 }
 
+
+/* =============================================================================
+   FRAGMENTED FRAME — sistem desain kartu (mengikuti referensi pengguna).
+   Bingkai emas 1px dengan sudut terpotong (clip-path), isi gelap, label
+   monospace amber, dan trigger bergaya kotak berpanah.
+   ============================================================================= */
+:root {
+  --fx-clip: polygon(
+    0 0, 35% 0, 40% 8%, 60% 8%, 65% 0, 100% 0,
+    100% 100%, 65% 100%, 60% 92%, 40% 92%, 35% 100%, 0 100%
+  );
+  --fx-clip-trigger: polygon(
+    0 0, 35% 0, 40% 12%, 60% 12%, 65% 0, 100% 0,
+    100% 100%, 65% 100%, 60% 88%, 40% 88%, 35% 100%, 0 100%
+  );
+  --fx-gold: #e8b85b;
+  --fx-gold-soft: #a17d40;
+  --fx-gold-bright: #ffd77f;
+  --fx-amber: #f0a477;
+  --fx-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* --- Bingkai kartu: emas di tepi, isi gelap di dalam --- */
+.ui-card,
+.ui-opt,
+.ui-stat,
+.clip-card,
+.style-card,
+.clip-modal {
+  position: relative;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: linear-gradient(180deg, var(--fx-gold-bright), var(--fx-gold-soft)) !important;
+  clip-path: var(--fx-clip);
+  box-shadow: none !important;
+  transition: filter 0.25s ease, transform 0.25s ease;
+}
+.ui-card::after,
+.ui-opt::after,
+.ui-stat::after,
+.clip-card::after,
+.style-card::after,
+.clip-modal::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  z-index: 0;
+  background: linear-gradient(165deg, #171b25, #0d0f16);
+  clip-path: var(--fx-clip);
+  pointer-events: none;
+}
+.ui-card > *,
+.ui-opt > *,
+.ui-stat > *,
+.clip-card > *,
+.style-card > *,
+.clip-modal > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Padding kartu = 1px bingkai + padding asli. */
+.ui-card { padding: 19px; }
+.ui-opt { padding: 11px 13px 12px; }
+.ui-stat { padding: 15px 17px; }
+.clip-card { padding: 1px; }
+.style-card { padding: 8px 9px 9px; }
+.clip-modal { padding: 19px; }
+
+.ui-card:hover,
+.style-card:hover { filter: drop-shadow(0 0 10px rgba(232, 184, 91, 0.26)); }
+.clip-card:hover {
+  transform: translateY(-3px);
+  filter: drop-shadow(0 0 14px rgba(240, 164, 119, 0.35));
+}
+.clip-card {
+  background: linear-gradient(180deg, #ffc79a, #c98a5f) !important;
+}
+.clip-card:hover { box-shadow: none !important; }
+.clip-media { clip-path: var(--fx-clip); }
+
+/* --- Label monospace ala referensi --- */
+.ui-opt-label,
+.ui-stat span,
+.clip-meta,
+.clip-modal-label,
+.ui-kicker {
+  font-family: var(--fx-mono);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+.ui-opt-label { font-size: 10px; color: #c8a86a; }
+.ui-stat span { color: #c8a86a; }
+.clip-meta { font-size: 10px; color: #c8b48d; }
+.clip-meta b { color: #8a7c5a; }
+
+/* --- Select bergaya dropdown-trigger referensi --- */
+select.ui-input {
+  clip-path: var(--fx-clip-trigger);
+  background: #201a11;
+  border: 1px solid var(--fx-gold-soft);
+  color: #f4d18b;
+  font-family: var(--fx-mono);
+  font-size: 12px;
+  letter-spacing: 0.3px;
+  min-height: 42px;
+}
+select.ui-input:focus-visible {
+  outline: none;
+  filter: drop-shadow(0 0 8px rgba(232, 184, 91, 0.45));
+}
+
+/* --- Kartu gaya subtitle (berjejer, bukan dropdown) --- */
+.ui-opt-wide { grid-column: 1 / -1; }
+.style-card-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  margin-top: 8px;
+}
+.style-card {
+  display: grid;
+  gap: 6px;
+  text-align: left;
+  font: inherit;
+  color: #cdbfa4;
+  cursor: pointer;
+  background: linear-gradient(180deg, #4a3a20, #241c11) !important;
+}
+.style-card::after { background: linear-gradient(180deg, #1b1409, #110d08); }
+.style-card-label {
+  font-family: var(--fx-mono);
+  font-size: 9.5px;
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
+  color: #b9a276;
+}
+.style-card-preview {
+  display: grid;
+  place-items: center;
+  min-height: 46px;
+  padding: 4px;
+  background: #0b0d13;
+  border: 1px dashed rgba(232, 184, 91, 0.22);
+  overflow: hidden;
+  text-align: center;
+  line-height: 1.25;
+}
+.style-card.selected {
+  background: linear-gradient(180deg, var(--fx-gold-bright), var(--fx-gold-soft)) !important;
+}
+.style-card.selected::after { background: linear-gradient(180deg, #241b0e, #150f09); }
+.style-card.selected .style-card-label { color: var(--fx-gold-bright); }
+.style-card:focus-visible {
+  outline: none;
+  filter: drop-shadow(0 0 8px rgba(232, 184, 91, 0.6));
+}
+
+/* --- Watermark logo upload --- */
+.wm-file {
+  padding: 7px 9px;
+  font-size: 12px;
+  clip-path: none;
+}
+.wm-logo-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.wm-logo-row img {
+  max-height: 56px;
+  max-width: 150px;
+  object-fit: contain;
+  padding: 4px;
+  background: #0b0d13;
+  border: 1px solid rgba(232, 184, 91, 0.35);
+}
+

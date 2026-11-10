@@ -134,7 +134,7 @@ class AudioTranscriber:
         api_key = settings.TRANSCRIPTION_API_KEY or settings.AI_API_KEY or settings.OPENAI_API_KEY
         if not api_key:
             raise RuntimeError(
-                "TRANSCRIPTION_API_KEY wajib diisi untuk provider transkripsi non-local."
+                "TRANSCRIPTION_API_KEY is required for a non-local transcription provider."
             )
         return openai.AsyncOpenAI(
             api_key=api_key,
@@ -150,10 +150,10 @@ class AudioTranscriber:
                 from faster_whisper import WhisperModel
             except ImportError as exc:
                 raise RuntimeError(
-                    "Transkripsi lokal butuh paket faster-whisper yang tidak dipasang "
-                    "secara default. Jalankan: "
+                    "Local transcription needs the faster-whisper package, which is not installed "
+                    "by default. Run: "
                     "pip install -r requirements-whisper-local.txt — atau pakai "
-                    "TRANSCRIPTION_PROVIDER berbasis API (groq/openai/openrouter)."
+                    "an API-based TRANSCRIPTION_PROVIDER (groq/openai/openrouter)."
                 ) from exc
             self._model = WhisperModel(
                 # Nama model faster-whisper (tiny/base/small/medium/large-v3).
@@ -207,7 +207,7 @@ class AudioTranscriber:
             except Exception as exc:
                 if self._is_gpu():
                     raise RuntimeError(
-                        f"Transkripsi GPU gagal: {str(exc)[:300]}"
+                        f"GPU transcription failed: {str(exc)[:300]}"
                     ) from exc
                 logger.warning(
                     "Transkripsi GPU gagal (%s); mencoba provider API.",
@@ -226,8 +226,8 @@ class AudioTranscriber:
                 return await self._transcribe_local(audio_path, language)
             except Exception as local_exc:
                 raise RuntimeError(
-                    f"Transkripsi gagal: provider '{self.provider}' error "
-                    f"({str(exc)[:200]}) dan fallback lokal juga gagal "
+                    f"Transcription failed: provider '{self.provider}' error "
+                    f"({str(exc)[:200]}) and the local fallback failed too "
                     f"({str(local_exc)[:200]})."
                 ) from local_exc
 
@@ -305,7 +305,7 @@ class AudioTranscriber:
                 # Whisper lokal agar pengguna tidak menunggu lama.
                 if _is_billing_error(exc):
                     raise RuntimeError(
-                        f"Provider '{self.provider}' menolak karena kredit/kuota: {str(exc)[:200]}"
+                        f"Provider '{self.provider}' refused the request (credit/quota): {str(exc)[:200]}"
                     ) from exc
                 continue
 
@@ -322,7 +322,7 @@ class AudioTranscriber:
 
         if payload is None:
             raise RuntimeError(
-                f"Transkripsi melalui provider '{self.provider}' gagal di semua format: "
+                f"Transcription through provider '{self.provider}' failed for every format: "
                 + " | ".join(errors[:3])
             )
 

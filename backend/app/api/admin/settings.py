@@ -5,8 +5,9 @@ Semua endpoint di sini WAJIB token admin (cookie HttpOnly / Bearer) â€” lih
 `app/api/admin/deps.py`. Setiap perubahan dicatat ke `audit_logs`.
 """
 from typing import List, Optional
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,8 +22,15 @@ from app.services.platform_settings import (
     normalize_watermark,
     set_watermark_config,
 )
+from app.services.storage import R2Storage
 
 router = APIRouter()
+storage = R2Storage()
+
+# Logo watermark: hanya gambar, maksimal 2 MB (dipakai ffmpeg overlay per klip).
+ALLOWED_LOGO_TYPES = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
+MAX_LOGO_BYTES = 2 * 1024 * 1024
+
 
 
 class WatermarkConfigIn(BaseModel):
@@ -75,7 +83,7 @@ async def update_watermark(
     _require_manager(current_admin)
     if not payload.image_url and not payload.text:
         raise HTTPException(
-            status_code=400, detail="Isi image_url atau text sebagai watermark"
+            status_code=400, detail="Provide a logo image or text for the watermark."
         )
 
     before = await get_watermark_config(db)
@@ -99,6 +107,70 @@ async def update_watermark(
     return after
 
 
+@router.post("/watermark/logo")
+async def upload_watermark_logo(
+    request: Request,
+    file: UploadFile = File(...),
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """
+    Upload logo watermark (PNG/JPEG/WEBP, maks 2 MB) ke R2 lalu simpan URL-nya.
+
+    Admin tidak perlu menempel URL manual: file diunggah di sini, disimpan ke
+    R2, dan langsung dipakai pipeline sebagai overlay.
+    """
+    _require_manager(current_admin)
+
+    content_type = (file.content_type or "").lower().split(";")[0].strip()
+    extension = ALLOWED_LOGO_TYPES.get(content_type)
+    if not extension:
+        raise HTTPException(
+            status_code=400,
+            detail="Logo must be a PNG, JPEG or WEBP image.",
+        )
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+    if len(data) > MAX_LOGO_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail="Logo is too large. Maximum size is 2 MB.",
+        )
+
+    key = f"branding/watermark/{uuid4().hex}.{extension}"
+    try:
+        image_url = storage.upload_bytes(data, key, content_type)
+    except Exception as exc:  # R2 error / kredensial salah
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not upload the logo to storage: {str(exc)[:200]}",
+        ) from exc
+
+    before = await get_watermark_config(db)
+    payload = dict(before)
+    payload["image_url"] = image_url
+    after = await set_watermark_config(db, payload)
+
+    db.add(
+        AuditLog(
+            actor_type=ActorType.ADMIN,
+            actor_id=current_admin.id,
+            actor_email=current_admin.email,
+            action="platform_watermark_logo_uploaded",
+            resource_type="platform_setting",
+            resource_id="watermark",
+            old_values=before,
+            new_values=after,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+    )
+    await db.commit()
+    return after
+
+
 @router.post("/watermark/reset")
 async def reset_watermark(
     current_admin: User = Depends(get_current_admin),
@@ -106,3 +178,4 @@ async def reset_watermark(
 ):
     _require_manager(current_admin)
     return await set_watermark_config(db, normalize_watermark(None))
+

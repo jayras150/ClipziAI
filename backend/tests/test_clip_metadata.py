@@ -120,7 +120,7 @@ def test_upload_youtube_butuh_sumber_video():
     with pytest.raises(HTTPException) as excinfo:
         asyncio.run(service.upload_video(access_token="token", title="Tes"))
     assert excinfo.value.status_code == 400
-    assert "Sumber video" in str(excinfo.value.detail)
+    assert "No video source" in str(excinfo.value.detail)
 
 
 def test_parse_subtitle_srt_membuang_timestamp_dan_duplikat():
@@ -157,13 +157,13 @@ def test_friendly_transcription_error_tidak_menampilkan_error_mentah():
         "(402 credits) dan fallback lokal juga gagal (Transkripsi lokal butuh paket faster-whisper)"
     )
     message = _friendly_transcription_error(raw)
-    assert "Whisper lokal gagal dimuat" in message
+    assert "local Whisper model could not load" in message
     assert "openrouter" not in message
     assert len(message) <= 300
 
 
 def test_friendly_transcription_error_kredit_habis():
     message = _friendly_transcription_error("Error code: 402 - credits habis")
-    assert "Kredit" in message
+    assert "credit is exhausted" in message.lower()
 
 
