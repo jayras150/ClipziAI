@@ -818,7 +818,7 @@ export default function DashboardPage() {
                     type="number"
                     min="0"
                     step="any"
-                    placeholder="kosong"
+                    placeholder="optional"
                     value={endTimeValue}
                     onChange={(e) => setEndTimeValue(e.target.value)}
                     className="ui-input"

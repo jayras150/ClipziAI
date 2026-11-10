@@ -693,3 +693,15 @@
 
 .landing .how { padding: 74px 0; position: relative; }
 
+
+/* Hero: teks dulu, panel studio di kanan (desktop). */
+.landing .hero-v2 { align-items: center; }
+.landing .hero-copy-block { order: 1; min-width: 0; }
+.landing .studio-panel { order: 2; min-width: 0; }
+@media (min-width: 851px) {
+  .landing .menu-toggle { display: none; }
+}
+@media (max-width: 980px) {
+  .landing .hero-copy-block { order: 1; }
+  .landing .studio-panel { order: 2; }
+}

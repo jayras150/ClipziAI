@@ -1389,3 +1389,29 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
 .clip-select { width: 14px; height: 14px; accent-color: var(--ui-gold); cursor: pointer; }
 .with-icon { display: inline-flex; align-items: center; gap: 7px; }
 
+
+/* --- Perbaikan hasil review visual --- */
+/* Bar chart admin: batang tidak boleh melebar penuh. */
+.ui-bars { gap: 8px; }
+.ui-bars > span:not(.ui-muted) { flex: 0 1 26px; max-width: 26px; }
+
+/* Tab bar + tombol aksi di dalamnya tidak boleh terlipat. */
+.ui-tabs { flex-wrap: nowrap; }
+.ui-tabs > .ui-btn,
+.ui-tabs > .ui-btn-ghost { flex: 0 0 auto; white-space: nowrap; }
+
+/* Kartu gaya subtitle: preview dipotong rapi di dalam kartu. */
+.style-card { overflow: hidden; }
+.style-card-preview { position: relative; }
+.style-card-preview > span {
+  display: block;
+  max-width: 100%;
+  font-size: 12px !important;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Format file di dropzone: beri jarak antar chip. */
+.ui-drop-formats { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
