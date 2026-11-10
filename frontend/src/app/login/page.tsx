@@ -17,7 +17,10 @@ export default function LoginPage() {
   const finishLogin = (accessToken: string, refreshToken?: string) => {
     localStorage.setItem("token", accessToken)
     if (refreshToken) localStorage.setItem("refresh_token", refreshToken)
-    window.location.href = "/dashboard"
+    // Kembali ke halaman yang tadi diminta (mis. /dashboard dari redirect sesi).
+    const next = new URLSearchParams(window.location.search).get("next")
+    const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard"
+    window.location.href = safeNext
   }
 
   const handleLogin = async (e: React.FormEvent) => {

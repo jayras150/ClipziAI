@@ -1,10 +1,11 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { CreditCard, LayoutDashboard, LogOut, ShieldCheck, UserRound } from "lucide-react"
 
 import { api, UserProfileData } from "@/lib/api"
+import { AUTH_EVENT, clearSession, hasSession } from "@/lib/auth"
 
 /** Inisial untuk avatar: "Alex Carter" -> "AC", fallback ke huruf pertama email. */
 function initials(name?: string | null, email?: string | null): string {
@@ -31,22 +32,33 @@ export default function UserMenu() {
   const [profile, setProfile] = useState<UserProfileData | null>(null)
   const boxRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
+  const loadProfile = useCallback(() => {
     const token = window.localStorage.getItem("token")
-    if (!token) return
-    let alive = true
+    if (!token) {
+      setProfile(null)
+      return
+    }
     api
       .getProfile(token)
-      .then((data) => {
-        if (alive) setProfile(data)
-      })
+      .then(setProfile)
       .catch(() => {
         /* biarkan avatar menampilkan inisial default */
       })
-    return () => {
-      alive = false
-    }
   }, [])
+
+  useEffect(() => {
+    loadProfile()
+    const sync = () => {
+      if (!hasSession()) setProfile(null)
+      else loadProfile()
+    }
+    window.addEventListener("storage", sync)
+    window.addEventListener(AUTH_EVENT, sync)
+    return () => {
+      window.removeEventListener("storage", sync)
+      window.removeEventListener(AUTH_EVENT, sync)
+    }
+  }, [loadProfile])
 
   useEffect(() => {
     if (!open) return
@@ -65,8 +77,7 @@ export default function UserMenu() {
   }, [open])
 
   const signOut = () => {
-    window.localStorage.removeItem("token")
-    window.localStorage.removeItem("refresh_token")
+    clearSession()
     window.location.href = "/login"
   }
 

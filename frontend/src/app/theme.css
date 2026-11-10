@@ -1402,15 +1402,19 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
 
 /* Kartu gaya subtitle: preview dipotong rapi di dalam kartu. */
 .style-card { overflow: hidden; }
-.style-card-preview { position: relative; }
+.style-card-preview {
+  position: relative;
+  min-height: 64px;
+  padding: 6px 5px;
+}
 .style-card-preview > span {
-  display: block;
+  display: inline-block;
   max-width: 100%;
-  font-size: 12px !important;
-  line-height: 1.25;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.12;
+  text-align: center;
+  white-space: normal;
+  transform: scale(0.78);
+  transform-origin: center;
 }
 
 /* Format file di dropzone: beri jarak antar chip. */
@@ -1418,3 +1422,95 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
 
 /* Tab dengan ikon: ikon dan label sejajar. */
 .ui-tab { display: inline-flex; align-items: center; gap: 6px; }
+
+/* =====================================================================
+   FIX putaran UI (Batch J)
+   ===================================================================== */
+/* Tombol Clear: ikon + label, bukan kotak 40px. */
+.ui-btn-clear {
+  width: auto;
+  min-width: 0;
+  padding: 0 14px;
+  gap: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  border-radius: var(--ui-radius-sm);
+  border: 1px solid var(--ui-line-strong);
+  background: rgba(255, 255, 255, 0.04);
+  color: #cfd4e0;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.18s;
+}
+.ui-btn-clear:hover:not(:disabled) {
+  border-color: rgba(255, 145, 136, 0.5);
+  background: rgba(255, 145, 136, 0.1);
+  color: #ffc2bc;
+}
+.ui-btn-clear:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Toggle switch khas Clipzy (blur-fill, jump cuts, clean audio, ducking, plan). */
+.ui-switch input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 36px;
+  height: 20px;
+  margin: 0;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  border: 1px solid var(--ui-line-strong);
+  background: #232a37;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.22s, border-color 0.22s, box-shadow 0.22s;
+}
+.ui-switch input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #8e97a8;
+  transition: left 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.22s;
+}
+.ui-switch input[type="checkbox"]:checked {
+  background: linear-gradient(135deg, #ffe3a6, #e0b25a);
+  border-color: rgba(244, 199, 107, 0.65);
+  box-shadow: 0 0 12px rgba(244, 199, 107, 0.3);
+}
+.ui-switch input[type="checkbox"]:checked::after {
+  left: 18px;
+  background: #241a09;
+}
+.ui-switch input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--ui-gold);
+  outline-offset: 2px;
+}
+.ui-switch:has(input[type="checkbox"]:checked) {
+  border-color: rgba(244, 199, 107, 0.45);
+  background: rgba(244, 199, 107, 0.09);
+  color: #ffe6b0;
+}
+
+/* Tombol "Remove watermark?" (khusus free plan). */
+.ui-watermark-cta {
+  min-height: 36px;
+  padding: 7px 13px;
+  font-size: 12px;
+  border-color: rgba(244, 199, 107, 0.42);
+  color: #ffe6b0;
+  background: rgba(244, 199, 107, 0.08);
+}
+.ui-watermark-cta:hover {
+  background: rgba(244, 199, 107, 0.16);
+  border-color: rgba(244, 199, 107, 0.7);
+  color: #fff3d3;
+}

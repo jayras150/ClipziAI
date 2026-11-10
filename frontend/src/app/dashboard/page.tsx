@@ -27,6 +27,7 @@ import {
 } from "lucide-react"
 
 import { api, ClipData, MusicTrackData, TaskData } from "@/lib/api"
+import { ensureSession } from "@/lib/auth"
 import { readApiError } from "@/lib/api-errors"
 import { requestYouTubeAccessToken } from "@/lib/social"
 import ConfirmDialog from "@/components/ConfirmDialog"
@@ -49,25 +50,102 @@ const SUBTITLE_STYLE_OPTIONS = [
   { value: "neon", label: "Neon cyan" },
   { value: "top", label: "Clean top" },
   { value: "center", label: "Center hook" },
+  { value: "karaoke", label: "Karaoke gold" },
+  { value: "minimal", label: "Minimal clean" },
+  { value: "impact", label: "Impact bold" },
+  { value: "boxed_gold", label: "Gold on black" },
+  { value: "pink", label: "Neon pink" },
+  { value: "top_clean", label: "Headline top" },
+  { value: "subtitle_bar", label: "Caption bar" },
 ]
 
-/** Pratinjau kecil di kartu "Style subtitle" agar gaya terlihat sebelum proses. */
+const OUTLINE_DARK =
+  "0 0 2px #000, 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000"
+const OUTLINE_THICK =
+  "0 0 3px #000, 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000"
+
+/**
+ * Pratinjau gaya subtitle. Nilainya sengaja meniru preset CAPTION_STYLES di
+ * backend (warna, ketebalan outline, kotak latar, posisi) supaya yang terlihat
+ * di kartu = yang dibakar ffmpeg.
+ */
 function subtitlePreviewStyle(style: string): React.CSSProperties {
   switch (style) {
     case "gold":
-      return { color: "#f4c76b", fontSize: 20, textShadow: "0 0 2px #000, 1px 1px 0 #000, -1px -1px 0 #000" }
+      return { color: "#f4c76b", fontSize: 17, fontWeight: 800, textShadow: OUTLINE_THICK }
     case "neon":
-      return { color: "#7ce9dc", fontSize: 20, textShadow: "0 0 6px rgba(124,233,220,.55), 1px 1px 0 #000" }
+      return {
+        color: "#7ce9dc",
+        fontSize: 17,
+        fontWeight: 800,
+        textShadow: "0 0 8px rgba(124,233,220,.75), 1px 1px 0 #000",
+      }
     case "boxed":
-      return { color: "#ffffff", fontSize: 15, background: "rgba(0,0,0,.72)", borderRadius: 3, padding: "3px 8px" }
+      return {
+        color: "#ffffff",
+        fontSize: 13,
+        fontWeight: 700,
+        background: "rgba(0,0,0,.78)",
+        padding: "3px 8px",
+        borderRadius: 3,
+      }
     case "top":
-      return { color: "#ffffff", fontSize: 16, textShadow: "1px 1px 0 #000, -1px -1px 0 #000" }
+      return { color: "#ffffff", fontSize: 14, fontWeight: 700, textShadow: OUTLINE_DARK }
     case "center":
-      return { color: "#f4c76b", fontSize: 22, textShadow: "0 0 3px #000, 2px 2px 0 #000, -2px -2px 0 #000" }
+      return { color: "#f4c76b", fontSize: 19, fontWeight: 800, textShadow: OUTLINE_THICK }
     case "classic":
-      return { color: "#ffffff", fontSize: 16, textShadow: "1px 1px 0 #000, -1px -1px 0 #000" }
+      return { color: "#ffffff", fontSize: 14, fontWeight: 600, textShadow: OUTLINE_DARK }
+    case "karaoke":
+      return {
+        color: "#ffffff",
+        fontSize: 18,
+        fontWeight: 800,
+        textShadow: OUTLINE_THICK,
+        background: "linear-gradient(90deg,#fff 0 55%,#f4c76b 55% 100%)",
+        WebkitBackgroundClip: "text",
+        WebkitTextFillColor: "transparent",
+      }
+    case "minimal":
+      return { color: "#f2f4f8", fontSize: 12, fontWeight: 500, textShadow: "0 1px 3px rgba(0,0,0,.65)" }
+    case "impact":
+      return {
+        color: "#ffffff",
+        fontSize: 21,
+        fontWeight: 900,
+        letterSpacing: "-0.5px",
+        textTransform: "uppercase",
+        textShadow: OUTLINE_THICK,
+      }
+    case "boxed_gold":
+      return {
+        color: "#f4c76b",
+        fontSize: 14,
+        fontWeight: 800,
+        background: "rgba(0,0,0,.82)",
+        padding: "3px 9px",
+        borderRadius: 4,
+      }
+    case "pink":
+      return {
+        color: "#ff7bc0",
+        fontSize: 17,
+        fontWeight: 800,
+        textShadow: "0 0 9px rgba(255,123,192,.8), 1px 1px 0 #1a0c14",
+      }
+    case "top_clean":
+      return { color: "#ffffff", fontSize: 15, fontWeight: 800, textShadow: OUTLINE_DARK }
+    case "subtitle_bar":
+      return {
+        color: "#ffffff",
+        fontSize: 12,
+        fontWeight: 700,
+        background: "rgba(0,0,0,.72)",
+        padding: "4px 12px",
+        borderRadius: 8,
+        width: "100%",
+      }
     default:
-      return { color: "#e8e9ee", fontSize: 15 }
+      return { color: "#e8e9ee", fontSize: 13, fontWeight: 600 }
   }
 }
 
@@ -167,13 +245,14 @@ export default function DashboardPage() {
   const [aspectRatioValue, setAspectRatioValue] = useState("9:16")
   const [captionTextValue, setCaptionTextValue] = useState("")
   const [captionStyle, setCaptionStyle] = useState("")
-  const [speedValue, setSpeedValue] = useState("1.0")
+  const [speedValue, setSpeedValue] = useState("1")
   // Fase 2: gaya & polish
   const [filterPreset, setFilterPreset] = useState("none")
   const [blurFill, setBlurFill] = useState(false)
   const [trimSilence, setTrimSilence] = useState(false)
   const [cleanAudio, setCleanAudio] = useState(false)
   const [watermarkUrl, setWatermarkUrl] = useState("")
+  const [watermarkBusy, setWatermarkBusy] = useState(false)
   const [watermarkPosition, setWatermarkPosition] = useState("bottom-right")
   const [introUrl, setIntroUrl] = useState("")
   const [outroUrl, setOutroUrl] = useState("")
@@ -243,40 +322,52 @@ export default function DashboardPage() {
   }, [])
 
   useEffect(() => {
-    const stored = getToken()
-    if (!stored) {
-      window.location.href = "/login"
-      return
-    }
-    setToken(stored)
-    refreshTasks(stored)
+    let cancelled = false
 
-    api
-      .getYouTubeStatus(stored)
-      .then(setYoutube)
-      .catch(() => setYoutubeMessage("Could not load your YouTube status."))
+    const boot = async () => {
+      // Coba pulihkan sesi dulu (refresh bila access token hampir habis).
+      // Hanya kalau benar-benar tidak ada sesi, pengguna diarahkan ke login.
+      const stored = await ensureSession()
+      if (cancelled) return
+      if (!stored) {
+        const next = `${window.location.pathname}${window.location.search}`
+        window.location.href = `/login?next=${encodeURIComponent(next)}`
+        return
+      }
+      setToken(stored)
+      refreshTasks(stored)
 
-    api
-      .getProfile(stored)
-      .then((profile) => setPlanType(profile.plan_type))
-      .catch(() => setPlanType(""))
+      api
+        .getYouTubeStatus(stored)
+        .then(setYoutube)
+        .catch(() => setYoutubeMessage("Could not load your YouTube status."))
 
-    // Library musik latar (track disimpan di R2).
-    api
-      .getMusicLibrary(stored)
-      .then(setMusicLibrary)
-      .catch(() => setMusicLibrary([]))
+      api
+        .getProfile(stored)
+        .then((profile) => setPlanType(profile.plan_type))
+        .catch(() => setPlanType(""))
 
-    const params = new URLSearchParams(window.location.search)
-    const prefill = params.get("video_url")
-    if (prefill) {
-      setUrlValue(prefill)
+      // Library musik latar (track disimpan di R2).
+      api
+        .getMusicLibrary(stored)
+        .then(setMusicLibrary)
+        .catch(() => setMusicLibrary([]))
+
+      const params = new URLSearchParams(window.location.search)
+      const prefill = params.get("video_url")
+      if (prefill) setUrlValue(prefill)
       setActiveTab("upload")
+
+      const status = params.get("youtube")
+      if (status === "connected") setYoutubeMessage("YouTube connected successfully.")
+      if (status === "denied") setYoutubeMessage("YouTube permission was cancelled.")
+      if (status === "error") setYoutubeMessage("YouTube connection failed. Check the Google OAuth configuration.")
     }
-    const status = params.get("youtube")
-    if (status === "connected") setYoutubeMessage("YouTube connected successfully.")
-    if (status === "denied") setYoutubeMessage("YouTube permission was cancelled.")
-    if (status === "error") setYoutubeMessage("YouTube connection failed. Check the Google OAuth configuration.")
+
+    void boot()
+    return () => {
+      cancelled = true
+    }
   }, [refreshTasks])
 
   // Poll daftar task selama masih ada yang queued/processing.
@@ -443,6 +534,25 @@ export default function DashboardPage() {
     }
   }
 
+  /** Upload logo watermark dari perangkat user (bukan menempel URL). */
+  const uploadWatermark = async (file: File | null) => {
+    if (!file) return
+    const stored = getToken()
+    if (!stored) return
+    setWatermarkBusy(true)
+    setTaskError("")
+    setNotice("")
+    try {
+      const result = await api.uploadUserWatermark(stored, file)
+      setWatermarkUrl(result.watermark_url)
+      setNotice("Watermark uploaded — it will be applied to the rendered clip.")
+    } catch (error: any) {
+      setTaskError(readApiError(error.response?.data, "Could not upload the watermark."))
+    } finally {
+      setWatermarkBusy(false)
+    }
+  }
+
   /** Kosongkan kolom URL dan kembalikan fokus ke input. */
   const clearUrl = () => {
     setUrlValue("")
@@ -458,7 +568,7 @@ export default function DashboardPage() {
     setAspectRatioValue("9:16")
     setCaptionTextValue("")
     setCaptionStyle("")
-    setSpeedValue("1.0")
+    setSpeedValue("1")
     setFilterPreset("none")
     setBlurFill(false)
     setTrimSilence(false)
@@ -915,15 +1025,38 @@ export default function DashboardPage() {
                         </select>
                       </div>
                       <div className="ui-opt">
-                        <label className="ui-opt-label" htmlFor="watermark-url">Watermark PNG</label>
+                        <label className="ui-opt-label" htmlFor="watermark-file">
+                          Watermark logo (upload)
+                        </label>
                         <input
-                          id="watermark-url"
-                          type="url"
-                          placeholder="https://.../logo.png"
-                          value={watermarkUrl}
-                          onChange={(e) => setWatermarkUrl(e.target.value)}
-                          className="ui-input"
+                          id="watermark-file"
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          className="ui-input wm-file"
+                          disabled={watermarkBusy}
+                          onChange={(event) => {
+                            const file = event.target.files?.[0] ?? null
+                            event.target.value = ""
+                            void uploadWatermark(file)
+                          }}
                         />
+                        <span className="ui-hint">
+                          {watermarkBusy ? "Uploading…" : "PNG, JPEG or WEBP · max 2 MB"}
+                        </span>
+                        {watermarkUrl && (
+                          <div className="wm-logo-row">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={watermarkUrl} alt="Your watermark" />
+                            <button
+                              type="button"
+                              className="ui-btn ui-btn-ghost"
+                              onClick={() => setWatermarkUrl("")}
+                              disabled={watermarkBusy}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        )}
                       </div>
                       <div className="ui-opt">
                         <label className="ui-opt-label" htmlFor="watermark-position">Watermark position</label>
@@ -1068,13 +1201,13 @@ export default function DashboardPage() {
                     <RotateCcw size={14} /> Reset options
                   </button>
                   {planType === "free" && (
-                    <span
-                      className="ui-badge ui-badge-gold"
-                      style={{ gap: 5 }}
-                      title="All free-plan clips include the Clipzy watermark. Upgrade to remove it."
+                    <Link
+                      href="/pricing"
+                      className="ui-btn ui-btn-ghost ui-watermark-cta"
+                      title="Free-plan clips include the Clipzy watermark. Upgrade to remove it."
                     >
-                      <Droplets size={12} /> Clipzy watermark active
-                    </span>
+                      <Droplets size={13} /> Remove watermark?
+                    </Link>
                   )}
                   <span className="ui-hint" style={{ margin: 0 }}>
                     {renderEstimate}

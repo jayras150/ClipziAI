@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 
 import UserMenu from "@/components/UserMenu"
+import { AUTH_EVENT, hasSession } from "@/lib/auth"
 
 export default function Navbar() {
   // Status login dibaca di useEffect, BUKAN saat render: localStorage tidak ada
@@ -11,7 +12,15 @@ export default function Navbar() {
   const [signedIn, setSignedIn] = useState(false)
 
   useEffect(() => {
-    setSignedIn(Boolean(window.localStorage.getItem("token")))
+    const sync = () => setSignedIn(hasSession())
+    sync()
+    // Ikut berubah saat tab lain login/logout/refresh (storage + BroadcastChannel).
+    window.addEventListener("storage", sync)
+    window.addEventListener(AUTH_EVENT, sync)
+    return () => {
+      window.removeEventListener("storage", sync)
+      window.removeEventListener(AUTH_EVENT, sync)
+    }
   }, [])
 
   return (

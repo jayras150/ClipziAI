@@ -125,7 +125,123 @@ CAPTION_STYLES: Dict[str, Dict[str, Any]] = {
             "y": "center",
         },
     },
+    "karaoke": {
+        "label": "Karaoke gold",
+        "force_style": (
+            "FontName=DejaVu Sans,FontSize=20,PrimaryColour=&I00FFFFFF,"
+            "SecondaryColour=&H006BC7F4,OutlineColour=&H00000000,Outline=2.8,"
+            "Shadow=0,Bold=1,Alignment=2,MarginV=30"
+        ),
+        "overlay": {
+            "size_ratio": 0.070,
+            "color": "0xF4C76B",
+            "border_width": 6,
+            "border_color": "black",
+            "box": False,
+            "box_color": "black@0.6",
+            "y": "bottom",
+        },
+    },
+    "minimal": {
+        "label": "Minimal clean",
+        "force_style": (
+            "FontName=DejaVu Sans,FontSize=13,PrimaryColour=&H00F2F4F8,"
+            "OutlineColour=&H00000000,Outline=0,Shadow=2,Alignment=2,MarginV=18"
+        ),
+        "overlay": {
+            "size_ratio": 0.040,
+            "color": "0xF2F4F8",
+            "border_width": 0,
+            "border_color": "black",
+            "box": False,
+            "box_color": "black@0.55",
+            "y": "bottom",
+        },
+    },
+    "impact": {
+        "label": "Impact bold",
+        "force_style": (
+            "FontName=DejaVu Sans,FontSize=22,PrimaryColour=&H00FFFFFF,"
+            "OutlineColour=&H00000000,Outline=3.4,Shadow=0,Bold=1,Alignment=2,MarginV=26"
+        ),
+        "overlay": {
+            "size_ratio": 0.078,
+            "color": "white",
+            "border_width": 7,
+            "border_color": "black",
+            "box": False,
+            "box_color": "black@0.6",
+            "y": "bottom",
+        },
+    },
+    "boxed_gold": {
+        "label": "Gold on black",
+        "force_style": (
+            "FontName=DejaVu Sans,FontSize=15,PrimaryColour=&H006BC7F4,"
+            "OutlineColour=&H00000000,Outline=1.2,Shadow=0,Bold=1,BorderStyle=3,"
+            "BackColour=&H80000000,Alignment=2,MarginV=24"
+        ),
+        "overlay": {
+            "size_ratio": 0.048,
+            "color": "0xF4C76B",
+            "border_width": 2,
+            "border_color": "black",
+            "box": True,
+            "box_color": "black@0.72",
+            "y": "bottom",
+        },
+    },
+    "pink": {
+        "label": "Neon pink",
+        "force_style": (
+            "FontName=DejaVu Sans,FontSize=18,PrimaryColour=&H00B07BFF,"
+            "OutlineColour=&H00201018,Outline=2.4,Shadow=1,Bold=1,Alignment=2,MarginV=26"
+        ),
+        "overlay": {
+            "size_ratio": 0.060,
+            "color": "0xFF7BC0",
+            "border_width": 5,
+            "border_color": "0x1A0C14",
+            "box": False,
+            "box_color": "black@0.6",
+            "y": "bottom",
+        },
+    },
+    "top_clean": {
+        "label": "Headline top",
+        "force_style": (
+            "FontName=DejaVu Sans,FontSize=16,PrimaryColour=&H00FFFFFF,"
+            "OutlineColour=&H00000000,Outline=1.8,Shadow=0,Bold=1,Alignment=8,MarginV=26"
+        ),
+        "overlay": {
+            "size_ratio": 0.052,
+            "color": "white",
+            "border_width": 4,
+            "border_color": "black",
+            "box": False,
+            "box_color": "black@0.6",
+            "y": "top",
+        },
+    },
+    "subtitle_bar": {
+        "label": "Caption bar",
+        "force_style": (
+            "FontName=DejaVu Sans,FontSize=14,PrimaryColour=&H00FFFFFF,"
+            "OutlineColour=&H00000000,Outline=1,Bold=1,BorderStyle=4,"
+            "BackColour=&HB0000000,Alignment=2,MarginV=20"
+        ),
+        "overlay": {
+            "size_ratio": 0.044,
+            "color": "white",
+            "border_width": 2,
+            "border_color": "black",
+            "box": True,
+            "box_color": "black@0.7",
+            "y": "bottom",
+        },
+    },
 }
+
 
 
 def get_caption_style(name: Optional[str]) -> Dict[str, Any]:

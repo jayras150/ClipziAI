@@ -76,17 +76,19 @@ def decrypt_field(ciphertext_b64: str) -> str:
 # JWT Token Management
 # ---------------------------------------------------------------------------
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """Create JWT access token (default 15 minutes)."""
+    """Create JWT access token (default dari setting ACCESS_TOKEN_MINUTES)."""
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=15))
+    lifetime = expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_MINUTES)
+    expire = datetime.now(timezone.utc) + lifetime
     to_encode.update({"exp": expire, "type": "access"})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm="HS256")
 
 
 def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """Create JWT refresh token (default 7 days)."""
+    """Create JWT refresh token (default dari setting REFRESH_TOKEN_DAYS)."""
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(days=7))
+    lifetime = expires_delta or timedelta(days=settings.REFRESH_TOKEN_DAYS)
+    expire = datetime.now(timezone.utc) + lifetime
     to_encode.update({"exp": expire, "type": "refresh"})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm="HS256")
 

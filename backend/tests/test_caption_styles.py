@@ -3,7 +3,12 @@ import pytest
 
 from app.services.processor import CAPTION_STYLES, get_caption_style
 
-EXPECTED_PRESETS = {"classic", "gold", "boxed", "neon", "top", "center"}
+EXPECTED_PRESETS = {
+    "classic", "gold", "boxed", "neon", "top", "center",
+    # tambahan variasi (Batch UI): karaoke, minimal, impact, boxed gold, pink,
+    # headline top, dan caption bar.
+    "karaoke", "minimal", "impact", "boxed_gold", "pink", "top_clean", "subtitle_bar",
+}
 
 
 def test_all_presets_exist():

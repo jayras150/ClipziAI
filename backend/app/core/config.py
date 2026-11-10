@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = None
     # Local faster-whisper fallback model (legacy-compatible)
     WHISPER_MODEL: str = "small"
+    # Masa berlaku token. Access token pendek (default 1 jam) + refresh panjang
+    # supaya sesi tidak memaksa login ulang, tapi token bocor tetap cepat mati.
+    ACCESS_TOKEN_MINUTES: int = 60
+    REFRESH_TOKEN_DAYS: int = 30
     # Folder cache model Whisper lokal. Kosong = default HuggingFace
     # (~/.cache/huggingface). Di container API diisi /app/.cache/huggingface
     # supaya model tidak diunduh ulang setiap container dibuat.
