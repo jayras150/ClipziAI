@@ -2,6 +2,7 @@
 YouTube Service - OAuth2, Data API v3 upload
 """
 import asyncio
+import os
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional
@@ -157,19 +158,193 @@ class YouTubeService:
         """Convert OAuth expires_in to a timezone-aware database timestamp."""
         return datetime.now(timezone.utc) + timedelta(seconds=int(expires_in or 3600))
     
+    async def refresh_access_token(self, refresh_token: str) -> Dict[str, Any]:
+        """Tukar refresh token dengan access token baru (token Google ~1 jam)."""
+        self.ensure_oauth_configured()
+        if not refresh_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=(
+                    "Token YouTube sudah kedaluwarsa dan tidak ada refresh token. "
+                    "Hubungkan ulang akun YouTube dari halaman Profil/Dashboard."
+                ),
+            )
+
+        def call_google() -> Dict[str, Any]:
+            response = requests.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "client_id": self.client_id,
+                    "client_secret": self.client_secret,
+                    "refresh_token": refresh_token,
+                    "grant_type": "refresh_token",
+                },
+                timeout=30,
+            )
+            if not response.ok:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail=(
+                        "Gagal memperbarui token YouTube. Hubungkan ulang akun "
+                        f"YouTube. ({response.text[:200]})"
+                    ),
+                )
+            return response.json()
+
+        return await asyncio.to_thread(call_google)
+
     async def upload_video(
         self,
         access_token: str,
-        video_path: str,
-        title: str,
+        video_path: Optional[str] = None,
+        title: str = "",
         description: str = "",
         tags: Optional[List[str]] = None,
         privacy_status: str = "public",
+        category_id: str = "24",
+        made_for_kids: bool = False,
+        source_url: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Upload video to YouTube."""
-        # TODO: Implement YouTube Data API v3 upload
+        """
+        Upload video ke YouTube memakai resumable upload Data API v3.
+
+        Sumber video boleh file lokal (`video_path`, dipakai worker) atau URL
+        publik R2 (`source_url`, dipakai API saat pengguna klik upload).
+        """
+        if not video_path and not source_url:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Sumber video tidak tersedia (file maupun URL kosong).",
+            )
+
+        allowed_privacy = {"public", "unlisted", "private"}
+        privacy = privacy_status if privacy_status in allowed_privacy else "public"
+        return await asyncio.to_thread(
+            self._upload_sync,
+            access_token,
+            video_path,
+            title,
+            description,
+            tags,
+            privacy,
+            category_id,
+            made_for_kids,
+            source_url,
+        )
+
+    def _upload_sync(
+        self,
+        access_token: str,
+        video_path: Optional[str],
+        title: str,
+        description: str,
+        tags: Optional[List[str]],
+        privacy: str,
+        category_id: str,
+        made_for_kids: bool,
+        source_url: Optional[str],
+    ) -> Dict[str, Any]:
+        """Bagian sinkron dari resumable upload (dijalankan di thread)."""
+        init_response = requests.post(
+            "https://www.googleapis.com/upload/youtube/v3/videos",
+            params={"uploadType": "resumable", "part": "snippet,status"},
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json; charset=UTF-8",
+                "X-Upload-Content-Type": "video/mp4",
+            },
+            json={
+                "snippet": {
+                    "title": (title or "Shorts")[:100],
+                    "description": (description or "")[:4900],
+                    "tags": [str(tag)[:60] for tag in (tags or [])][:15],
+                    "categoryId": str(category_id or "24"),
+                },
+                "status": {
+                    "privacyStatus": privacy,
+                    "selfDeclaredMadeForKids": bool(made_for_kids),
+                },
+            },
+            timeout=60,
+        )
+        if not init_response.ok:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"YouTube menolak sesi upload: {init_response.text[:400]}",
+            )
+
+        upload_url = init_response.headers.get("Location")
+        if not upload_url:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="YouTube tidak mengembalikan URL upload.",
+            )
+
+        handle = None
+        download = None
+        try:
+            if video_path:
+                handle = open(video_path, "rb")
+                content_length = os.path.getsize(video_path)
+
+                def file_chunks():
+                    while True:
+                        piece = handle.read(1024 * 1024)
+                        if not piece:
+                            break
+                        yield piece
+
+                body = file_chunks()
+            else:
+                download = requests.get(source_url, stream=True, timeout=180)
+                download.raise_for_status()
+                content_length = int(download.headers.get("Content-Length") or 0)
+
+                def url_chunks():
+                    for piece in download.iter_content(chunk_size=1024 * 1024):
+                        if piece:
+                            yield piece
+
+                body = url_chunks()
+
+            if content_length <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="Ukuran file video tidak diketahui; upload dibatalkan.",
+                )
+
+            put_response = requests.put(
+                upload_url,
+                data=body,
+                headers={"Content-Type": "video/mp4", "Content-Length": str(content_length)},
+                timeout=3600,
+            )
+        finally:
+            if handle:
+                handle.close()
+            if download is not None:
+                download.close()
+
+        if put_response.status_code not in (200, 201):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Upload ke YouTube gagal ({put_response.status_code}): "
+                    f"{put_response.text[:400]}"
+                ),
+            )
+
+        payload = put_response.json()
+        video_id = payload.get("id")
+        if not video_id:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="YouTube tidak mengembalikan video id.",
+            )
         return {
             "success": True,
-            "video_id": "placeholder_video_id",
-            "video_url": "https://youtu.be/placeholder_video_id",
+            "video_id": video_id,
+            "video_url": f"https://youtu.be/{video_id}",
+            "privacy_status": privacy,
         }
+

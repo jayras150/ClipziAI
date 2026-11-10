@@ -1088,20 +1088,24 @@ select.ui-input option:hover {
    ============================================================================= */
 .clip-grid {
   display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  max-width: 1060px;
+  gap: 14px;
+  /* auto-fit + 1fr: kartu melebar mengisi lebar panel, tidak ada celah kanan. */
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: stretch;
+  width: 100%;
   margin-top: 14px;
 }
-@media (max-width: 900px) {
-  .clip-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
 @media (max-width: 620px) {
-  .clip-grid { grid-template-columns: 1fr; max-width: 360px; }
+  .clip-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+}
+@media (max-width: 420px) {
+  .clip-grid { grid-template-columns: 1fr; }
 }
 
 .clip-card {
   position: relative;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   border-radius: 22px;
   background: linear-gradient(160deg, #151821, #0d0f15);
@@ -1117,9 +1121,30 @@ select.ui-input option:hover {
 .clip-media {
   position: relative;
   aspect-ratio: 9 / 16;
+  /* Batas tinggi: kartu boleh lebar, tapi tidak memanjang di monitor ultrawide. */
+  max-height: 360px;
   overflow: hidden;
   background: #0b0d12;
+  flex: 0 0 auto;
 }
+.clip-body { flex: 1 1 auto; }
+/* Tombol transparan penutup media: klik kartu membuka popup klip. */
+.clip-open {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.clip-open:focus-visible {
+  outline: 2px solid var(--ui-gold);
+  outline-offset: -3px;
+}
+.clip-index,
+.viral-bubble,
+.clip-hook { z-index: 2; }
 .clip-video {
   position: absolute;
   inset: 0;
@@ -1416,5 +1441,139 @@ select.ui-input option:hover {
   position: absolute;
   inset: 0;
   background: linear-gradient(180deg, rgba(7, 8, 11, 0.35), rgba(7, 8, 11, 0) 40%, rgba(7, 8, 11, 0.55));
+}
+
+
+/* =============================================================================
+   Popup klip — video + metadata AI + download + upload YouTube
+   ============================================================================= */
+.clip-modal {
+  width: min(1060px, 100%);
+  max-height: min(92vh, 900px);
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid rgba(244, 199, 107, 0.22);
+  border-radius: 22px 6px 22px 6px;
+  background: linear-gradient(160deg, #191c24, #0e1016);
+  box-shadow: 0 40px 90px rgba(0, 0, 0, 0.65);
+}
+.clip-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.clip-modal-eyebrow {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #9aa0ad;
+}
+.clip-modal-close {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px 3px 10px 3px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: #dcdde4;
+  cursor: pointer;
+}
+.clip-modal-close:hover { border-color: rgba(244, 199, 107, 0.5); color: #ffe3a0; }
+.clip-modal-close:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.clip-modal-body {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.85fr) minmax(0, 1.15fr);
+  gap: 16px;
+  margin-top: 14px;
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .clip-modal-body { grid-template-columns: 1fr; }
+}
+.clip-modal-media { display: grid; gap: 10px; }
+.clip-modal-video {
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  max-height: 460px;
+  border-radius: 16px 5px 16px 5px;
+  background: #0b0d12;
+  object-fit: cover;
+  display: block;
+}
+.clip-modal-files { display: flex; gap: 8px; flex-wrap: wrap; }
+.clip-modal-download { justify-content: center; }
+.clip-modal-transcript {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px 4px 12px 4px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.clip-modal-transcript summary {
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #c9cbd4;
+}
+.clip-modal-transcript p {
+  margin: 8px 0 0;
+  max-height: 150px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #a9adba;
+  white-space: pre-wrap;
+}
+
+.clip-modal-form { display: grid; gap: 6px; }
+.clip-modal-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #9aa0ad;
+}
+.clip-modal-label span { color: #6f7583; font-weight: 600; letter-spacing: 0; text-transform: none; }
+.clip-modal-textarea { resize: vertical; min-height: 120px; line-height: 1.5; font-size: 13px; }
+.clip-modal-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.clip-modal-actions .ui-btn { flex: 1 1 160px; justify-content: center; }
+.clip-modal-youtube {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.clip-modal-upload { justify-content: center; }
+.clip-modal-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #7ce9dc;
+  text-decoration: none;
+}
+.clip-modal-link:hover { text-decoration: underline; }
+.clip-modal-error {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #f0a3a3;
+}
+.clip-modal-notice {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #ffe3a0;
 }
 

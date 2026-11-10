@@ -147,6 +147,35 @@ export interface ClipData {
   ai_suggested_tags: string[] | null
   youtube_uploaded: boolean
   youtube_video_id: string | null
+  editing_applied?: string[] | null
+  created_at?: string
+}
+
+/** Metadata YouTube satu klip, dibuat AI dari transkrip Whisper. */
+export interface ClipMetadataData {
+  clip_id: string
+  title: string
+  description: string
+  tags: string[]
+  hook: string | null
+  language: string | null
+  /** Transkrip yang dipakai sebagai dasar metadata. */
+  transcript: string
+  /** "stored" = dari pipeline, "whisper" = ditranskripsi saat diminta */
+  transcript_source: string
+  /** "ai" = dibuat model, "manual" = hasil edit pengguna */
+  generated_by: string
+  ai_available: boolean
+}
+
+export interface YouTubeUploadResult {
+  success: boolean
+  youtube_video_id?: string | null
+  youtube_video_url?: string | null
+  error?: string | null
+  title?: string | null
+  privacy_status?: string | null
+  already_uploaded?: boolean
 }
 
 /** Tebak jenis sumber dari URL agar backend menyiapkan pipeline yang tepat. */
@@ -437,6 +466,67 @@ export class ApiClient {
     const response = await this.client.get<ClipData[]>(`/api/tasks/${taskId}/clips`, {
       headers: { Authorization: `Bearer ${token}` },
     })
+    return response.data
+  }
+
+  /**
+   * Minta AI membuat metadata (judul/deskripsi/tag) dari transkrip klip.
+   * `regenerate` = paksa versi baru walau metadata sudah tersimpan.
+   */
+  async generateClipMetadata(
+    token: string,
+    clipId: string,
+    regenerate = false,
+  ): Promise<ClipMetadataData> {
+    const response = await this.client.post<ClipMetadataData>(
+      `/api/clips/${clipId}/metadata`,
+      { regenerate },
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    return response.data
+  }
+
+  /** Simpan hasil edit manual judul/deskripsi/tag. */
+  async updateClipMetadata(
+    token: string,
+    clipId: string,
+    payload: { title: string; description: string; tags: string[] },
+  ): Promise<ClipMetadataData> {
+    const response = await this.client.patch<ClipMetadataData>(
+      `/api/clips/${clipId}/metadata`,
+      payload,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    return response.data
+  }
+
+  /** Unggah satu klip ke YouTube memakai metadata yang sudah disetujui. */
+  async uploadClipToYouTube(
+    token: string,
+    clipId: string,
+    payload: {
+      title: string
+      description: string
+      tags: string[]
+      privacy_status: string
+      force?: boolean
+    },
+  ): Promise<YouTubeUploadResult> {
+    const response = await this.client.post<YouTubeUploadResult>(
+      "/api/youtube/upload",
+      {
+        clip_id: clipId,
+        auto_generate_metadata: false,
+        force: payload.force ?? false,
+        metadata: {
+          title: payload.title,
+          description: payload.description,
+          tags: payload.tags,
+          privacy_status: payload.privacy_status,
+        },
+      },
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
     return response.data
   }
 

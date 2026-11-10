@@ -15,10 +15,14 @@ class YouTubeMetadata(BaseModel):
 
 
 class YouTubeUploadRequest(BaseModel):
-    task_id: str
+    task_id: Optional[str] = None
     clip_id: str
     metadata: Optional[YouTubeMetadata] = None
     auto_generate_metadata: bool = True
+    # Privasi default saat metadata tidak dikirim dari popup klip.
+    privacy_status: Optional[str] = "public"
+    # Upload ulang walau klip ini sudah pernah diunggah.
+    force: bool = False
 
 
 class YouTubeUploadResponse(BaseModel):
@@ -26,6 +30,9 @@ class YouTubeUploadResponse(BaseModel):
     youtube_video_id: Optional[str] = None
     youtube_video_url: Optional[str] = None
     error: Optional[str] = None
+    title: Optional[str] = None
+    privacy_status: Optional[str] = None
+    already_uploaded: bool = False
 
 
 class YouTubeAuthUrl(BaseModel):

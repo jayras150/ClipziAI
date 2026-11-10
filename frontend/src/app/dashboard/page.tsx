@@ -30,6 +30,7 @@ import { api, ClipData, MusicTrackData, TaskData } from "@/lib/api"
 import { readApiError } from "@/lib/api-errors"
 import { requestYouTubeAccessToken } from "@/lib/social"
 import ConfirmDialog from "@/components/ConfirmDialog"
+import ClipModal from "@/components/ClipModal"
 import SiteFooter from "@/components/SiteFooter"
 import UserMenu from "@/components/UserMenu"
 
@@ -198,11 +199,24 @@ export default function DashboardPage() {
   const [editingBusy, setEditingBusy] = useState(false)
   // Skor viral: tombol â†» per klip sedang menghitung ulang?
   const [scoreBusy, setScoreBusy] = useState<Record<string, boolean>>({})
+  // Popup klip: player video + metadata AI (judul/deskripsi/tag) + download + upload YouTube
+  const [modalClipId, setModalClipId] = useState("")
+
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
 
   const getToken = () => (typeof window === "undefined" ? null : localStorage.getItem("token"))
+
+  /** Klip yang sedang dibuka di popup (selalu ambil versi terbaru dari state). */
+  const modalClip = clips.find((item) => item.id === modalClipId) || null
+
+  /** Sinkronkan perubahan dari popup (metadata AI / upload YouTube) ke kartu klip. */
+  const patchClip = useCallback((clipId: string, patch: Partial<ClipData>) => {
+    setClips((current) =>
+      current.map((item) => (item.id === clipId ? { ...item, ...patch } : item)),
+    )
+  }, [])
 
   const loadClips = useCallback(async (authToken: string, taskId: string) => {
     setClipsLoading(true)
@@ -1307,6 +1321,13 @@ export default function DashboardPage() {
                                 />
                               )}
                               <div className="clip-shade" />
+                              <button
+                                type="button"
+                                className="clip-open"
+                                aria-label={`Buka klip ${clip.clip_index + 1}`}
+                                title="Buka video, metadata AI, download, upload YouTube"
+                                onClick={() => setModalClipId(clip.id)}
+                              />
                               <span className="clip-index">#{clip.clip_index + 1}</span>
 
                               {/* Viral Index bubble â€” klik = hitung ulang skor */}
@@ -1452,6 +1473,18 @@ export default function DashboardPage() {
         onConfirm={() => {
           setConfirmDisconnect(false)
           void disconnectYouTube()
+        }}
+      />
+
+      <ClipModal
+        clip={modalClip}
+        token={token}
+        youtubeConnected={Boolean(youtube.connected)}
+        onClose={() => setModalClipId("")}
+        onUpdated={patchClip}
+        onConnectYouTube={() => {
+          setModalClipId("")
+          void connectYouTube()
         }}
       />
     </div>

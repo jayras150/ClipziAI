@@ -11,8 +11,9 @@ from jose import JWTError, jwt
 from uuid import UUID
 
 from app.api.deps import get_db_session, get_current_user
+from app.api.clips import _ensure_transcript, _load_clip
 from app.core.config import get_settings
-from app.core.security import encrypt_field
+from app.core.security import decrypt_field, encrypt_field
 from app.models.user import User
 from app.models.clip import Clip
 from app.models.task import Task
@@ -24,6 +25,7 @@ from app.schemas.youtube import (
     YouTubeUploadResponse,
     ViralScoreResponse,
 )
+from app.services.metadata_generator import MetadataGenerationError, MetadataGenerator
 from app.services.youtube_service import YouTubeService
 from app.services.viral import score_clip
 
@@ -261,11 +263,126 @@ async def upload_to_youtube(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ):
-    # TODO: Implement YouTube Data API v3 upload
-    return YouTubeUploadResponse(
-        success=False,
-        error="YouTube upload not yet implemented",
+    """
+    Unggah satu klip ke YouTube.
+
+    Judul/deskripsi/tag diambil dari body (hasil edit di popup klip) atau dibuat
+    AI dari transkrip klip bila tidak dikirim — termasuk men-transkripsi ulang
+    klip lama yang belum punya transkrip.
+    """
+    clip, _task = await _load_clip(db, upload_data.clip_id, current_user.id)
+
+    if clip.youtube_uploaded and clip.youtube_video_id and not upload_data.force:
+        return YouTubeUploadResponse(
+            success=True,
+            youtube_video_id=clip.youtube_video_id,
+            youtube_video_url=f"https://youtu.be/{clip.youtube_video_id}",
+            title=clip.ai_suggested_title,
+            already_uploaded=True,
+        )
+
+    if not clip.download_url:
+        raise HTTPException(status_code=400, detail="Klip ini tidak punya file video untuk diunggah.")
+
+    result = await db.execute(
+        select(YouTubeCredential).where(YouTubeCredential.user_id == current_user.id)
     )
+    credential = result.scalar_one_or_none()
+    if credential is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Akun YouTube belum terhubung. Hubungkan dulu dari halaman Profil/Dashboard.",
+        )
+
+    access_token = decrypt_field(credential.access_token_encrypted)
+    expiry = credential.token_expires_at
+    if expiry is not None and expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=timezone.utc)
+    if not access_token or (expiry is not None and expiry <= datetime.now(timezone.utc) + timedelta(seconds=60)):
+        refresh_token = (
+            decrypt_field(credential.refresh_token_encrypted)
+            if credential.refresh_token_encrypted
+            else ""
+        )
+        tokens = await youtube_service.refresh_access_token(refresh_token)
+        access_token = tokens["access_token"]
+        credential.access_token_encrypted = encrypt_field(access_token)
+        credential.token_expires_at = youtube_service.token_expiry(tokens.get("expires_in"))
+        if tokens.get("refresh_token"):
+            credential.refresh_token_encrypted = encrypt_field(tokens["refresh_token"])
+        await db.commit()
+
+    metadata = upload_data.metadata
+    if metadata is None and upload_data.auto_generate_metadata:
+        transcript, _source = await _ensure_transcript(clip, db)
+        generator = MetadataGenerator()
+        try:
+            generated = await generator.generate(
+                transcript=transcript,
+                source_title=clip.title or "",
+                duration=float(clip.duration or 0),
+                start_time=clip.start_time or "",
+                end_time=clip.end_time or "",
+            )
+        except MetadataGenerationError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+        clip.ai_suggested_title = generated["title"][:500]
+        clip.ai_suggested_description = generated["description"]
+        clip.ai_suggested_tags = list(generated["tags"])
+        factors = dict(clip.viral_factors or {})
+        factors["ai_hook"] = generated.get("hook") or generated["title"]
+        clip.viral_factors = factors
+        await db.commit()
+        title = clip.ai_suggested_title
+        description = clip.ai_suggested_description or ""
+        tags = list(clip.ai_suggested_tags or [])
+        category_id = "24"
+        made_for_kids = False
+        privacy = upload_data.privacy_status or "public"
+    elif metadata is not None:
+        title = metadata.title
+        description = metadata.description
+        tags = list(metadata.tags or [])
+        category_id = metadata.category_id or "24"
+        made_for_kids = bool(metadata.made_for_kids)
+        privacy = metadata.privacy_status or upload_data.privacy_status or "public"
+    else:
+        # Tanpa AI dan tanpa metadata eksplisit: pakai yang sudah tersimpan.
+        title = clip.ai_suggested_title or clip.title or "Shorts"
+        description = clip.ai_suggested_description or ""
+        tags = list(clip.ai_suggested_tags or [])
+        category_id = "24"
+        made_for_kids = False
+        privacy = upload_data.privacy_status or "public"
+
+    try:
+        uploaded = await youtube_service.upload_video(
+            access_token=access_token,
+            source_url=clip.download_url,
+            title=title,
+            description=description,
+            tags=tags,
+            privacy_status=privacy,
+            category_id=category_id,
+            made_for_kids=made_for_kids,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Upload YouTube gagal: {str(exc)[:300]}")
+
+    clip.youtube_uploaded = True
+    clip.youtube_video_id = uploaded["video_id"]
+    await db.commit()
+
+    return YouTubeUploadResponse(
+        success=True,
+        youtube_video_id=uploaded["video_id"],
+        youtube_video_url=uploaded["video_url"],
+        title=title,
+        privacy_status=uploaded.get("privacy_status"),
+    )
+
 
 
 @router.get("/viral-score/{clip_id}", response_model=ViralScoreResponse)

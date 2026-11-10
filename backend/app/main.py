@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.db.session import engine, init_db
-from app.api import tasks, health, formats, editing, youtube
+from app.api import tasks, health, formats, editing, youtube, clips
 from app.api import auth, users, pricing, payment, credits
 from app.api import music
 from app.api.admin import auth as admin_auth
@@ -72,6 +72,7 @@ app.include_router(pricing.router, prefix="/api/pricing", tags=["Pricing"])
 app.include_router(payment.router, prefix="/api/payment", tags=["Payment"])
 app.include_router(credits.router, prefix="/api/credits", tags=["Credits"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
+app.include_router(clips.router, prefix="/api/clips", tags=["Clips"])
 app.include_router(music.router, prefix="/api/music", tags=["Music"])
 app.include_router(health.router, prefix="/api", tags=["Health"])
 app.include_router(formats.router, prefix="/api", tags=["Formats"])

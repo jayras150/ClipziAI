@@ -1,0 +1,292 @@
+"""
+Clip endpoints - detail satu klip + metadata YouTube yang dibuat AI.
+
+Metadata (judul, deskripsi, tag) selalu dibuat dari **transkrip klip** hasil
+Whisper. Klip lama yang belum punya transkrip ditranskripsi ulang otomatis saat
+metadata diminta, sehingga AI tidak pernah mengarang isi video.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import tempfile
+from typing import Optional, Tuple
+from uuid import UUID
+
+import requests
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_current_user, get_db_session
+from app.models.clip import Clip
+from app.models.task import Task
+from app.models.user import User
+from app.schemas.clip import (
+    ClipDetailResponse,
+    ClipMetadataRequest,
+    ClipMetadataResponse,
+    ClipMetadataUpdate,
+)
+from app.services.metadata_generator import (
+    MIN_TRANSCRIPT_WORDS,
+    MetadataGenerationError,
+    MetadataGenerator,
+    _clean_tags,
+)
+from app.services.transcriber import AudioTranscriber
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+def _stored_transcript(clip: Clip) -> str:
+    """Transkrip klip yang disimpan pipeline di `viral_factors.transcript`."""
+    factors = clip.viral_factors if isinstance(clip.viral_factors, dict) else {}
+    return str(factors.get("transcript") or "").strip()
+
+
+async def _load_clip(db: AsyncSession, clip_id: str, user_id: UUID) -> Tuple[Clip, Task]:
+    """Ambil klip milik user (lewat task) atau 404."""
+    try:
+        cid = UUID(clip_id)
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(status_code=400, detail="ID klip tidak valid.")
+
+    result = await db.execute(
+        select(Clip, Task)
+        .join(Task, Clip.task_id == Task.id)
+        .where(Clip.id == cid, Task.user_id == user_id)
+    )
+    row = result.first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Klip tidak ditemukan.")
+    clip, task = row
+    return clip, task
+
+
+def _download_clip(url: str, target: str) -> None:
+    """Unduh berkas klip dari R2 ke disk (dipakai untuk transkripsi ulang)."""
+    with requests.get(url, stream=True, timeout=180) as response:
+        response.raise_for_status()
+        with open(target, "wb") as handle:
+            for chunk in response.iter_content(chunk_size=1024 * 512):
+                if chunk:
+                    handle.write(chunk)
+
+
+async def _transcribe_clip_url(url: str) -> str:
+    """Transkripsi audio dari URL klip memakai layanan Whisper yang dikonfigurasi."""
+    with tempfile.TemporaryDirectory() as work_dir:
+        path = os.path.join(work_dir, "clip.mp4")
+        await asyncio.to_thread(_download_clip, url, path)
+        result = await AudioTranscriber().transcribe(path)
+        text = str(result.get("full_text") or "").strip()
+        if not text:
+            pieces = [
+                str(seg.get("text") or "").strip()
+                for seg in (result.get("segments") or [])
+            ]
+            text = " ".join(piece for piece in pieces if piece).strip()
+        return text
+
+
+
+async def _ensure_transcript(clip: Clip, db: AsyncSession) -> Tuple[str, str]:
+    """
+    Pastikan ada transkrip untuk klip ini.
+
+    Return `(transcript, source)` dengan source `stored` (dari pipeline) atau
+    `whisper` (ditranskripsi saat permintaan datang).
+    """
+    text = _stored_transcript(clip)
+    if len(text.split()) >= MIN_TRANSCRIPT_WORDS:
+        return text, "stored"
+
+    if not clip.download_url:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Klip ini belum punya file video, jadi transkrip tidak bisa dibuat.",
+        )
+
+    try:
+        text = await _transcribe_clip_url(clip.download_url)
+    except Exception as exc:  # provider Whisper error, jaringan, dsb.
+        logger.warning("Transkripsi ulang klip %s gagal: %s", clip.id, str(exc)[:300])
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Gagal membuat transkrip klip: {str(exc)[:220]}",
+        )
+
+    words = text.split()
+    if len(words) < MIN_TRANSCRIPT_WORDS:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Audio klip ini tidak mengandung ucapan yang cukup, jadi metadata "
+                "tidak bisa dibuat dari transkrip (tidak mau dikarang)."
+            ),
+        )
+
+    factors = dict(clip.viral_factors or {})
+    # Simpan versi ringkas di JSONB (kolomnya bukan TEXT panjang).
+    factors["transcript"] = text[:2000]
+    factors["transcript_words"] = len(words)
+    factors["transcript_source"] = "on_demand_whisper"
+    clip.viral_factors = factors
+    await db.commit()
+    return text, "whisper"
+
+
+def _hook_of(clip: Clip) -> Optional[str]:
+    factors = clip.viral_factors if isinstance(clip.viral_factors, dict) else {}
+    hook = factors.get("ai_hook")
+    return str(hook) if hook else None
+
+
+def _metadata_response(
+    clip: Clip,
+    *,
+    transcript: str,
+    transcript_source: str,
+    generated_by: str,
+    ai_available: bool = True,
+) -> ClipMetadataResponse:
+    return ClipMetadataResponse(
+        clip_id=str(clip.id),
+        title=clip.ai_suggested_title or "",
+        description=clip.ai_suggested_description or "",
+        tags=list(clip.ai_suggested_tags or []),
+        hook=_hook_of(clip),
+        language=None,
+        transcript=transcript,
+        transcript_source=transcript_source,
+        generated_by=generated_by,
+        ai_available=ai_available,
+    )
+
+
+@router.get("/{clip_id}", response_model=ClipDetailResponse)
+async def get_clip_detail(
+    clip_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Detail satu klip (video, metadata AI, transkrip) untuk popup di dashboard."""
+    clip, _task = await _load_clip(db, clip_id, current_user.id)
+    return ClipDetailResponse(
+        id=str(clip.id),
+        task_id=str(clip.task_id),
+        clip_index=clip.clip_index,
+        start_time=clip.start_time,
+        end_time=clip.end_time,
+        duration=clip.duration,
+        title=clip.title,
+        download_url=clip.download_url,
+        subtitle_url=clip.subtitle_url,
+        thumbnail_url=clip.thumbnail_url,
+        file_size=clip.file_size,
+        viral_score=clip.viral_score,
+        viral_factors=clip.viral_factors,
+        ai_suggested_title=clip.ai_suggested_title,
+        ai_suggested_description=clip.ai_suggested_description,
+        ai_suggested_tags=clip.ai_suggested_tags,
+        youtube_uploaded=clip.youtube_uploaded,
+        youtube_video_id=clip.youtube_video_id,
+        editing_applied=clip.editing_applied,
+        created_at=clip.created_at,
+        transcript=_stored_transcript(clip),
+        youtube_video_url=(
+            f"https://youtu.be/{clip.youtube_video_id}" if clip.youtube_video_id else None
+        ),
+    )
+
+
+@router.post("/{clip_id}/metadata", response_model=ClipMetadataResponse)
+async def generate_clip_metadata(
+    clip_id: str,
+    payload: Optional[ClipMetadataRequest] = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """
+    Buat (atau segarkan) metadata YouTube dari transkrip klip.
+
+    `regenerate=false` dan metadata sudah ada → langsung kembalikan cache supaya
+    popup tidak memanggil AI setiap kali dibuka.
+    """
+    options = payload or ClipMetadataRequest()
+    clip, _task = await _load_clip(db, clip_id, current_user.id)
+
+    if not options.regenerate and clip.ai_suggested_title:
+        return _metadata_response(
+            clip,
+            transcript=_stored_transcript(clip),
+            transcript_source="stored",
+            generated_by="ai",
+        )
+
+    transcript, source = await _ensure_transcript(clip, db)
+    generator = MetadataGenerator()
+
+    try:
+        result = await generator.generate(
+            transcript=transcript,
+            source_title=clip.title or "",
+            duration=float(clip.duration or 0),
+            start_time=clip.start_time or "",
+            end_time=clip.end_time or "",
+            language=options.language,
+            variation=1 if options.regenerate else 0,
+        )
+    except MetadataGenerationError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+    clip.ai_suggested_title = result["title"][:500]
+    clip.ai_suggested_description = result["description"]
+    clip.ai_suggested_tags = list(result["tags"])
+
+    # `hook` disimpan di viral_factors agar kartu klip bisa menampilkannya tanpa
+    # memanggil AI lagi.
+    factors = dict(clip.viral_factors or {})
+    factors["ai_hook"] = result.get("hook") or result["title"]
+    factors["ai_language"] = result.get("language")
+    clip.viral_factors = factors
+
+    await db.commit()
+    await db.refresh(clip)
+
+    return _metadata_response(
+        clip,
+        transcript=transcript,
+        transcript_source=source,
+        generated_by="ai",
+        ai_available=generator.available,
+    )
+
+
+@router.patch("/{clip_id}/metadata", response_model=ClipMetadataResponse)
+async def update_clip_metadata(
+    clip_id: str,
+    payload: ClipMetadataUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Simpan judul/deskripsi/tag hasil edit pengguna (tanpa memanggil AI)."""
+    clip, _task = await _load_clip(db, clip_id, current_user.id)
+
+    clip.ai_suggested_title = payload.title.strip()[:500]
+    clip.ai_suggested_description = payload.description.strip()
+    clip.ai_suggested_tags = _clean_tags(payload.tags)
+    await db.commit()
+    await db.refresh(clip)
+
+    return _metadata_response(
+        clip,
+        transcript=_stored_transcript(clip),
+        transcript_source="stored",
+        generated_by="manual",
+    )
+

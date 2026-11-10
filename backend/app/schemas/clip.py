@@ -1,10 +1,10 @@
 """
-Clip schemas - Clip details
+Clip schemas - Clip details + metadata AI (judul, deskripsi, tag)
 """
 from typing import Optional, List
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 
 
@@ -33,3 +33,42 @@ class ClipResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ClipMetadataResponse(BaseModel):
+    """Metadata YouTube satu klip + transkrip yang dipakai sebagai dasarnya."""
+
+    clip_id: str
+    title: str
+    description: str
+    tags: List[str] = Field(default_factory=list)
+    hook: Optional[str] = None
+    language: Optional[str] = None
+    transcript: str = ""
+    # "stored" = transkrip dari pipeline, "whisper" = ditranskripsi saat diminta
+    transcript_source: str = "stored"
+    # "ai" = dibuat model, "manual" = diedit pengguna
+    generated_by: str = "ai"
+    ai_available: bool = True
+
+
+class ClipMetadataRequest(BaseModel):
+    """Minta AI membuat/menyegarkan metadata."""
+
+    regenerate: bool = False
+    language: Optional[str] = None
+
+
+class ClipMetadataUpdate(BaseModel):
+    """Simpan hasil edit manual pengguna."""
+
+    title: str = Field(min_length=1, max_length=100)
+    description: str = Field(default="", max_length=5000)
+    tags: List[str] = Field(default_factory=list)
+
+
+class ClipDetailResponse(ClipResponse):
+    """Detail satu klip untuk popup: metadata AI + transkrip yang dipakai."""
+
+    transcript: str = ""
+    youtube_video_url: Optional[str] = None
