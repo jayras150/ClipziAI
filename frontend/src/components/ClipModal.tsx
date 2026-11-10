@@ -117,12 +117,12 @@ export default function ClipModal({
   const pollPrepared = useCallback(
     async (attempt: number) => {
       if (!clipId) return
-      if (attempt >= 30) {
+      if (attempt >= 60) {
         setNotice("")
         setError("Transkrip klip masih diproses. Coba tekan \"Generate ulang AI\" beberapa saat lagi.")
         return
       }
-      await new Promise((resolve) => setTimeout(resolve, 6000))
+      await new Promise((resolve) => setTimeout(resolve, 5000))
       try {
         const data = await api.generateClipMetadata(token, clipId, false)
         if (data.status === "failed") {
