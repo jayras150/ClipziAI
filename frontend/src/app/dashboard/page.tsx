@@ -39,7 +39,7 @@ const ACTIVE_STATUSES = ["queued", "processing"]
 /**
  * Opsi gaya subtitle yang dikirim sebagai `editing_options.caption_style`.
  * Nilainya dipetakan ke preset CAPTION_STYLES di backend
- * (`app/services/processor.py`) â€” warna, garis tepi, kotak latar, dan posisi.
+ * (`app/services/processor.py`) — warna, garis tepi, kotak latar, dan posisi.
  */
 const SUBTITLE_STYLE_OPTIONS = [
   { value: "", label: "Default" },
@@ -135,7 +135,7 @@ function viralBand(score: number): "excellent" | "good" | "fair" | "low" {
 function viralTooltip(factors: Record<string, any> | null | undefined): string {
   if (!factors) return "Skor viral belum dihitung"
   const pct = (key: string) =>
-    typeof factors[key] === "number" ? `${Math.round(factors[key] * 100)}%` : "â€”"
+    typeof factors[key] === "number" ? `${Math.round(factors[key] * 100)}%` : "—"
   const lines = [
     `Hook: ${pct("hook")}`,
     `Duration fit: ${pct("duration")}`,
@@ -197,7 +197,7 @@ export default function DashboardPage() {
   const [composeTransition, setComposeTransition] = useState("fade")
   const [splitAt, setSplitAt] = useState<Record<string, string>>({})
   const [editingBusy, setEditingBusy] = useState(false)
-  // Skor viral: tombol â†» per klip sedang menghitung ulang?
+  // Skor viral: tombol ↻ per klip sedang menghitung ulang?
   const [scoreBusy, setScoreBusy] = useState<Record<string, boolean>>({})
   // Popup klip: player video + metadata AI (judul/deskripsi/tag) + download + upload YouTube
   const [modalClipId, setModalClipId] = useState("")
@@ -318,7 +318,7 @@ export default function DashboardPage() {
       }
 
       try {
-        setYoutubeMessage("Opening Google consentâ€¦")
+        setYoutubeMessage("Opening Google consent…")
         const diagnostics = await api.getYouTubeDiagnostics(stored)
         const accessToken = await requestYouTubeAccessToken(
           diagnostics.gis_client_id || diagnostics.client_id || "",
@@ -412,7 +412,7 @@ export default function DashboardPage() {
       if (task.status === "error") {
         setTaskError(task.error_message || "The task was created but could not be sent to a GPU worker.")
       } else {
-        setNotice("Task created â€” Clipzy AI is processing your video.")
+        setNotice("Task created — Clipzy AI is processing your video.")
       }
       await refreshTasks(stored)
       setActiveTab("projects")
@@ -507,7 +507,7 @@ export default function DashboardPage() {
     )
   }
 
-  /** Hitung ulang skor viral satu klip (tombol â†» di kartu klip). */
+  /** Hitung ulang skor viral satu klip (tombol ↻ di kartu klip). */
   const recalcViralScore = async (clip: ClipData) => {
     if (!openTaskId) return
     setScoreBusy((current) => ({ ...current, [clip.id]: true }))
@@ -582,13 +582,13 @@ export default function DashboardPage() {
     if (!file) return
     setTaskError("")
     setNotice(
-      `"${file.name}" selected. Direct file upload is not available yet â€” paste a YouTube, TikTok or Instagram link above to start processing.`,
+      `"${file.name}" selected. Direct file upload is not available yet — paste a YouTube, TikTok or Instagram link above to start processing.`,
     )
   }
 
   const openTaskData = tasks.find((task) => task.id === openTaskId) || null
   // Contoh teks pratinjau: pakai caption yang diketik user agar terasa nyata.
-  const subtitlePreviewText = (captionTextValue.trim() || "Contoh caption").slice(0, 24)
+  const subtitlePreviewText = (captionTextValue.trim() || "Sample caption").slice(0, 24)
   // Estimasi kasar untuk user; kalau trim diisi, hitung dari durasi potongan.
   const trimSeconds = (() => {
     const start = parseFloat(startTimeValue)
@@ -607,7 +607,7 @@ export default function DashboardPage() {
     <div className="ui-shell">
       <header className="ui-container ui-container-wide ui-nav">
         <Link className="ui-brand" href="/">
-          <span className="ui-brand-mark">â–¶</span>
+          <span className="ui-brand-mark">▶</span>
           <span>
             clipzy<em>AI</em>
           </span>
@@ -714,7 +714,7 @@ export default function DashboardPage() {
 
         {activeTab === "upload" ? (
           <div className="ui-stack">
-            {/* 1) Kartu upload â€” selalu paling atas. */}
+            {/* 1) Kartu upload — selalu paling atas. */}
             <section className="ui-card ui-upload-hero">
               <div
                 className="ui-dropzone"
@@ -730,7 +730,7 @@ export default function DashboardPage() {
                 </div>
                 <p className="ui-drop-title">Drop your video here</p>
                 <p className="ui-hint" style={{ marginTop: 6 }}>
-                  Click to browse or drag a file â€” you can also paste a link below.
+                  Click to browse or drag a file — you can also paste a link below.
                 </p>
                 <div className="ui-drop-formats">
                   <span>MP4</span>
@@ -747,7 +747,7 @@ export default function DashboardPage() {
                 onChange={(event) => onPickFile(event.target.files?.[0] ?? null)}
               />
               <p className="ui-hint" style={{ textAlign: "center", marginTop: 10 }}>
-                Direct file upload is still rolling out â€” paste a link below for now.
+                Direct file upload is still rolling out — paste a link below for now.
               </p>
             </section>
 
@@ -796,7 +796,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Opsi editing manual (Fase 1) â€” setiap kontrol jadi kartu sendiri. */}
+              {/* Opsi editing manual (Fase 1) — setiap kontrol jadi kartu sendiri. */}
               <div className="ui-opt-grid">
                 <div className="ui-opt">
                   <label className="ui-opt-label" htmlFor="start-time">Start (s)</label>
@@ -825,7 +825,7 @@ export default function DashboardPage() {
                   />
                 </div>
                 <div className="ui-opt">
-                  <label className="ui-opt-label" htmlFor="aspect-ratio">Rasio</label>
+                  <label className="ui-opt-label" htmlFor="aspect-ratio">Aspect ratio</label>
                   <select
                     id="aspect-ratio"
                     value={aspectRatioValue}
@@ -883,16 +883,16 @@ export default function DashboardPage() {
                     onChange={(e) => setSpeedValue(e.target.value)}
                     className="ui-input"
                   >
-                    <option value="0.25">0.25Ã—</option>
-                    <option value="0.5">0.5Ã—</option>
-                    <option value="1">1Ã—</option>
-                    <option value="1.5">1.5Ã—</option>
-                    <option value="2">2Ã—</option>
-                    <option value="4">4Ã—</option>
+                    <option value="0.25">0.25×</option>
+                    <option value="0.5">0.5×</option>
+                    <option value="1">1×</option>
+                    <option value="1.5">1.5×</option>
+                    <option value="2">2×</option>
+                    <option value="4">4×</option>
                   </select>
                 </div>
               </div>
-                {/* Opsi lanjutan (Fase 2) â€” kartu per kontrol. */}
+                {/* Opsi lanjutan (Fase 2) — kartu per kontrol. */}
                 <details className="ui-opt-details" style={{ marginTop: 14 }}>
                   <summary>Advanced editing options</summary>
                   <div className="ui-opt-panel">
@@ -933,11 +933,11 @@ export default function DashboardPage() {
                           onChange={(e) => setWatermarkPosition(e.target.value)}
                           className="ui-input"
                         >
-                          <option value="top-left">kiri atas</option>
-                          <option value="top-right">kanan atas</option>
-                          <option value="bottom-left">kiri bawah</option>
-                          <option value="bottom-right">kanan bawah</option>
-                          <option value="center">tengah</option>
+                          <option value="top-left">Top left</option>
+                          <option value="top-right">Top right</option>
+                          <option value="bottom-left">Bottom left</option>
+                          <option value="bottom-right">Bottom right</option>
+                          <option value="center">Center</option>
                         </select>
                       </div>
                       <div className="ui-opt">
@@ -949,7 +949,7 @@ export default function DashboardPage() {
                           className="ui-input"
                         >
                           <option value="off">off</option>
-                          <option value="speaker">ikut pembicara</option>
+                          <option value="speaker">Follow speaker</option>
                         </select>
                       </div>
                       {autoZoom === "speaker" && (
@@ -961,10 +961,10 @@ export default function DashboardPage() {
                             onChange={(e) => setZoomLevel(e.target.value)}
                             className="ui-input"
                           >
-                            <option value="1">1.0Ã—</option>
-                            <option value="1.3">1.3Ã—</option>
-                            <option value="1.6">1.6Ã—</option>
-                            <option value="2">2.0Ã—</option>
+                            <option value="1">1.0×</option>
+                            <option value="1.3">1.3×</option>
+                            <option value="1.6">1.6×</option>
+                            <option value="2">2.0×</option>
                           </select>
                         </div>
                       )}
@@ -980,7 +980,7 @@ export default function DashboardPage() {
                           {musicLibrary.map((track) => (
                             <option key={track.id} value={track.url}>
                               {track.name}
-                              {track.mood ? ` Â· ${track.mood}` : ""}
+                              {track.mood ? ` · ${track.mood}` : ""}
                             </option>
                           ))}
                         </select>
@@ -1032,7 +1032,7 @@ export default function DashboardPage() {
                       </label>
                       <label className="ui-switch">
                         <input type="checkbox" id="trim-silence" checked={trimSilence} onChange={(e) => setTrimSilence(e.target.checked)} />
-                        <span>Buang jeda (jump cuts)</span>
+                        <span>Remove silence (jump cuts)</span>
                       </label>
                       <label className="ui-switch">
                         <input type="checkbox" id="clean-audio" checked={cleanAudio} onChange={(e) => setCleanAudio(e.target.checked)} />
@@ -1056,7 +1056,7 @@ export default function DashboardPage() {
                 <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                   <button type="submit" className="ui-btn ui-btn-gold" disabled={submitting}>
                     {submitting ? <LoaderCircle size={15} className="animate-spin" /> : <Play size={15} />}
-                    {submitting ? "Startingâ€¦" : "Process"}
+                    {submitting ? "Starting…" : "Process"}
                   </button>
                   <button
                     type="button"
@@ -1089,7 +1089,7 @@ export default function DashboardPage() {
                 Projects
               </h2>
               <button className="ui-btn ui-btn-ghost" onClick={() => refreshTasks(token)} disabled={tasksLoading}>
-                <RefreshCw size={14} /> {tasksLoading ? "Loadingâ€¦" : "Refresh"}
+                <RefreshCw size={14} /> {tasksLoading ? "Loading…" : "Refresh"}
               </button>
             </div>
 
@@ -1156,7 +1156,7 @@ export default function DashboardPage() {
                             {sourceHost(task.source_url)}
                           </h3>
                           <span className="ui-hint">
-                            {task.source_type} Â· {formatDate(task.created_at)}
+                            {task.source_type} · {formatDate(task.created_at)}
                           </span>
                         </div>
                       </div>
@@ -1222,7 +1222,7 @@ export default function DashboardPage() {
                   }}
                 >
                   <h3 className="ui-subtitle" style={{ margin: 0, fontSize: 17 }}>
-                    Clips Â· {sourceHost(openTaskData.source_url)}
+                    Clips · {sourceHost(openTaskData.source_url)}
                   </h3>
                   <span className={statusBadgeClass(openTaskData.status)} style={statusBadgeStyle(openTaskData.status)}>
                     {STATUS_LABEL[openTaskData.status] ?? openTaskData.status}
@@ -1231,13 +1231,13 @@ export default function DashboardPage() {
 
                 {clipsLoading ? (
                   <p className="ui-hint" style={{ marginTop: 14 }}>
-                    Loading clipsâ€¦
+                    Loading clips…
                   </p>
                 ) : clips.length === 0 ? (
                   <p className="ui-hint" style={{ marginTop: 14 }}>
                     {openTaskData.status === "error"
                       ? openTaskData.error_message || "This task failed before producing clips."
-                      : "No clips yet â€” this panel refreshes automatically while the task runs."}
+                      : "No clips yet — this panel refreshes automatically while the task runs."}
                   </p>
                 ) : (
                   <>
@@ -1337,7 +1337,7 @@ export default function DashboardPage() {
                               />
                               <span className="clip-index">#{clip.clip_index + 1}</span>
 
-                              {/* Viral Index bubble â€” klik = hitung ulang skor */}
+                              {/* Viral Index bubble — klik = hitung ulang skor */}
                               <button
                                 type="button"
                                 className={`viral-bubble ${band}`}
@@ -1352,14 +1352,14 @@ export default function DashboardPage() {
                               >
                                 <span className="viral-ring">
                                   <span className="viral-num">
-                                    {score === null ? "â€”" : Math.round(score)}
-                                    {estimated && score !== null ? <sup>â‰ˆ</sup> : null}
+                                    {score === null ? "—" : Math.round(score)}
+                                    {estimated && score !== null ? <sup>≈</sup> : null}
                                   </span>
                                 </span>
                                 <span className="viral-meta">
                                   <span className="viral-cap">Viral Index</span>
                                   <span className="viral-state">
-                                    {scoreBusy[clip.id] ? "Menghitungâ€¦" : factorLabel || "Belum dinilai"}
+                                    {scoreBusy[clip.id] ? "Calculating…" : factorLabel || "Not scored yet"}
                                   </span>
                                 </span>
                               </button>
@@ -1376,13 +1376,13 @@ export default function DashboardPage() {
                                 <span>{formatDuration(clip.duration)}</span>
                                 {clip.file_size ? (
                                   <>
-                                    <b>â€¢</b>
+                                    <b>•</b>
                                     <span>{formatSize(clip.file_size)}</span>
                                   </>
                                 ) : null}
                                 {clip.subtitle_url ? (
                                   <>
-                                    <b>â€¢</b>
+                                    <b>•</b>
                                     <span>subtitle</span>
                                   </>
                                 ) : null}
@@ -1469,7 +1469,7 @@ export default function DashboardPage() {
           <>
             Clipzy AI will stop auto-uploading clips to{" "}
             <strong>{youtube.channel_name || "your YouTube channel"}</strong> and the stored access token will be
-            removed. Your clips and projects stay untouched â€” you can reconnect anytime.
+            removed. Your clips and projects stay untouched — you can reconnect anytime.
           </>
         }
         confirmLabel="Yes, disconnect"
