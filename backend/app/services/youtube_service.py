@@ -4,6 +4,7 @@ YouTube Service - OAuth2, Data API v3 upload
 import asyncio
 import logging
 import os
+import tempfile
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional
@@ -241,7 +242,17 @@ class YouTubeService:
         try:
             payload = response.json()
         except Exception:  # noqa: BLE001
-            return response.text[:300]
+            text = (response.text or "").strip()
+            content_type = (response.headers.get("Content-Type") or "").lower()
+            if "html" in content_type or text.startswith("<"):
+                # Google mengirim halaman HTML untuk body request yang ditolak di
+                # lapisan frontend (mis. panjang body tidak cocok).
+                return (
+                    "Google returned an HTML error page instead of JSON "
+                    f"(HTTP {response.status_code}) — usually the upload body length "
+                    "did not match or the session URL expired."
+                )
+            return text[:300]
         error = payload.get("error") if isinstance(payload, dict) else None
         if isinstance(error, dict):
             message = error.get("message") or ""
@@ -327,49 +338,52 @@ class YouTubeService:
             )
 
         handle = None
-        download = None
+        temp_path = None
         try:
+            # Unduh dulu ke berkas sementara: Google menolak (HTTP 400 HTML) bila
+            # Content-Length tidak persis sama dengan body yang terkirim, dan itu
+            # mudah terjadi saat streaming langsung dari URL R2.
             if video_path:
-                handle = open(video_path, "rb")
-                content_length = os.path.getsize(video_path)
-
-                def file_chunks():
-                    while True:
-                        piece = handle.read(1024 * 1024)
-                        if not piece:
-                            break
-                        yield piece
-
-                body = file_chunks()
+                source_path = video_path
             else:
-                download = requests.get(source_url, stream=True, timeout=180)
-                download.raise_for_status()
-                content_length = int(download.headers.get("Content-Length") or 0)
+                fd, source_path = tempfile.mkstemp(prefix="yt-upload-", suffix=".mp4")
+                os.close(fd)
+                temp_path = source_path
+                with requests.get(source_url, stream=True, timeout=600) as download:
+                    download.raise_for_status()
+                    with open(source_path, "wb") as out:
+                        for piece in download.iter_content(chunk_size=1024 * 1024):
+                            if piece:
+                                out.write(piece)
 
-                def url_chunks():
-                    for piece in download.iter_content(chunk_size=1024 * 1024):
-                        if piece:
-                            yield piece
-
-                body = url_chunks()
-
+            content_length = os.path.getsize(source_path)
             if content_length <= 0:
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
                     detail="The video size could not be determined, so the upload was cancelled.",
                 )
 
+            handle = open(source_path, "rb")
             put_response = requests.put(
                 upload_url,
-                data=body,
-                headers={"Content-Type": "video/mp4", "Content-Length": str(content_length)},
+                data=handle,
+                headers={
+                    "Content-Type": "video/mp4",
+                    "Content-Length": str(content_length),
+                    "Content-Range": f"bytes 0-{content_length - 1}/{content_length}",
+                },
                 timeout=3600,
+            )
+            logger.info(
+                "YouTube upload sent %s bytes -> status %s",
+                content_length,
+                put_response.status_code,
             )
         finally:
             if handle:
                 handle.close()
-            if download is not None:
-                download.close()
+            if temp_path and os.path.exists(temp_path):
+                os.remove(temp_path)
 
         if put_response.status_code not in (200, 201):
             reason = self._google_error(put_response)
