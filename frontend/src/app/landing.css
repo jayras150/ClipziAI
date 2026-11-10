@@ -705,3 +705,8 @@
   .landing .hero-copy-block { order: 1; }
   .landing .studio-panel { order: 2; }
 }
+
+/* Hero rata atas supaya tidak ada ruang kosong besar di atas copy. */
+.landing .hero, .landing .hero-v2 { align-items: start; align-content: start; }
+.landing .hero-copy-block { padding-top: 28px; }
+@media (max-width: 980px) { .landing .hero-copy-block { padding-top: 0; } }
