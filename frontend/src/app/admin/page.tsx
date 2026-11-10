@@ -305,14 +305,31 @@ export default function AdminPage() {
                 <div className="ui-card">
                   <h2 className="ui-subtitle">Tasks per day · 14 days</h2>
                   <div className="ui-bars">
-                    {(stats?.tasks_per_day || []).map((day) => (
-                      <span
-                        key={day.date || Math.random()}
-                        title={`${day.date}: ${day.count}`}
-                        style={{ height: `${Math.min(100, 8 + day.count * 12)}%` }}
-                      />
-                    ))}
-                    {!stats?.tasks_per_day?.length && <span className="ui-muted">No data yet</span>}
+                    {(() => {
+                      // API hanya mengirim hari yang ada task-nya; di sini 14 hari
+                      // terakhir dilengkapi otomatis supaya grafik terbaca.
+                      const counts = new Map(
+                        (stats?.tasks_per_day || []).map((day) => [day.date, day.count]),
+                      )
+                      const today = new Date()
+                      return Array.from({ length: 14 }, (_, index) => {
+                        const date = new Date(today)
+                        date.setDate(today.getDate() - (13 - index))
+                        const key = date.toISOString().slice(0, 10)
+                        const count = counts.get(key) ?? 0
+                        return (
+                          <span
+                            key={key}
+                            title={`${key}: ${count}`}
+                            style={{
+                              height: `${Math.min(100, 8 + count * 14)}%`,
+                              opacity: count ? 1 : 0.32,
+                            }}
+                          />
+                        )
+                      })
+                    })()}
+                    {!stats && <span className="ui-muted">Loading…</span>}
                   </div>
                 </div>
 

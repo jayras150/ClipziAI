@@ -1393,7 +1393,7 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
 /* --- Perbaikan hasil review visual --- */
 /* Bar chart admin: batang tidak boleh melebar penuh. */
 .ui-bars { gap: 8px; }
-.ui-bars > span:not(.ui-muted) { flex: 0 1 26px; max-width: 26px; }
+.ui-bars > span:not(.ui-muted) { flex: 1 1 0; min-width: 8px; }
 
 /* Tab bar + tombol aksi di dalamnya tidak boleh terlipat. */
 .ui-tabs { flex-wrap: nowrap; }
@@ -1415,3 +1415,6 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
 
 /* Format file di dropzone: beri jarak antar chip. */
 .ui-drop-formats { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+
+/* Tab dengan ikon: ikon dan label sejajar. */
+.ui-tab { display: inline-flex; align-items: center; gap: 6px; }
