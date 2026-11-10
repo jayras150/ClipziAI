@@ -42,9 +42,9 @@ jobs:
             sujinwo555/clipzi-backend:1.5.0
             sujinwo555/clipzi-backend:latest
 
-      # API = image LEAN (tanpa CUDA/Whisper) untuk container di VPS.
-      # Beban berat (ffmpeg render + transkripsi) tidak pernah jalan di VPS.
-      - name: Build and Push (api, lean)
+      # API = image untuk container di VPS (tanpa CUDA, dengan Whisper CPU kecil).
+      # Render video berat tetap hanya di worker Vast.ai.
+      - name: Build and Push (api)
         uses: docker/build-push-action@v6
         with:
           context: ./backend

@@ -166,6 +166,21 @@ COPY --from=builder-api-whisper /opt/venv /opt/venv
 # =============================================================================
 FROM runtime AS worker
 
+# Vast.ai menaruh launcher-nya sendiri di `/.launch` di dalam instance. Pada
+# sebagian tipe instance launcher itu memanggil `ssh` / `ssh-keygen` / `sshd`
+# (akses SSH & reverse tunnel) — base image python:slim tidak punya OpenSSH,
+# sehingga muncul loop `/.launch: line 48: ssh: command not found` dan pipeline
+# tidak pernah jalan. Pasang client + server supaya launcher tidak gagal.
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        openssh-client \
+        openssh-server \
+    && mkdir -p /run/sshd \
+    && rm -rf /var/lib/apt/lists/* \
+    && ssh -V \
+    && command -v sshd
+USER clipzi
+
 COPY --from=builder-worker /opt/venv /opt/venv
 
 ENV LD_LIBRARY_PATH="/opt/venv/lib/python3.11/site-packages/nvidia/cublas/lib:/opt/venv/lib/python3.11/site-packages/nvidia/cudnn/lib:${LD_LIBRARY_PATH}"
