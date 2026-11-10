@@ -26,6 +26,7 @@ from app.services.downloader import VideoDownloader
 from app.services.processor import VideoProcessor, get_caption_style
 from app.services.storage import R2Storage
 from app.services.transcriber import AudioTranscriber
+from app.services.viral import score_clip
 
 logger = logging.getLogger(__name__)
 
@@ -495,6 +496,19 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                     )
                     thumbnail_url = storage.upload_file(thumb_path, thumb_key, "image/jpeg")
 
+                # Skor viral dihitung dari transkrip klip ini (bukan seluruh video)
+                # supaya hook/pacing mencerminkan potongan yang benar-benar diunggah.
+                clip_transcript = " ".join(
+                    str(seg.get("text") or "").strip()
+                    for seg in _slice_segments(segments or [], start, start + duration)
+                ).strip()
+                viral = score_clip(
+                    transcript=clip_transcript,
+                    duration=duration,
+                    has_subtitle=bool(subtitle_url),
+                    has_caption=bool(caption_text),
+                )
+
                 rendered.append(
                     {
                         "start": start,
@@ -503,6 +517,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                         "subtitle_url": subtitle_url,
                         "thumbnail_url": thumbnail_url,
                         "file_size": Path(final_clip).stat().st_size,
+                        "viral": viral,
                     }
                 )
                 await _set_progress(db, task, 35 + int(55 * index / max(1, total)))
@@ -521,6 +536,8 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                         subtitle_url=clip["subtitle_url"],
                         thumbnail_url=clip["thumbnail_url"],
                         file_size=clip["file_size"],
+                        viral_score=(clip.get("viral") or {}).get("score"),
+                        viral_factors=(clip.get("viral") or {}).get("factors"),
                         editing_applied=[
                             k
                             for k, v in options.items()

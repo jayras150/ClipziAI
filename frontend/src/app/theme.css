@@ -1033,6 +1033,141 @@ select.ui-input option:hover {
   white-space: nowrap;
 }
 
+/* ---------- Skor viral di kartu klip ---------- */
+.ui-viral-badge {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  padding: 3px 8px;
+  border-radius: 9px 2px 9px 2px;
+  pointer-events: auto;
+  border: 1px solid rgba(244, 199, 107, 0.45);
+  background: rgba(9, 10, 14, 0.72);
+  color: #f4d99a;
+  backdrop-filter: blur(4px);
+}
+.ui-viral-badge.excellent {
+  border-color: rgba(131, 215, 161, 0.65);
+  color: #a8e6bd;
+}
+.ui-viral-badge.good {
+  border-color: rgba(244, 199, 107, 0.6);
+  color: var(--ui-gold-2);
+}
+.ui-viral-badge.fair {
+  border-color: rgba(255, 178, 120, 0.55);
+  color: #ffc79a;
+}
+.ui-viral-badge.low {
+  border-color: rgba(240, 138, 122, 0.55);
+  color: #f0a3a3;
+}
+
+.ui-score {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 12px 3px 12px 3px;
+  border: 1px solid rgba(244, 199, 107, 0.25);
+  background: linear-gradient(155deg, rgba(244, 199, 107, 0.09), rgba(255, 255, 255, 0.015));
+  cursor: help;
+}
+.ui-score-label {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #8b8f9d;
+}
+.ui-score-num {
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
+  color: #f4d99a;
+}
+.ui-score-num small {
+  font-size: 9px;
+  font-weight: 600;
+  color: #7f8492;
+  margin-left: 1px;
+}
+.ui-score-track {
+  flex: 1 1 40px;
+  height: 6px;
+  min-width: 36px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+.ui-score-track i {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #e8b54f, #ffe3a0);
+  transition: width 0.3s;
+}
+.ui-score-tag {
+  font-size: 10px;
+  font-weight: 700;
+  color: #cfd1d8;
+  white-space: nowrap;
+}
+.ui-score-btn {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 7px 2px 7px 2px;
+  border: 1px solid rgba(244, 199, 107, 0.3);
+  background: rgba(244, 199, 107, 0.1);
+  color: var(--ui-gold-2);
+  cursor: pointer;
+}
+.ui-score-btn:hover {
+  border-color: rgba(244, 199, 107, 0.65);
+  background: rgba(244, 199, 107, 0.2);
+}
+.ui-score-btn:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+.ui-score.excellent {
+  border-color: rgba(131, 215, 161, 0.4);
+  background: linear-gradient(155deg, rgba(131, 215, 161, 0.1), rgba(255, 255, 255, 0.015));
+}
+.ui-score.excellent .ui-score-num {
+  color: #a8e6bd;
+}
+.ui-score.excellent .ui-score-track i {
+  background: linear-gradient(90deg, #6cc792, #a8e6bd);
+}
+.ui-score.fair {
+  border-color: rgba(255, 178, 120, 0.4);
+  background: linear-gradient(155deg, rgba(255, 178, 120, 0.09), rgba(255, 255, 255, 0.015));
+}
+.ui-score.fair .ui-score-num {
+  color: #ffc79a;
+}
+.ui-score.low {
+  border-color: rgba(240, 138, 122, 0.4);
+  background: linear-gradient(155deg, rgba(240, 138, 122, 0.09), rgba(255, 255, 255, 0.015));
+}
+.ui-score.low .ui-score-num {
+  color: #f0a3a3;
+}
+.ui-score.low .ui-score-track i {
+  background: linear-gradient(90deg, #d9645a, #f0a3a3);
+}
+
 /* --- Navigasi: lebih banyak tautan, tetap rapi di layar sempit --- */
 .ui-nav-links {
   flex-wrap: wrap;

@@ -24,6 +24,7 @@ from app.schemas.task import (
 from app.schemas.clip import ClipResponse
 from app.schemas.common import MessageResponse
 from app.services.vast_worker import dispatch_mode, submit_task
+from app.services.viral import score_clip
 
 logger = logging.getLogger(__name__)
 
@@ -189,6 +190,25 @@ async def list_task_clips(
 
     clips_result = await db.execute(select(Clip).where(Clip.task_id == task.id).order_by(Clip.clip_index))
     clips = clips_result.scalars().all()
+
+    # Klip lama (dibuat sebelum fitur skor viral ada) dihitung saat pertama kali
+    # dibuka. Transkrip tidak disimpan di DB, jadi ini estimasi dari durasi +
+    # subtitle + caption; klip baru memakai skor penuh dari transkrip.
+    backfilled = False
+    for clip in clips:
+        if clip.viral_score is None:
+            estimated = score_clip(
+                transcript="",
+                duration=float(clip.duration or 0),
+                has_subtitle=bool(clip.subtitle_url),
+                has_caption=bool(clip.editing_applied),
+                estimated=True,
+            )
+            clip.viral_score = estimated["score"]
+            clip.viral_factors = estimated["factors"]
+            backfilled = True
+    if backfilled:
+        await db.commit()
 
     return [
         ClipResponse(

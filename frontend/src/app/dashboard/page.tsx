@@ -21,6 +21,7 @@ import {
   ArrowLeft,
   ClipboardPaste,
   Eraser,
+  Zap,
 } from "lucide-react"
 
 import { api, ClipData, MusicTrackData, TaskData } from "@/lib/api"
@@ -119,6 +120,31 @@ function formatSize(bytes: number | null): string {
   return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`
 }
 
+/** Pita skor viral: dipakai untuk warna badge, bar, dan nomor. */
+function viralBand(score: number): "excellent" | "good" | "fair" | "low" {
+  if (score >= 80) return "excellent"
+  if (score >= 65) return "good"
+  if (score >= 50) return "fair"
+  return "low"
+}
+
+/** Tooltip breakdown faktor skor viral (persen 0-100). */
+function viralTooltip(factors: Record<string, any> | null | undefined): string {
+  if (!factors) return "Skor viral belum dihitung"
+  const pct = (key: string) =>
+    typeof factors[key] === "number" ? `${Math.round(factors[key] * 100)}%` : "—"
+  const lines = [
+    `Hook: ${pct("hook")}`,
+    `Durasi pas: ${pct("duration")}`,
+    `Pacing: ${pct("pacing")}`,
+    `Emosi: ${pct("emotion")}`,
+    `Kejelasan: ${pct("clarity")}`,
+  ]
+  if (factors.reasoning) lines.push("", String(factors.reasoning))
+  if (factors.estimated) lines.push("", "(estimasi — klip lama tanpa transkrip tersimpan)")
+  return lines.join("\n")
+}
+
 export default function DashboardPage() {
   const [token, setToken] = useState("")
   const [activeTab, setActiveTab] = useState<"upload" | "projects">("upload")
@@ -166,6 +192,8 @@ export default function DashboardPage() {
   const [composeTransition, setComposeTransition] = useState("fade")
   const [splitAt, setSplitAt] = useState<Record<string, string>>({})
   const [editingBusy, setEditingBusy] = useState(false)
+  // Skor viral: tombol ↻ per klip sedang menghitung ulang?
+  const [scoreBusy, setScoreBusy] = useState<Record<string, boolean>>({})
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -429,6 +457,27 @@ export default function DashboardPage() {
     setSelectedClips((current) =>
       current.includes(clipId) ? current.filter((id) => id !== clipId) : [...current, clipId],
     )
+  }
+
+  /** Hitung ulang skor viral satu klip (tombol ↻ di kartu klip). */
+  const recalcViralScore = async (clip: ClipData) => {
+    if (!openTaskId) return
+    setScoreBusy((current) => ({ ...current, [clip.id]: true }))
+    setTaskError("")
+    setNotice("")
+    try {
+      const result = await api.getViralScore(token, clip.id, true)
+      setNotice(`Skor viral klip #${clip.clip_index + 1} diperbarui: ${Math.round(result.score)}/100`)
+      await loadClips(token, openTaskId)
+    } catch (error: any) {
+      setTaskError(readApiError(error.response?.data, "Could not recalculate the viral score."))
+    } finally {
+      setScoreBusy((current) => {
+        const next = { ...current }
+        delete next[clip.id]
+        return next
+      })
+    }
   }
 
   const mergeSelectedClips = async () => {
@@ -1217,18 +1266,11 @@ export default function DashboardPage() {
                           </span>
                           {typeof clip.viral_score === "number" && (
                             <span
-                              style={{
-                                position: "absolute",
-                                right: 10,
-                                top: 10,
-                                fontSize: 11,
-                                padding: "3px 8px",
-                                borderRadius: 999,
-                                background: "rgba(244,199,107,.18)",
-                                color: "#f4d99a",
-                                pointerEvents: "none",
-                              }}
+                              className={`ui-viral-badge ${viralBand(clip.viral_score)}`}
+                              title={viralTooltip(clip.viral_factors)}
                             >
+                              <Zap size={11} />
+                              {clip.viral_factors?.estimated ? "≈" : ""}
                               {Math.round(clip.viral_score)}
                             </span>
                           )}
@@ -1241,6 +1283,43 @@ export default function DashboardPage() {
                             {formatDuration(clip.duration)}
                             {clip.file_size ? ` · ${formatSize(clip.file_size)}` : ""}
                           </span>
+
+                          {/* Skor viral: angka + bar + label + tombol hitung ulang.
+                              Hover untuk breakdown faktor (hook, pacing, emosi, dll). */}
+                          <div
+                            className={`ui-score ${viralBand(clip.viral_score ?? 0)}`}
+                            title={viralTooltip(clip.viral_factors)}
+                          >
+                            <span className="ui-score-label">Viral</span>
+                            <span className="ui-score-num">
+                              {typeof clip.viral_score === "number" ? Math.round(clip.viral_score) : "—"}
+                              <small>/100</small>
+                            </span>
+                            <span className="ui-score-track">
+                              <i
+                                style={{
+                                  width: `${Math.max(0, Math.min(100, clip.viral_score ?? 0))}%`,
+                                }}
+                              />
+                            </span>
+                            <span className="ui-score-tag">
+                              {clip.viral_factors?.label || "belum dinilai"}
+                            </span>
+                            <button
+                              type="button"
+                              className="ui-score-btn"
+                              title="Hitung ulang skor viral"
+                              aria-label="Hitung ulang skor viral"
+                              disabled={Boolean(scoreBusy[clip.id])}
+                              onClick={() => recalcViralScore(clip)}
+                            >
+                              {scoreBusy[clip.id] ? (
+                                <LoaderCircle size={12} className="animate-spin" />
+                              ) : (
+                                <RefreshCw size={12} />
+                              )}
+                            </button>
+                          </div>
                           <label
                             style={{
                               display: "flex",

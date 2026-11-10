@@ -1,194 +1,1253 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="id" class="scroll-smooth">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#090a0d" />
-  <meta name="description" content="Clipzy AI — Ubah video panjang menjadi konten pendek yang siap viral dengan bantuan AI." />
-  <title>Clipzy AI — Create More. Edit Less.</title>
+  <meta name="description" content="Clipzy AI — Ubah video panjang menjadi konten pendek viral (TikTok, Reels, Shorts) dengan AI." />
+  <title>Clipzy AI — Studio & AI Video Repurposing</title>
+
+  <!-- Google Fonts & Tailwind CSS CDN -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..800;1,9..40,300..800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"DM Sans"', 'sans-serif'],
+            display: ['"Space Grotesk"', 'sans-serif'],
+          },
+          colors: {
+            dark: {
+              950: '#060709',
+              900: '#090a0d',
+              850: '#0e1015',
+              800: '#12141a',
+              750: '#171a22',
+              700: '#1e222d',
+              600: '#2a2f3e'
+            },
+            gold: {
+              300: '#ffe3a0',
+              400: '#f7d37e',
+              500: '#f4c76b',
+              600: '#d9a63c',
+              700: '#a8781a',
+            },
+            emeraldAccent: '#4ade80'
+          },
+          backgroundImage: {
+            'gold-grad': 'linear-gradient(135deg, #ffe3a0 0%, #f4c76b 50%, #d89c39 100%)',
+            'gold-glow': 'radial-gradient(ellipse at 50% 0%, rgba(244, 199, 107, 0.18), transparent 70%)',
+          }
+        }
+      }
+    }
+  </script>
+
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
-    :root{--bg:#090a0d;--panel:#111319;--panel2:#171a22;--gold:#f4c76b;--gold2:#ffe3a0;--text:#f5f5f2;--muted:#9b9eaa;--line:rgba(255,255,255,.09);--radius:22px}
-    *{box-sizing:border-box;margin:0;padding:0}
-    html{scroll-behavior:smooth}
-    body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);overflow-x:hidden}
-    body:before{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at 80% 0%,rgba(244,199,107,.10),transparent 35%),radial-gradient(ellipse at 0% 45%,rgba(95,75,140,.10),transparent 32%);z-index:-1}
-    a{color:inherit;text-decoration:none}
-    button{font:inherit;cursor:pointer}
-    .container{width:min(1160px,calc(100% - 44px));margin:auto}
-    .navbar{height:82px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}
-    .brand{display:flex;align-items:center;gap:11px;font:700 23px 'Space Grotesk';letter-spacing:-1px}
-    .brand-mark{width:35px;height:35px;border-radius:11px;background:linear-gradient(145deg,#ffe7a8,#d89c39);display:grid;place-items:center;color:#17120a;font-size:20px;box-shadow:0 5px 25px #e6b95733}
-    .brand span em{font-style:normal;color:var(--gold)}
-    .nav-links{display:flex;align-items:center;gap:34px;color:#b7b8c0;font-size:14px}
-    .nav-links a:hover{color:var(--gold)}
-    .nav-actions{display:flex;align-items:center;gap:12px}
-    .btn{border:0;border-radius:12px;padding:12px 19px;font-weight:700;font-size:13px;transition:.2s;display:inline-flex;align-items:center;justify-content:center;gap:8px}
-    .btn:hover{transform:translateY(-2px)}
-    .btn-gold{background:linear-gradient(135deg,var(--gold2),#e8b54f);color:#1b160d;box-shadow:0 8px 26px #e9b54b24}
-    .btn-ghost{background:rgba(255,255,255,.04);border:1px solid var(--line);color:#eee}
-    .menu-toggle{display:none;background:none;color:white;border:0;font-size:25px}
-    .hero{padding:100px 0 85px;display:grid;grid-template-columns:1.04fr .96fr;align-items:center;gap:55px}
-    .eyebrow{display:inline-flex;align-items:center;gap:9px;padding:8px 12px;border:1px solid #e7bd6540;border-radius:30px;color:var(--gold);font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;background:#e7bd650d}
-    .pulse{width:7px;height:7px;background:#83d7a1;border-radius:50%;box-shadow:0 0 12px #83d7a1}
-    h1,h2,h3{font-family:'Space Grotesk',sans-serif}
-    h1{font-size:clamp(46px,6vw,76px);line-height:1.04;letter-spacing:-4px;margin:24px 0 22px}
-    h1 .shine{background:linear-gradient(100deg,#fff1c8 5%,#e9b64e 60%,#fff0c6);-webkit-background-clip:text;background-clip:text;color:transparent}
-    .hero-copy{color:var(--muted);font-size:16px;line-height:1.8;max-width:510px}
-    .hero-buttons{display:flex;gap:12px;margin-top:30px;flex-wrap:wrap}
-    .hero-note{display:flex;align-items:center;gap:12px;margin-top:25px;color:#777b87;font-size:12px}
-    .avatars{display:flex}
-    .avatar{width:25px;height:25px;border:2px solid var(--bg);border-radius:50%;margin-left:-7px;background:linear-gradient(135deg,#e9bd74,#73543b)}
-    .avatar:first-child{margin-left:0;background:linear-gradient(135deg,#d4e3f1,#6d829b)}
-    .avatar:nth-child(2){background:linear-gradient(135deg,#e5b2a0,#815e72)}
-    .avatar:nth-child(3){background:linear-gradient(135deg,#c4d7a1,#647c4c)}
-    .hero-visual{position:relative;min-height:450px;display:grid;place-items:center}
-    .glow{position:absolute;width:350px;height:350px;border-radius:50%;background:#e9b54b1a;filter:blur(75px)}
-    .app-window{position:relative;width:100%;max-width:490px;background:linear-gradient(145deg,#1c2029,#101218);border:1px solid #ffffff1b;border-radius:25px;padding:17px;box-shadow:0 35px 100px #0009;transform:rotate(2deg)}
-    .window-top{display:flex;align-items:center;justify-content:space-between;padding:1px 2px 15px;color:#9296a2;font-size:11px}
-    .dots{display:flex;gap:5px}.dots i{width:7px;height:7px;border-radius:50%;background:#555}.dots i:first-child{background:#ed806e}.dots i:nth-child(2){background:#e9c06b}.dots i:nth-child(3){background:#75c991}
-    .preview{height:230px;border-radius:15px;overflow:hidden;position:relative;background:linear-gradient(135deg,#292a35,#514638 45%,#161820);display:grid;place-items:center}
-    .preview:before{content:"";position:absolute;inset:0;background:linear-gradient(0deg,#08090cdd,transparent 70%),radial-gradient(circle at 50% 35%,#f0c36a55,transparent 45%)}
-    .play{position:relative;width:54px;height:54px;border-radius:50%;display:grid;place-items:center;background:#ffffff25;border:1px solid #ffffff66;backdrop-filter:blur(10px);font-size:18px;padding-left:3px}
-    .preview-label{position:absolute;bottom:15px;left:17px;font-size:11px;color:#fff}
-    .preview-label strong{display:block;font-size:14px;margin-bottom:4px}
-    .timeline{padding:17px 2px 5px}
-    .timeline-head{display:flex;justify-content:space-between;color:#a7a9b2;font-size:10px;margin-bottom:10px}
-    .tracks{display:flex;gap:5px;height:44px}
-    .track{flex:1;border-radius:6px;background:linear-gradient(135deg,#6f5540,#d2a85e 48%,#665044);position:relative;overflow:hidden}
-    .track:nth-child(2){background:linear-gradient(135deg,#4b5966,#9c9c8c,#414956)}
-    .track:nth-child(3){background:linear-gradient(135deg,#71514a,#c28a68,#493e43)}
-    .track:nth-child(4){background:linear-gradient(135deg,#56615a,#a5a77c,#46564b)}
-    .track:after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 18px,#ffffff20 19px 20px)}
-    .progress{height:4px;background:#ffffff18;border-radius:5px;margin-top:13px;overflow:hidden}.progress span{display:block;width:68%;height:100%;background:var(--gold);border-radius:5px}
-    .float-card{position:absolute;right:-18px;bottom:35px;background:#171a21;border:1px solid #ffffff20;border-radius:14px;padding:13px 16px;box-shadow:0 15px 40px #0008;font-size:11px}
-    .float-card strong{display:block;color:var(--gold);font-size:19px;margin-top:4px}
-    .section{padding:85px 0}
-    .section-head{text-align:center;max-width:650px;margin:0 auto 45px}
-    .kicker{color:var(--gold);font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase}
-    h2{font-size:clamp(30px,4vw,45px);letter-spacing:-1.8px;margin:13px 0}
-    .section-head p,.muted{color:var(--muted);line-height:1.7;font-size:14px}
-    .feature-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
-    .feature{padding:27px;background:linear-gradient(145deg,#171a21,#101217);border:1px solid var(--line);border-radius:19px;transition:.25s}
-    .feature:hover{transform:translateY(-5px);border-color:#e9bd6555}
-    .feature-icon{width:43px;height:43px;border-radius:13px;display:grid;place-items:center;background:#e9bd6518;color:var(--gold);font-size:20px;margin-bottom:20px}
-    .feature h3{font-size:17px;margin-bottom:9px}.feature p{font-size:13px;line-height:1.7;color:var(--muted)}
-    .workflow{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;counter-reset:step}
-    .step{padding:24px 20px;border:1px solid var(--line);border-radius:17px;background:#111319;position:relative}
-    .step-num{font:700 12px 'Space Grotesk';color:var(--gold);margin-bottom:25px}
-    .step h3{font-size:16px;margin-bottom:8px}.step p{font-size:12px;color:var(--muted);line-height:1.7}
-    .demo-wrap{display:grid;grid-template-columns:1fr 1fr;gap:30px;align-items:center;background:linear-gradient(120deg,#191b22,#111319);border:1px solid var(--line);border-radius:25px;padding:35px}
-    .demo-wrap h2{font-size:35px}.demo-wrap p{color:var(--muted);font-size:14px;line-height:1.8;margin:12px 0 22px}
-    .upload-box{border:1px dashed #d9b35d77;border-radius:18px;padding:30px;text-align:center;background:#e9bd6508}
-    .upload-icon{font-size:31px;color:var(--gold);margin-bottom:12px}
-    .upload-box p{font-size:12px;margin:8px 0 17px}
-    .file-name{font-size:11px;color:#a9d9b4;min-height:17px;margin-top:10px}
-    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:15px;margin-top:50px}
-    .stat{text-align:center;padding:20px;border-right:1px solid var(--line)}.stat:last-child{border:0}
-    .stat strong{font:700 31px 'Space Grotesk';color:var(--gold)}.stat span{display:block;color:var(--muted);font-size:12px;margin-top:5px}
-    .cta{padding:55px 25px;text-align:center;border-radius:25px;border:1px solid #e9bd6533;background:radial-gradient(ellipse at 50% 0%,#e9bd651b,transparent 65%),#12141a}
-    .cta p{color:var(--muted);font-size:14px;margin:12px auto 25px;max-width:500px;line-height:1.7}
-    footer{padding:35px 0;border-top:1px solid var(--line);margin-top:80px;color:#777b87;font-size:12px}
-    .footer-inner{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap}
-    .footer-links{display:flex;gap:20px}.footer-links a:hover{color:var(--gold)}
-    @media(max-width:850px){.hero{grid-template-columns:1fr;gap:25px;padding-top:70px}.hero-visual{min-height:390px}.app-window{max-width:520px}.feature-grid{grid-template-columns:repeat(2,1fr)}.workflow{grid-template-columns:repeat(2,1fr)}.demo-wrap{grid-template-columns:1fr}}
-    @media(max-width:600px){.container{width:min(100% - 30px,1160px)}.navbar{height:70px}.nav-links{display:none;position:absolute;top:70px;left:15px;right:15px;padding:20px;background:#171a21;border:1px solid var(--line);border-radius:15px;flex-direction:column;gap:20px;z-index:5}.nav-links.open{display:flex}.nav-actions .btn-ghost{display:none}.menu-toggle{display:block}.brand{font-size:21px}h1{letter-spacing:-2.5px;font-size:49px}.hero{padding:60px 0 45px}.hero-visual{min-height:330px}.preview{height:185px}.float-card{right:-5px;bottom:12px}.section{padding:60px 0}.feature-grid,.workflow{grid-template-columns:1fr}.feature{padding:22px}.demo-wrap{padding:24px 18px}.demo-wrap h2{font-size:29px}.stats{gap:0}.stat strong{font-size:24px}.stat span{font-size:10px}.footer-inner{justify-content:center;text-align:center}.footer-links{width:100%;justify-content:center}}
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #090a0d;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1e222d;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #f4c76b;
+    }
+
+    /* Subtle grid background */
+    .bg-grid-pattern {
+      background-size: 40px 40px;
+      background-image: 
+        linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    }
+
+    /* Ambient glow mesh */
+    .ambient-glow {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      pointer-events: none;
+      z-index: 0;
+      background: 
+        radial-gradient(circle at 85% 10%, rgba(244, 199, 107, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 10% 45%, rgba(99, 102, 241, 0.07) 0%, transparent 35%),
+        radial-gradient(circle at 50% 90%, rgba(244, 199, 107, 0.06) 0%, transparent 40%);
+    }
+
+    /* Waveform Animation */
+    @keyframes wavePulse {
+      0%, 100% { height: 18%; }
+      50% { height: 95%; }
+    }
+    .wave-bar {
+      animation: wavePulse 1.2s ease-in-out infinite;
+    }
+    .wave-bar:nth-child(2) { animation-delay: 0.15s; }
+    .wave-bar:nth-child(3) { animation-delay: 0.3s; }
+    .wave-bar:nth-child(4) { animation-delay: 0.45s; }
+    .wave-bar:nth-child(5) { animation-delay: 0.2s; }
+    .wave-bar:nth-child(6) { animation-delay: 0.5s; }
+    .wave-bar:nth-child(7) { animation-delay: 0.35s; }
+    .wave-bar:nth-child(8) { animation-delay: 0.1s; }
+
+    /* Custom Toast notification */
+    #toastMessage {
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
   </style>
 </head>
-<body>
-  <header class="container navbar">
-    <a class="brand" href="#home"><span class="brand-mark">▶</span><span>clipzy<em>AI</em></span></a>
-    <nav class="nav-links" id="navLinks">
-      <a href="#features">Fitur</a><a href="#how">Cara Kerja</a><a href="#demo">Coba Demo</a><a href="#about">Tentang</a>
-    </nav>
-    <div class="nav-actions">
-      <a class="btn btn-ghost" href="#features">Jelajahi</a>
-      <a class="btn btn-gold" href="#demo">Mulai Gratis <span>↗</span></a>
-      <button class="menu-toggle" id="menuToggle" aria-label="Buka menu">☰</button>
+
+<body class="bg-dark-900 text-neutral-100 font-sans selection:bg-gold-500 selection:text-dark-950 relative overflow-x-hidden min-h-screen">
+  <!-- Glow background -->
+  <div class="ambient-glow"></div>
+
+  <!-- Notification Toast -->
+  <div id="toastMessage" class="fixed bottom-6 right-6 z-50 transform translate-y-24 opacity-0 pointer-events-none flex items-center gap-3 bg-dark-750 border border-gold-500/40 text-neutral-100 px-5 py-3.5 rounded-xl shadow-2xl backdrop-blur-md">
+    <span class="w-2.5 h-2.5 rounded-full bg-emeraldAccent shadow-[0_0_8px_#4ade80]"></span>
+    <span id="toastText" class="text-sm font-medium">Video diproses dengan sukses!</span>
+  </div>
+
+  <!-- NAVBAR -->
+  <header class="sticky top-0 z-40 w-full backdrop-blur-xl bg-dark-900/80 border-b border-white/[0.08] transition-all duration-200">
+    <div class="max-w-7xl mx-auto px-5 sm:px-8 h-20 flex items-center justify-between">
+      <!-- Logo -->
+      <a href="#home" class="flex items-center gap-3 group">
+        <div class="w-10 h-10 rounded-xl bg-gold-grad flex items-center justify-center text-dark-950 font-black text-xl shadow-[0_0_20px_rgba(244,199,107,0.35)] group-hover:scale-105 transition-transform">
+          ▶
+        </div>
+        <div class="font-display font-bold text-2xl tracking-tight text-white">
+          clipzy<span class="text-gold-500 italic">AI</span>
+        </div>
+      </a>
+
+      <!-- Desktop Nav -->
+      <nav class="hidden md:flex items-center gap-8 text-sm font-medium text-neutral-400">
+        <a href="#studio" class="hover:text-gold-400 transition-colors flex items-center gap-1.5 text-gold-300">
+          <span class="inline-block w-2 h-2 rounded-full bg-emeraldAccent animate-pulse"></span> Studio Demo
+        </a>
+        <a href="#features" class="hover:text-gold-400 transition-colors">Fitur Unggulan</a>
+        <a href="#how" class="hover:text-gold-400 transition-colors">Cara Kerja</a>
+        <a href="#pricing" class="hover:text-gold-400 transition-colors">Harga</a>
+        <a href="#faq" class="hover:text-gold-400 transition-colors">FAQ</a>
+      </nav>
+
+      <!-- Nav Actions -->
+      <div class="flex items-center gap-3">
+        <a href="#studio" class="hidden sm:inline-flex items-center justify-center px-4 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider text-neutral-300 hover:text-white border border-white/10 hover:border-gold-500/50 bg-dark-800/80 hover:bg-dark-750 transition-all">
+          Masuk Studio
+        </a>
+        <a href="#studio" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider text-dark-950 bg-gold-grad shadow-[0_4px_20px_rgba(244,199,107,0.25)] hover:shadow-[0_6px_28px_rgba(244,199,107,0.45)] hover:-translate-y-0.5 transition-all">
+          Coba Gratis <span>↗</span>
+        </a>
+        <!-- Mobile Toggle Button -->
+        <button id="mobileMenuBtn" aria-label="Menu" class="md:hidden p-2 text-neutral-400 hover:text-white rounded-lg focus:outline-none">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile Dropdown -->
+    <div id="mobileMenu" class="hidden md:hidden px-6 pt-3 pb-6 bg-dark-850/95 border-b border-white/10 backdrop-blur-xl">
+      <div class="flex flex-col gap-4 text-sm font-medium">
+        <a href="#studio" class="text-gold-400 py-1" onclick="closeMenu()">⚡ Buka Studio Interaktif</a>
+        <a href="#features" class="text-neutral-300 py-1" onclick="closeMenu()">Fitur Unggulan</a>
+        <a href="#how" class="text-neutral-300 py-1" onclick="closeMenu()">Cara Kerja</a>
+        <a href="#pricing" class="text-neutral-300 py-1" onclick="closeMenu()">Harga</a>
+        <a href="#faq" class="text-neutral-300 py-1" onclick="closeMenu()">FAQ</a>
+      </div>
     </div>
   </header>
 
   <main>
-    <section class="container hero" id="home">
-      <div>
-        <div class="eyebrow"><span class="pulse"></span> AI-powered video creation</div>
-        <h1>Long videos.<br><span class="shine">Short moments.</span><br>Big impact.</h1>
-        <p class="hero-copy">Ubah video panjang menjadi konten Shorts, Reels, dan TikTok secara otomatis. Temukan momen terbaik, buat subtitle, dan siapkan video untuk dibagikan — lebih cepat dengan Clipzy AI.</p>
-        <div class="hero-buttons">
-          <a href="#demo" class="btn btn-gold">Mulai Sekarang <span>→</span></a>
-          <a href="#how" class="btn btn-ghost">Lihat cara kerja</a>
+    <!-- HERO SECTION -->
+    <section id="home" class="relative pt-12 pb-20 md:pt-20 md:pb-32 overflow-hidden bg-grid-pattern">
+      <div class="max-w-7xl mx-auto px-5 sm:px-8 relative z-10">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 items-center">
+          
+          <!-- Left Column: Copy -->
+          <div class="lg:col-span-7 text-center lg:text-left">
+            <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-gold-500/30 bg-gold-500/10 text-gold-400 text-xs font-semibold tracking-wider uppercase mb-6 shadow-[0_0_15px_rgba(244,199,107,0.15)]">
+              <span class="w-2 h-2 rounded-full bg-emeraldAccent animate-pulse"></span>
+              Clipzy AI Engine v3.4 Ready
+            </div>
+
+            <h1 class="font-display text-4xl sm:text-6xl xl:text-7xl font-bold tracking-tight leading-[1.08] mb-6">
+              Long videos.<br>
+              <span class="bg-gradient-to-r from-gold-300 via-gold-400 to-amber-500 bg-clip-text text-transparent drop-shadow-sm">
+                Short moments.
+              </span><br>
+              Big impact.
+            </h1>
+
+            <p class="text-base sm:text-lg text-neutral-400 max-w-xl mx-auto lg:mx-0 leading-relaxed mb-8">
+              Otomatiskan pemotongan podcast, webinar, dan video YouTube panjang jadi 10+ klip vertikal siap viral untuk TikTok, Reels, dan Shorts lengkap dengan caption bertenaga AI.
+            </p>
+
+            <div class="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4 mb-10">
+              <a href="#studio" class="w-full sm:w-auto px-8 py-4 rounded-xl text-sm font-bold uppercase tracking-wider text-dark-950 bg-gold-grad shadow-[0_8px_32px_rgba(244,199,107,0.35)] hover:shadow-[0_12px_40px_rgba(244,199,107,0.5)] hover:-translate-y-1 transition-all text-center">
+                Coba Studio Sekarang →
+              </a>
+              <a href="#how" class="w-full sm:w-auto px-7 py-4 rounded-xl text-sm font-semibold text-neutral-300 hover:text-white bg-dark-800 border border-white/10 hover:border-gold-500/40 transition-all text-center flex items-center justify-center gap-2">
+                <span>▶</span> Lihat Cara Kerja
+              </a>
+            </div>
+
+            <!-- Social proof -->
+            <div class="flex flex-wrap items-center justify-center lg:justify-start gap-4 text-xs text-neutral-400 pt-4 border-t border-white/[0.08]">
+              <div class="flex -space-x-2">
+                <div class="w-8 h-8 rounded-full border-2 border-dark-900 bg-gradient-to-tr from-amber-400 to-orange-500 flex items-center justify-center text-dark-900 font-bold text-xs">AG</div>
+                <div class="w-8 h-8 rounded-full border-2 border-dark-900 bg-gradient-to-tr from-cyan-400 to-blue-600 flex items-center justify-center text-white font-bold text-xs">RN</div>
+                <div class="w-8 h-8 rounded-full border-2 border-dark-900 bg-gradient-to-tr from-pink-400 to-rose-600 flex items-center justify-center text-white font-bold text-xs">DS</div>
+                <div class="w-8 h-8 rounded-full border-2 border-dark-900 bg-gradient-to-tr from-emerald-400 to-green-600 flex items-center justify-center text-dark-900 font-bold text-xs">8k+</div>
+              </div>
+              <span class="font-medium">Digunakan oleh <strong class="text-white font-semibold">12,000+ Kreator</strong> di YouTube & TikTok</span>
+            </div>
+          </div>
+
+          <!-- Right Column: Interactive Hero Window Preview -->
+          <div class="lg:col-span-5 relative">
+            <div class="absolute -inset-4 bg-gradient-to-r from-gold-500/20 to-indigo-500/10 rounded-3xl blur-2xl opacity-50"></div>
+            
+            <div class="relative bg-gradient-to-b from-dark-800 to-dark-850 border border-white/15 rounded-3xl p-5 shadow-2xl backdrop-blur-md">
+              <!-- Window Bar -->
+              <div class="flex items-center justify-between pb-4 border-b border-white/[0.08] text-xs text-neutral-400">
+                <div class="flex items-center gap-2">
+                  <span class="w-3 h-3 rounded-full bg-rose-500/80 inline-block"></span>
+                  <span class="w-3 h-3 rounded-full bg-amber-500/80 inline-block"></span>
+                  <span class="w-3 h-3 rounded-full bg-emerald-500/80 inline-block"></span>
+                  <span class="ml-2 font-mono text-[11px] text-neutral-300">CLIPZY_STUDIO_v3.mp4</span>
+                </div>
+                <span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-400 font-medium">AI Live Active</span>
+              </div>
+
+              <!-- Mini Mock Monitor -->
+              <div class="relative mt-4 rounded-2xl overflow-hidden bg-dark-950 aspect-[16/10] border border-white/10 flex items-center justify-center group">
+                <div class="absolute inset-0 bg-gradient-to-t from-dark-950 via-transparent to-transparent z-10"></div>
+                
+                <!-- Mock video frame graphic -->
+                <div class="w-full h-full bg-cover bg-center opacity-70 group-hover:scale-105 transition-transform duration-700 flex flex-col items-center justify-center p-6 text-center"
+                     style="background: radial-gradient(circle at center, #2e261a 0%, #111319 80%);">
+                  <div class="w-16 h-16 rounded-full bg-gold-500/20 border border-gold-500/60 flex items-center justify-center text-gold-400 text-2xl mb-3 shadow-[0_0_20px_rgba(244,199,107,0.3)]">
+                    ▶
+                  </div>
+                  <div class="z-20">
+                    <span class="bg-black/60 px-3 py-1 rounded-md text-xs font-bold text-gold-300 uppercase tracking-wider backdrop-blur-md">
+                      Auto-Hormozi Subtitles
+                    </span>
+                    <p class="text-white text-lg font-display font-bold mt-2">
+                      "Ini cara rahasia <span class="bg-gold-500 text-dark-950 px-1.5 py-0.5 rounded font-black">10X LIPAT</span> audiens kamu!"
+                    </p>
+                  </div>
+                </div>
+
+                <!-- Aspect ratio frame simulation (Vertical boundary) -->
+                <div class="absolute inset-y-2 w-32 border-2 border-dashed border-gold-400/60 rounded-lg pointer-events-none z-20 flex flex-col justify-between p-2">
+                  <span class="text-[9px] bg-gold-500/90 text-dark-950 px-1 py-0.5 rounded font-bold self-start">9:16 CROP</span>
+                  <span class="text-[9px] text-neutral-300 bg-black/60 px-1 rounded self-end">AI Face Track</span>
+                </div>
+              </div>
+
+              <!-- Waveform & Multi-Track Detection -->
+              <div class="mt-4 pt-3">
+                <div class="flex items-center justify-between text-[11px] text-neutral-400 mb-2">
+                  <span class="flex items-center gap-1.5">
+                    <span class="w-1.5 h-1.5 rounded-full bg-gold-400"></span> Speech Energy Waveform
+                  </span>
+                  <span class="text-gold-400 font-mono font-bold">4 High-Viral Spots Found</span>
+                </div>
+
+                <!-- Waveform visualizer -->
+                <div class="h-10 bg-dark-900 rounded-lg p-1.5 flex items-end gap-1.5 border border-white/5 overflow-hidden">
+                  <div class="wave-bar w-1.5 bg-neutral-600 rounded-t"></div>
+                  <div class="wave-bar w-1.5 bg-neutral-600 rounded-t"></div>
+                  <div class="wave-bar w-1.5 bg-neutral-600 rounded-t"></div>
+                  <div class="wave-bar w-1.5 bg-gold-400 rounded-t"></div>
+                  <div class="wave-bar w-1.5 bg-gold-500 rounded-t"></div>
+                  <div class="wave-bar w-1.5 bg-gold-400 rounded-t"></div>
+                  <div class="wave-bar w-1.5 bg-neutral-600 rounded-t"></div>
+                  <div class="wave-bar w-1.5 bg-gold-400 rounded-t"></div>
+                  <div class="wave-bar w-1.5 bg-gold-500 rounded-t"></div>
+                  <div class="wave-bar w-1.5 bg-neutral-600 rounded-t"></div>
+                  <div class="wave-bar w-1.5 bg-neutral-600 rounded-t"></div>
+                  <div class="wave-bar w-1.5 bg-gold-400 rounded-t"></div>
+                  <div class="wave-bar w-1.5 bg-gold-500 rounded-t"></div>
+                  <div class="wave-bar w-1.5 bg-neutral-600 rounded-t"></div>
+                  <div class="wave-bar w-1.5 bg-neutral-600 rounded-t"></div>
+                  <div class="wave-bar w-1.5 bg-gold-500 rounded-t"></div>
+                  <div class="wave-bar w-1.5 bg-gold-400 rounded-t"></div>
+                  <div class="wave-bar w-1.5 bg-neutral-600 rounded-t"></div>
+                </div>
+
+                <div class="grid grid-cols-4 gap-2 mt-3">
+                  <div class="p-2 rounded-lg bg-dark-750 border border-gold-500/30 text-center">
+                    <span class="text-[10px] text-neutral-400 block">Clip #1</span>
+                    <span class="text-xs font-bold text-gold-400">98 / 100</span>
+                  </div>
+                  <div class="p-2 rounded-lg bg-dark-750/50 border border-white/5 text-center">
+                    <span class="text-[10px] text-neutral-400 block">Clip #2</span>
+                    <span class="text-xs font-bold text-neutral-200">94 / 100</span>
+                  </div>
+                  <div class="p-2 rounded-lg bg-dark-750/50 border border-white/5 text-center">
+                    <span class="text-[10px] text-neutral-400 block">Clip #3</span>
+                    <span class="text-xs font-bold text-neutral-200">89 / 100</span>
+                  </div>
+                  <div class="p-2 rounded-lg bg-dark-750/50 border border-white/5 text-center">
+                    <span class="text-[10px] text-neutral-400 block">Clip #4</span>
+                    <span class="text-xs font-bold text-neutral-200">86 / 100</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Floating badge -->
+              <div class="absolute -bottom-5 -right-5 bg-dark-750 border border-gold-500/40 rounded-2xl p-3.5 shadow-2xl flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gold-500/20 text-gold-400 flex items-center justify-center font-bold text-lg">
+                  ⚡
+                </div>
+                <div>
+                  <span class="text-[10px] uppercase text-neutral-400 tracking-wider font-semibold block">Viral Hook Detection</span>
+                  <span class="text-sm font-bold text-white">Score: <span class="text-gold-400">98.4%</span> Virality</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
         </div>
-        <div class="hero-note"><div class="avatars"><i class="avatar"></i><i class="avatar"></i><i class="avatar"></i></div><span>Workflow lebih cepat. Kreativitas tetap milikmu.</span></div>
       </div>
-      <div class="hero-visual">
-        <div class="glow"></div>
-        <div class="app-window">
-          <div class="window-top"><div class="dots"><i></i><i></i><i></i></div><span>CLIPZY STUDIO / PREVIEW</span><span>•••</span></div>
-          <div class="preview"><div class="play">▶</div><div class="preview-label"><strong>Your next viral moment</strong>AI-selected highlight · 00:42</div></div>
-          <div class="timeline"><div class="timeline-head"><span>GENERATED CLIPS</span><span>4 clips found</span></div><div class="tracks"><div class="track"></div><div class="track"></div><div class="track"></div><div class="track"></div></div><div class="progress"><span></span></div></div>
+    </section>
+
+    <!-- INTERACTIVE STUDIO SIMULATOR (CORE FEATURE) -->
+    <section id="studio" class="py-20 bg-dark-950 border-y border-white/[0.08] relative">
+      <div class="max-w-7xl mx-auto px-5 sm:px-8">
+        
+        <!-- Header Section -->
+        <div class="text-center max-w-3xl mx-auto mb-14">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-gold-500/30 bg-gold-500/10 text-gold-400 text-xs font-bold uppercase tracking-wider mb-3">
+            Interactive Sandbox
+          </div>
+          <h2 class="font-display text-3xl sm:text-5xl font-bold tracking-tight text-white">
+            Coba Langsung <span class="text-gold-400">Clipzy AI Studio</span>
+          </h2>
+          <p class="text-neutral-400 text-base mt-4">
+            Simulasikan bagaimana AI menganalisis video panjang, memotong hook terbaik, dan membuat caption beranimasi dinamis secara instan.
+          </p>
         </div>
-        <div class="float-card">AI HIGHLIGHT SCORE<strong>94.8 / 100</strong></div>
+
+        <!-- Simulator Container -->
+        <div class="bg-dark-850 border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-md">
+          
+          <!-- Top Tool Bar: Input Video Source -->
+          <div class="grid grid-cols-1 md:grid-cols-12 gap-4 pb-8 border-b border-white/[0.08]">
+            <div class="md:col-span-8 flex flex-col sm:flex-row gap-3">
+              <div class="relative flex-1">
+                <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-neutral-500">
+                  🔗
+                </span>
+                <input 
+                  type="text" 
+                  id="youtubeUrlInput" 
+                  value="https://youtube.com/watch?v=podcast-bisnis-sukses" 
+                  placeholder="Tempel tautan video YouTube / Podcast..." 
+                  class="w-full pl-10 pr-4 py-3 bg-dark-900 border border-white/10 rounded-xl text-sm text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-gold-500 transition-colors"
+                />
+              </div>
+              <button 
+                id="fetchYoutubeBtn" 
+                class="px-5 py-3 rounded-xl bg-dark-750 hover:bg-dark-700 text-gold-400 border border-gold-500/30 font-semibold text-xs tracking-wider uppercase transition-all whitespace-nowrap flex items-center justify-center gap-2">
+                <span>⚡</span> Ambil Video
+              </button>
+            </div>
+
+            <!-- Upload File Trigger -->
+            <div class="md:col-span-4 flex items-center">
+              <input type="file" id="localVideoFile" accept="video/*" class="hidden" />
+              <button 
+                id="triggerUploadBtn" 
+                class="w-full py-3 px-4 rounded-xl border border-dashed border-white/20 hover:border-gold-500/50 bg-dark-900/60 hover:bg-dark-900 text-neutral-300 text-xs font-medium flex items-center justify-center gap-2 transition-all">
+                <span>📂</span> <span id="uploadLabel">Upload File MP4 / MOV lokal</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Main Interactive Studio Area -->
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 mt-8">
+            
+            <!-- Left Side: Generated Short Clips List & Controls (7 Cols) -->
+            <div class="lg:col-span-7 flex flex-col justify-between">
+              <div>
+                <div class="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 class="font-display text-lg font-bold text-white flex items-center gap-2">
+                      Klip Terdeteksi Otomatis <span class="text-xs px-2 py-0.5 rounded-full bg-gold-500/20 text-gold-400 font-normal">3 Klip Ditemukan</span>
+                    </h3>
+                    <p class="text-xs text-neutral-400">Pilih salah satu klip di bawah untuk melihat preview reel 9:16 secara langsung.</p>
+                  </div>
+
+                  <button 
+                    id="reAnalyzeBtn" 
+                    class="text-xs text-neutral-300 hover:text-gold-400 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-dark-800 border border-white/10">
+                    <span id="reAnalyzeIcon">🔄</span> Generate Ulang
+                  </button>
+                </div>
+
+                <!-- Clips Card Stack -->
+                <div class="space-y-3" id="clipListContainer">
+                  <!-- Clip Card 1 (Active) -->
+                  <div class="clip-card p-4 rounded-2xl bg-dark-800 border-2 border-gold-500 transition-all cursor-pointer relative" data-clip-id="1">
+                    <div class="flex items-start justify-between gap-3">
+                      <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 rounded-xl bg-gold-500/15 border border-gold-500/40 flex items-center justify-center text-gold-400 font-bold text-lg">
+                          01
+                        </div>
+                        <div>
+                          <div class="flex items-center gap-2">
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400">VIRALITY 98%</span>
+                            <span class="text-xs text-neutral-400 font-mono">00:38 Durasi</span>
+                          </div>
+                          <h4 class="font-semibold text-sm text-white mt-1">Hook: Rahasia 10X Pertumbuhan Tanpa Iklan</h4>
+                        </div>
+                      </div>
+                      <span class="text-xs text-gold-400 font-bold bg-dark-900/80 px-2.5 py-1 rounded-lg border border-gold-500/30">Aktif</span>
+                    </div>
+                    <p class="text-xs text-neutral-400 mt-2 line-clamp-2">"Banyak orang salah kira, pertumbuhan eksponensial bukan soal modal besar tapi soal repetisi..."</p>
+                  </div>
+
+                  <!-- Clip Card 2 -->
+                  <div class="clip-card p-4 rounded-2xl bg-dark-800/60 border border-white/5 hover:border-white/20 transition-all cursor-pointer" data-clip-id="2">
+                    <div class="flex items-start justify-between gap-3">
+                      <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 rounded-xl bg-dark-750 flex items-center justify-center text-neutral-300 font-bold text-lg">
+                          02
+                        </div>
+                        <div>
+                          <div class="flex items-center gap-2">
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400">VIRALITY 94%</span>
+                            <span class="text-xs text-neutral-400 font-mono">00:52 Durasi</span>
+                          </div>
+                          <h4 class="font-semibold text-sm text-neutral-200 mt-1">Mindset: Kenapa 90% Kreator Menyerah di Bulan Ke-3</h4>
+                        </div>
+                      </div>
+                      <span class="text-xs text-neutral-500 group-hover:text-neutral-300">Pilih Klip →</span>
+                    </div>
+                    <p class="text-xs text-neutral-400 mt-2 line-clamp-2">"Konsistensi itu membosankan. Saat hasil belum terlihat di bulan kedua, di situlah filter alami kreator..."</p>
+                  </div>
+
+                  <!-- Clip Card 3 -->
+                  <div class="clip-card p-4 rounded-2xl bg-dark-800/60 border border-white/5 hover:border-white/20 transition-all cursor-pointer" data-clip-id="3">
+                    <div class="flex items-start justify-between gap-3">
+                      <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 rounded-xl bg-dark-750 flex items-center justify-center text-neutral-300 font-bold text-lg">
+                          03
+                        </div>
+                        <div>
+                          <div class="flex items-center gap-2">
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-400">VIRALITY 89%</span>
+                            <span class="text-xs text-neutral-400 font-mono">00:44 Durasi</span>
+                          </div>
+                          <h4 class="font-semibold text-sm text-neutral-200 mt-1">Actionable: 3 Rumus Hook Pembuka Detik 0-3</h4>
+                        </div>
+                      </div>
+                      <span class="text-xs text-neutral-500 group-hover:text-neutral-300">Pilih Klip →</span>
+                    </div>
+                    <p class="text-xs text-neutral-400 mt-2 line-clamp-2">"Jangan pernah mulai dengan menyapa penonton. Mulai langsung dengan rasa penasaran yang tak tuntas..."</p>
+                  </div>
+                </div>
+
+                <!-- Subtitle Preset Styling Selector -->
+                <div class="mt-6 pt-6 border-t border-white/[0.08]">
+                  <label class="block text-xs font-bold text-neutral-300 uppercase tracking-wider mb-3">
+                    Preset Gaya Subtitle Dinamis:
+                  </label>
+                  <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <button class="style-preset-btn active px-3 py-2.5 rounded-xl border border-gold-500 bg-gold-500/10 text-xs font-bold text-gold-300" data-style="hormozi">
+                      🔥 Hormozi Bold
+                    </button>
+                    <button class="style-preset-btn px-3 py-2.5 rounded-xl border border-white/10 bg-dark-800 text-xs font-semibold text-neutral-300 hover:border-gold-500/50" data-style="neon">
+                      ⚡ Neon Green
+                    </button>
+                    <button class="style-preset-btn px-3 py-2.5 rounded-xl border border-white/10 bg-dark-800 text-xs font-semibold text-neutral-300 hover:border-gold-500/50" data-style="minimal">
+                      Clean Minimal
+                    </button>
+                    <button class="style-preset-btn px-3 py-2.5 rounded-xl border border-white/10 bg-dark-800 text-xs font-semibold text-neutral-300 hover:border-gold-500/50" data-style="karaoke">
+                      🎤 Karaoke Box
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Aspect Ratio & Framing Switcher -->
+                <div class="mt-4 flex flex-wrap items-center justify-between gap-3 bg-dark-800/80 p-3 rounded-xl border border-white/5">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs text-neutral-400 font-medium">Aspect Ratio:</span>
+                    <button id="ratio916" class="px-3 py-1 rounded-lg text-xs font-bold bg-gold-grad text-dark-950">9:16 (Shorts/Reels)</button>
+                    <button id="ratio11" class="px-3 py-1 rounded-lg text-xs font-medium bg-dark-700 text-neutral-300 hover:text-white">1:1 (Square)</button>
+                    <button id="ratio169" class="px-3 py-1 rounded-lg text-xs font-medium bg-dark-700 text-neutral-300 hover:text-white">16:9 (Landscape)</button>
+                  </div>
+                  <label class="flex items-center gap-2 cursor-pointer text-xs text-neutral-300">
+                    <input type="checkbox" id="aiFaceTrackingToggle" checked class="rounded border-neutral-700 text-gold-500 focus:ring-0">
+                    <span>AI Smart Speaker Centering</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Export / Download Action Bar -->
+              <div class="mt-8 pt-4 flex flex-col sm:flex-row items-center gap-3">
+                <button 
+                  id="exportClipBtn"
+                  class="w-full sm:flex-1 py-3.5 px-6 rounded-xl bg-gold-grad text-dark-950 font-bold text-xs uppercase tracking-wider shadow-[0_4px_25px_rgba(244,199,107,0.3)] hover:shadow-[0_6px_30px_rgba(244,199,107,0.5)] hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2">
+                  <span>📥</span> Export Video 1080p (MP4)
+                </button>
+                <button 
+                  id="copyTranscriptBtn"
+                  class="w-full sm:w-auto py-3.5 px-5 rounded-xl bg-dark-800 hover:bg-dark-750 text-neutral-200 border border-white/10 hover:border-gold-500/40 text-xs font-semibold transition-all flex items-center justify-center gap-2">
+                  <span>📋</span> Salin Caption
+                </button>
+              </div>
+            </div>
+
+            <!-- Right Side: Realtime Vertical Reel Player Simulator (5 Cols) -->
+            <div class="lg:col-span-5 flex flex-col items-center">
+              <div class="w-full max-w-[310px] sm:max-w-[330px] relative">
+                
+                <!-- Phone Frame mockup -->
+                <div class="relative bg-dark-950 rounded-[40px] p-3 border-4 border-dark-700 shadow-[0_20px_50px_rgba(0,0,0,0.8)] overflow-hidden aspect-[9/18]">
+                  <!-- Speaker notch -->
+                  <div class="absolute top-4 left-1/2 transform -translate-x-1/2 w-24 h-4 bg-dark-700 rounded-full z-30 flex items-center justify-center">
+                    <div class="w-2.5 h-2.5 rounded-full bg-dark-950 mr-2"></div>
+                    <div class="w-10 h-1.5 rounded-full bg-dark-900"></div>
+                  </div>
+
+                  <!-- Screen Inside -->
+                  <div id="phoneScreen" class="w-full h-full rounded-[30px] overflow-hidden relative flex flex-col justify-between transition-all duration-300"
+                       style="background: radial-gradient(circle at 50% 30%, #362c1c 0%, #0d0f14 85%);">
+
+                    <!-- Simulated Video Speaker Graphics -->
+                    <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                      <!-- Simulated Avatar Speaker -->
+                      <div id="speakerAvatar" class="w-32 h-32 rounded-full border-4 border-gold-400/30 bg-gradient-to-tr from-amber-600 to-yellow-500 flex items-center justify-center text-4xl shadow-2xl relative mb-6 transition-transform duration-500">
+                        🎙️
+                        <!-- Audio ripple waves -->
+                        <div class="absolute -inset-2 rounded-full border border-gold-400/40 animate-ping opacity-30"></div>
+                      </div>
+                      <span class="text-[11px] font-mono text-neutral-400 bg-black/60 px-3 py-1 rounded-full backdrop-blur-md">
+                        AI Speaker Centered
+                      </span>
+                    </div>
+
+                    <!-- Top Overlay Info -->
+                    <div class="relative z-20 pt-8 px-4 flex items-center justify-between text-white text-xs">
+                      <span class="bg-black/40 px-2 py-1 rounded-md text-[10px] font-bold backdrop-blur-md">Clipzy 9:16</span>
+                      <div class="flex items-center gap-1.5 bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded text-[10px] font-bold">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emeraldAccent animate-pulse"></span>
+                        98% VIRAL
+                      </div>
+                    </div>
+
+                    <!-- Center Play/Pause button trigger -->
+                    <div class="relative z-20 self-center cursor-pointer" id="phonePlayPauseBtn">
+                      <div class="w-14 h-14 rounded-full bg-black/40 hover:bg-black/60 border border-white/20 text-white flex items-center justify-center text-xl backdrop-blur-md transition-transform hover:scale-110">
+                        <span id="playIcon">⏸</span>
+                      </div>
+                    </div>
+
+                    <!-- Bottom TikTok Style Subtitle & Meta -->
+                    <div class="relative z-20 pb-6 px-4">
+                      
+                      <!-- Dynamic Subtitle Box -->
+                      <div id="activeCaptionBox" class="mb-4 text-center">
+                        <!-- Hormone style default -->
+                        <div class="inline-block px-3 py-1.5 bg-black/80 rounded-xl shadow-lg border border-gold-500/40 backdrop-blur-md">
+                          <p id="captionTextDisplay" class="font-display font-black text-lg text-white tracking-wide">
+                            "INI RAHASIA <span class="text-gold-400 underline decoration-2">10X LIPAT</span> PERTUMBUHANMU!"
+                          </p>
+                        </div>
+                      </div>
+
+                      <!-- Social interaction icons simulated -->
+                      <div class="flex justify-between items-end">
+                        <div class="text-left">
+                          <p class="text-xs font-bold text-white flex items-center gap-1">@clipzystudio <span class="text-gold-400">✓</span></p>
+                          <p class="text-[11px] text-neutral-300 mt-0.5 line-clamp-1">Kunci pertumbuhan kreator 2026 #tipsbisnis #creator</p>
+                        </div>
+                        <div class="flex flex-col items-center gap-2 text-white">
+                          <span class="text-sm">❤️</span>
+                          <span class="text-[9px] font-bold">48.2K</span>
+                          <span class="text-sm">💬</span>
+                          <span class="text-[9px] font-bold">1.2K</span>
+                        </div>
+                      </div>
+
+                      <!-- Progress bar inside phone -->
+                      <div class="w-full bg-white/20 h-1 rounded-full mt-3 overflow-hidden">
+                        <div id="phoneProgressBar" class="h-full bg-gold-400 w-2/3 transition-all duration-300"></div>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+
+                <!-- Phone Base Glow -->
+                <div class="w-3/4 h-6 bg-gold-500/20 blur-xl mx-auto rounded-full mt-2"></div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
       </div>
     </section>
 
-    <section class="section container" id="features">
-      <div class="section-head"><div class="kicker">Powerful features</div><h2>Semua yang kamu butuhkan<br>untuk membuat clips.</h2><p>Fokus pada ide dan cerita. Clipzy AI membantu mempercepat proses produksi konten pendek.</p></div>
-      <div class="feature-grid">
-        <article class="feature"><div class="feature-icon">✦</div><h3>AI Moment Detection</h3><p>Temukan bagian menarik dari video panjang berdasarkan percakapan, konteks, dan momen penting.</p></article>
-        <article class="feature"><div class="feature-icon">▤</div><h3>Smart Subtitles</h3><p>Buat subtitle otomatis agar konten lebih mudah diikuti, termasuk untuk penonton tanpa suara.</p></article>
-        <article class="feature"><div class="feature-icon">▣</div><h3>Vertical Reframing</h3><p>Siapkan format vertikal untuk Shorts, Reels, dan TikTok dengan komposisi yang lebih sesuai.</p></article>
-        <article class="feature"><div class="feature-icon">◉</div><h3>AI Speaker Focus</h3><p>Bantu menjaga pembicara tetap menjadi fokus saat video disesuaikan ke rasio vertikal.</p></article>
-        <article class="feature"><div class="feature-icon">⌁</div><h3>Fast Video Workflow</h3><p>Satukan proses pemilihan momen, pemotongan, dan persiapan hasil dalam satu alur kerja.</p></article>
-        <article class="feature"><div class="feature-icon">↗</div><h3>Export & Share</h3><p>Siapkan hasil akhir untuk dibagikan ke platform video pendek favoritmu.</p></article>
+    <!-- SECTION: FEATURES -->
+    <section id="features" class="py-24 max-w-7xl mx-auto px-5 sm:px-8">
+      <div class="text-center max-w-3xl mx-auto mb-16">
+        <div class="text-gold-400 text-xs font-bold uppercase tracking-widest mb-3">All-In-One Toolkit</div>
+        <h2 class="font-display text-3xl sm:text-5xl font-bold tracking-tight text-white">
+          Semua Yang Kamu Butuhkan Untuk <br class="hidden sm:block" />
+          <span class="text-gold-400">Mendominasi Algoritma Video</span>
+        </h2>
+        <p class="text-neutral-400 mt-4 text-base">
+          Clipzy AI mereduksi waktu editing dari 4 jam menjadi kurang dari 90 detik.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <!-- Feature 1 -->
+        <div class="p-7 rounded-2xl bg-gradient-to-b from-dark-800 to-dark-850 border border-white/[0.08] hover:border-gold-500/40 transition-all duration-300 group hover:-translate-y-1">
+          <div class="w-12 h-12 rounded-xl bg-gold-500/10 border border-gold-500/20 text-gold-400 flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform">
+            🧠
+          </div>
+          <h3 class="font-display text-lg font-bold text-white mb-2">AI Virality Hook Detector</h3>
+          <p class="text-sm text-neutral-400 leading-relaxed">
+            Menganalisis intonasi suara, keyword retensi tinggi, dan perubahan emosi penonton untuk memilih 30-60 detik dengan probabilitas viral tertinggi.
+          </p>
+        </div>
+
+        <!-- Feature 2 -->
+        <div class="p-7 rounded-2xl bg-gradient-to-b from-dark-800 to-dark-850 border border-white/[0.08] hover:border-gold-500/40 transition-all duration-300 group hover:-translate-y-1">
+          <div class="w-12 h-12 rounded-xl bg-gold-500/10 border border-gold-500/20 text-gold-400 flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform">
+            ⚡
+          </div>
+          <h3 class="font-display text-lg font-bold text-white mb-2">Dynamic Auto-Captions</h3>
+          <p class="text-sm text-neutral-400 leading-relaxed">
+            Transkripsi Bahasa Indonesia & Inggris 99.2% akurat dengan animasi kata perkata, highlight warna emas/neon, dan emoji otomatis.
+          </p>
+        </div>
+
+        <!-- Feature 3 -->
+        <div class="p-7 rounded-2xl bg-gradient-to-b from-dark-800 to-dark-850 border border-white/[0.08] hover:border-gold-500/40 transition-all duration-300 group hover:-translate-y-1">
+          <div class="w-12 h-12 rounded-xl bg-gold-500/10 border border-gold-500/20 text-gold-400 flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform">
+            📐
+          </div>
+          <h3 class="font-display text-lg font-bold text-white mb-2">Smart 9:16 Reframing</h3>
+          <p class="text-sm text-neutral-400 leading-relaxed">
+            Otomatis melacak wajah pembicara utama dari rekaman horizontal 16:9 agar tetap berada di tengah layar ponsel secara mulus.
+          </p>
+        </div>
+
+        <!-- Feature 4 -->
+        <div class="p-7 rounded-2xl bg-gradient-to-b from-dark-800 to-dark-850 border border-white/[0.08] hover:border-gold-500/40 transition-all duration-300 group hover:-translate-y-1">
+          <div class="w-12 h-12 rounded-xl bg-gold-500/10 border border-gold-500/20 text-gold-400 flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform">
+            🎬
+          </div>
+          <h3 class="font-display text-lg font-bold text-white mb-2">Automated AI B-Roll Insertion</h3>
+          <p class="text-sm text-neutral-400 leading-relaxed">
+            AI mendeteksi objek pembicaraan dan menempelkan visual B-roll bebas hak cipta untuk meningkatkan watch-time secara dramatis.
+          </p>
+        </div>
+
+        <!-- Feature 5 -->
+        <div class="p-7 rounded-2xl bg-gradient-to-b from-dark-800 to-dark-850 border border-white/[0.08] hover:border-gold-500/40 transition-all duration-300 group hover:-translate-y-1">
+          <div class="w-12 h-12 rounded-xl bg-gold-500/10 border border-gold-500/20 text-gold-400 flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform">
+            👥
+          </div>
+          <h3 class="font-display text-lg font-bold text-white mb-2">Multi-Speaker Split Layout</h3>
+          <p class="text-sm text-neutral-400 leading-relaxed">
+            Format podcast dua pembicara otomatis ditata ke dalam split-screen atas-bawah dengan deteksi mikrofon aktif.
+          </p>
+        </div>
+
+        <!-- Feature 6 -->
+        <div class="p-7 rounded-2xl bg-gradient-to-b from-dark-800 to-dark-850 border border-white/[0.08] hover:border-gold-500/40 transition-all duration-300 group hover:-translate-y-1">
+          <div class="w-12 h-12 rounded-xl bg-gold-500/10 border border-gold-500/20 text-gold-400 flex items-center justify-center text-2xl mb-5 group-hover:scale-110 transition-transform">
+            🚀
+          </div>
+          <h3 class="font-display text-lg font-bold text-white mb-2">1-Click Multi-Platform Export</h3>
+          <p class="text-sm text-neutral-400 leading-relaxed">
+            Download klip dalam kualitas 1080p 60fps dengan bitrate optimal untuk platform TikTok, Instagram Reels, dan YouTube Shorts.
+          </p>
+        </div>
       </div>
     </section>
 
-    <section class="section container" id="how">
-      <div class="section-head"><div class="kicker">Simple workflow</div><h2>Dari video panjang ke short clips.</h2><p>Empat langkah sederhana untuk memulai proses kreatifmu.</p></div>
-      <div class="workflow">
-        <article class="step"><div class="step-num">01 / INPUT</div><h3>Masukkan video</h3><p>Unggah video atau masukkan sumber video yang ingin kamu olah.</p></article>
-        <article class="step"><div class="step-num">02 / ANALYZE</div><h3>AI menganalisis</h3><p>AI memproses audio dan konten untuk mencari bagian yang potensial.</p></article>
-        <article class="step"><div class="step-num">03 / CREATE</div><h3>Buat clips</h3><p>Pilih momen, sesuaikan subtitle, dan atur tampilan video.</p></article>
-        <article class="step"><div class="step-num">04 / EXPORT</div><h3>Export hasilnya</h3><p>Simpan video pendek dan bagikan ke platform pilihanmu.</p></article>
+    <!-- SECTION: HOW IT WORKS (STEP BY STEP) -->
+    <section id="how" class="py-24 bg-dark-950 border-t border-white/[0.08]">
+      <div class="max-w-7xl mx-auto px-5 sm:px-8">
+        <div class="text-center max-w-2xl mx-auto mb-16">
+          <div class="text-gold-400 text-xs font-bold uppercase tracking-widest mb-2">Simpel & Cepat</div>
+          <h2 class="font-display text-3xl sm:text-5xl font-bold tracking-tight text-white">
+            4 Langkah Mudah Dari Video Panjang ke Konten Viral
+          </h2>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 relative">
+          <!-- Step 1 -->
+          <div class="p-6 rounded-2xl bg-dark-850 border border-white/10 relative">
+            <span class="font-display text-5xl font-black text-white/10 absolute top-4 right-4">01</span>
+            <div class="w-10 h-10 rounded-xl bg-gold-500/15 text-gold-400 flex items-center justify-center font-bold mb-4">
+              1
+            </div>
+            <h3 class="text-base font-bold text-white mb-2">Input URL / File</h3>
+            <p class="text-xs text-neutral-400 leading-relaxed">
+              Tempel link YouTube podcast atau upload rekaman video hingga 3 jam langsung ke browser.
+            </p>
+          </div>
+
+          <!-- Step 2 -->
+          <div class="p-6 rounded-2xl bg-dark-850 border border-white/10 relative">
+            <span class="font-display text-5xl font-black text-white/10 absolute top-4 right-4">02</span>
+            <div class="w-10 h-10 rounded-xl bg-gold-500/15 text-gold-400 flex items-center justify-center font-bold mb-4">
+              2
+            </div>
+            <h3 class="text-base font-bold text-white mb-2">AI Processing</h3>
+            <p class="text-xs text-neutral-400 leading-relaxed">
+              Algoritma memindai waveform, menyeleksi punchline terlucu/terpenting, dan menyusun timestamp.
+            </p>
+          </div>
+
+          <!-- Step 3 -->
+          <div class="p-6 rounded-2xl bg-dark-850 border border-white/10 relative">
+            <span class="font-display text-5xl font-black text-white/10 absolute top-4 right-4">03</span>
+            <div class="w-10 h-10 rounded-xl bg-gold-500/15 text-gold-400 flex items-center justify-center font-bold mb-4">
+              3
+            </div>
+            <h3 class="text-base font-bold text-white mb-2">Kustomisasi Preset</h3>
+            <p class="text-xs text-neutral-400 leading-relaxed">
+              Pilih gaya caption Hormozi, ubah warna kata highlight, atau tambahkan logo branding kamu.
+            </p>
+          </div>
+
+          <!-- Step 4 -->
+          <div class="p-6 rounded-2xl bg-dark-850 border border-white/10 relative">
+            <span class="font-display text-5xl font-black text-white/10 absolute top-4 right-4">04</span>
+            <div class="w-10 h-10 rounded-xl bg-gold-500/15 text-gold-400 flex items-center justify-center font-bold mb-4">
+              4
+            </div>
+            <h3 class="text-base font-bold text-white mb-2">Export & Jadwalkan</h3>
+            <p class="text-xs text-neutral-400 leading-relaxed">
+              Download sekaligus semua klip dalam resolusi Full HD siap publish ke TikTok dan Reels.
+            </p>
+          </div>
+        </div>
+
+        <!-- Metric Counter Ribbon -->
+        <div class="mt-16 bg-gradient-to-r from-dark-800 via-dark-750 to-dark-800 border border-gold-500/30 rounded-3xl p-8 grid grid-cols-2 lg:grid-cols-4 gap-6 text-center">
+          <div>
+            <div class="font-display text-3xl sm:text-4xl font-extrabold text-gold-400">10X</div>
+            <div class="text-xs text-neutral-400 mt-1 uppercase font-semibold">Produksi Konten</div>
+          </div>
+          <div>
+            <div class="font-display text-3xl sm:text-4xl font-extrabold text-white">90 Detik</div>
+            <div class="text-xs text-neutral-400 mt-1 uppercase font-semibold">Rata-rata Waktu Export</div>
+          </div>
+          <div>
+            <div class="font-display text-3xl sm:text-4xl font-extrabold text-gold-400">99.2%</div>
+            <div class="text-xs text-neutral-400 mt-1 uppercase font-semibold">Akurasi Transkrip</div>
+          </div>
+          <div>
+            <div class="font-display text-3xl sm:text-4xl font-extrabold text-white">2.4M+</div>
+            <div class="text-xs text-neutral-400 mt-1 uppercase font-semibold">Klip Telah Dibuat</div>
+          </div>
+        </div>
       </div>
     </section>
 
-    <section class="section container" id="demo">
-      <div class="demo-wrap">
-        <div><div class="kicker">Try the experience</div><h2>Siap membuat konten berikutnya?</h2><p>Pilih file video dari perangkatmu untuk mencoba interaksi halaman ini. Demo ini hanya menampilkan nama file — belum mengunggah atau memproses video ke server.</p><a href="#features" class="btn btn-ghost">Jelajahi fitur <span>→</span></a></div>
-        <div class="upload-box"><div class="upload-icon">⇧</div><h3>Pilih video kamu</h3><p>MP4, MOV, atau WebM · Demo antarmuka</p><input type="file" id="videoInput" accept="video/mp4,video/quicktime,video/webm" hidden><button class="btn btn-gold" id="chooseFile">Pilih File Video</button><div class="file-name" id="fileName" aria-live="polite"></div></div>
+    <!-- SECTION: PRICING -->
+    <section id="pricing" class="py-24 max-w-7xl mx-auto px-5 sm:px-8">
+      <div class="text-center max-w-2xl mx-auto mb-16">
+        <div class="text-gold-400 text-xs font-bold uppercase tracking-widest mb-2">Harga Fleksibel</div>
+        <h2 class="font-display text-3xl sm:text-5xl font-bold tracking-tight text-white">
+          Investasi Kecil, Hasil Konten Masif
+        </h2>
+        <p class="text-neutral-400 mt-3 text-sm">
+          Mulai gratis tanpa kartu kredit. Upgrade kapan saja saat audiens kamu mulai bertumbuh.
+        </p>
+
+        <!-- Billing toggle -->
+        <div class="mt-8 inline-flex items-center gap-3 bg-dark-800 p-1.5 rounded-2xl border border-white/10 text-xs">
+          <button id="monthlyPlanBtn" class="px-5 py-2 rounded-xl font-bold bg-gold-grad text-dark-950 transition-all">Bulanan</button>
+          <button id="yearlyPlanBtn" class="px-5 py-2 rounded-xl font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-1.5">
+            Tahunan <span class="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded font-bold">HEMAT 25%</span>
+          </button>
+        </div>
       </div>
-      <div class="stats"><div class="stat"><strong>AI</strong><span>Smart assistance</span></div><div class="stat"><strong>9:16</strong><span>Vertical-ready format</span></div><div class="stat"><strong>∞</strong><span>Creative possibilities</span></div></div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch">
+        <!-- Tier 1: Starter -->
+        <div class="p-8 rounded-3xl bg-dark-850 border border-white/10 flex flex-col justify-between hover:border-white/20 transition-all">
+          <div>
+            <span class="text-xs font-bold uppercase tracking-wider text-neutral-400">Starter</span>
+            <h3 class="font-display text-2xl font-bold text-white mt-1">Free Trial</h3>
+            <div class="my-6">
+              <span class="text-4xl font-extrabold text-white font-display">Rp 0</span>
+              <span class="text-xs text-neutral-400"> / selamanya</span>
+            </div>
+            <ul class="space-y-3 text-xs text-neutral-300">
+              <li class="flex items-center gap-2">✓ 60 Menit video input / bulan</li>
+              <li class="flex items-center gap-2">✓ Hingga 15 Klip Vertikal AI</li>
+              <li class="flex items-center gap-2">✓ 720p Export Resolution</li>
+              <li class="flex items-center gap-2 text-neutral-500">✕ Watermark Clipzy kecil</li>
+            </ul>
+          </div>
+          <button class="w-full mt-8 py-3 rounded-xl bg-dark-750 hover:bg-dark-700 text-neutral-200 text-xs font-bold transition-all border border-white/10">
+            Daftar Gratis
+          </button>
+        </div>
+
+        <!-- Tier 2: Pro Creator (Highlighted) -->
+        <div class="p-8 rounded-3xl bg-gradient-to-b from-dark-800 to-dark-850 border-2 border-gold-500 shadow-[0_0_35px_rgba(244,199,107,0.15)] flex flex-col justify-between relative transform lg:-translate-y-2">
+          <div class="absolute -top-3.5 left-1/2 transform -translate-x-1/2 bg-gold-grad text-dark-950 px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-wider">
+            Paling Populer
+          </div>
+          <div>
+            <span class="text-xs font-bold uppercase tracking-wider text-gold-400">Creator Pro</span>
+            <h3 class="font-display text-2xl font-bold text-white mt-1">Individual Creator</h3>
+            <div class="my-6">
+              <span id="proPriceDisplay" class="text-4xl font-extrabold text-gold-400 font-display">Rp 149.000</span>
+              <span class="text-xs text-neutral-400" id="billingPeriodText"> / bulan</span>
+            </div>
+            <ul class="space-y-3 text-xs text-neutral-200">
+              <li class="flex items-center gap-2 text-gold-300">✓ <strong>300 Menit</strong> video input / bulan</li>
+              <li class="flex items-center gap-2">✓ Unlimited AI Highlight Reels</li>
+              <li class="flex items-center gap-2">✓ 1080p 60FPS Crisp Export</li>
+              <li class="flex items-center gap-2">✓ <strong>Tanpa Watermark</strong></li>
+              <li class="flex items-center gap-2">✓ AI B-roll Auto Insertion</li>
+              <li class="flex items-center gap-2">✓ Semua Preset Subtitle Hormozi & Neon</li>
+            </ul>
+          </div>
+          <button class="w-full mt-8 py-3.5 rounded-xl bg-gold-grad text-dark-950 text-xs font-bold uppercase tracking-wider shadow-lg hover:shadow-[0_0_20px_rgba(244,199,107,0.5)] transition-all">
+            Pilih Pro Creator →
+          </button>
+        </div>
+
+        <!-- Tier 3: Agency -->
+        <div class="p-8 rounded-3xl bg-dark-850 border border-white/10 flex flex-col justify-between hover:border-white/20 transition-all">
+          <div>
+            <span class="text-xs font-bold uppercase tracking-wider text-neutral-400">Studio / Agency</span>
+            <h3 class="font-display text-2xl font-bold text-white mt-1">Multi Brand</h3>
+            <div class="my-6">
+              <span id="agencyPriceDisplay" class="text-4xl font-extrabold text-white font-display">Rp 489.000</span>
+              <span class="text-xs text-neutral-400"> / bulan</span>
+            </div>
+            <ul class="space-y-3 text-xs text-neutral-300">
+              <li class="flex items-center gap-2">✓ 1.200 Menit video input</li>
+              <li class="flex items-center gap-2">✓ 4K UltraHD Video Export</li>
+              <li class="flex items-center gap-2">✓ 5 Anggota Tim (Team Seat)</li>
+              <li class="flex items-center gap-2">✓ Custom Brand Kit, Font & Colors</li>
+              <li class="flex items-center gap-2">✓ Prioritas Rendering Server</li>
+            </ul>
+          </div>
+          <button class="w-full mt-8 py-3 rounded-xl bg-dark-750 hover:bg-dark-700 text-neutral-200 text-xs font-bold transition-all border border-white/10">
+            Hubungi Tim Sales
+          </button>
+        </div>
+      </div>
     </section>
 
-    <section class="container section" id="about">
-      <div class="cta"><div class="kicker">Create without limits</div><h2>Lebih banyak konten.<br>Lebih sedikit pekerjaan manual.</h2><p>Clipzy AI membantu kreator mengubah ide dan video panjang menjadi konten pendek dengan workflow yang lebih praktis.</p><a class="btn btn-gold" href="#demo">Mulai dengan Clipzy AI <span>↗</span></a></div>
+    <!-- SECTION: FAQ -->
+    <section id="faq" class="py-20 bg-dark-950 border-t border-white/[0.08]">
+      <div class="max-w-4xl mx-auto px-5 sm:px-8">
+        <div class="text-center mb-12">
+          <h2 class="font-display text-3xl font-bold text-white">Pertanyaan Sering Diajukan</h2>
+          <p class="text-neutral-400 text-xs mt-2">Punya pertanyaan lain? Hubungi support 24/7 kami.</p>
+        </div>
+
+        <div class="space-y-4" id="faqAccordion">
+          <div class="faq-item bg-dark-850 border border-white/10 rounded-2xl p-5 cursor-pointer">
+            <div class="flex items-center justify-between font-semibold text-sm text-white">
+              <span>Apakah subtitle mendukung Bahasa Indonesia sehari-hari & slang?</span>
+              <span class="text-gold-400 font-bold text-lg">+</span>
+            </div>
+            <p class="faq-answer hidden text-xs text-neutral-400 mt-3 leading-relaxed">
+              Ya! Model speech-to-text Clipzy telah dilatih secara khusus untuk mendeteksi variasi percakapan Bahasa Indonesia, termasuk istilah gaul, campuran bahasa Inggris (Jaksel), dan dialek umum.
+            </p>
+          </div>
+
+          <div class="faq-item bg-dark-850 border border-white/10 rounded-2xl p-5 cursor-pointer">
+            <div class="flex items-center justify-between font-semibold text-sm text-white">
+              <span>Berapa lama proses pembuatan klip dari video 1 jam?</span>
+              <span class="text-gold-400 font-bold text-lg">+</span>
+            </div>
+            <p class="faq-answer hidden text-xs text-neutral-400 mt-3 leading-relaxed">
+              Rata-rata sistem cloud Clipzy membutuhkan waktu sekitar 2 hingga 4 menit untuk memproses video podcast berdurasi 1 jam, menghasilkan sekitar 8-12 klip siap pakai.
+            </p>
+          </div>
+
+          <div class="faq-item bg-dark-850 border border-white/10 rounded-2xl p-5 cursor-pointer">
+            <div class="flex items-center justify-between font-semibold text-sm text-white">
+              <span>Apakah hasil klip bisa saya edit kata-katanya jika ada typo?</span>
+              <span class="text-gold-400 font-bold text-lg">+</span>
+            </div>
+            <p class="faq-answer hidden text-xs text-neutral-400 mt-3 leading-relaxed">
+              Tentu saja! Di dalam Clipzy Studio, Anda memiliki editor transkrip teks langsung. Anda cukup klik kata yang ingin diganti dan perubahannya otomatis tersinkronisasi dengan frame video.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CALL TO ACTION SECTION -->
+    <section class="py-24 max-w-7xl mx-auto px-5 sm:px-8">
+      <div class="relative rounded-3xl bg-gradient-to-tr from-dark-800 via-dark-850 to-dark-800 border border-gold-500/30 p-10 sm:p-16 text-center overflow-hidden shadow-2xl">
+        <div class="absolute -top-24 -left-24 w-72 h-72 rounded-full bg-gold-500/10 blur-3xl pointer-events-none"></div>
+        <div class="relative z-10 max-w-2xl mx-auto">
+          <div class="text-gold-400 text-xs font-bold uppercase tracking-widest mb-3">Mulai Dalam 30 Detik</div>
+          <h2 class="font-display text-3xl sm:text-5xl font-bold text-white tracking-tight">
+            Ubah Video Panjang Kamu Jadi Viral Sekarang
+          </h2>
+          <p class="text-neutral-400 text-sm mt-4 mb-8">
+            Hemat puluhan jam editing manual. Tingkatkan jangkauan penonton Anda di Shorts, Reels, dan TikTok secara otomatis.
+          </p>
+          <div class="flex flex-col sm:flex-row gap-3 justify-center">
+            <a href="#studio" class="px-8 py-4 rounded-xl text-xs font-bold uppercase tracking-wider text-dark-950 bg-gold-grad shadow-[0_4px_30px_rgba(244,199,107,0.35)] hover:-translate-y-1 transition-all">
+              Buka Studio & Coba Gratis <span>↗</span>
+            </a>
+          </div>
+        </div>
+      </div>
     </section>
   </main>
 
-  <footer><div class="container footer-inner"><a class="brand" href="#home"><span class="brand-mark">▶</span><span>clipzy<em>AI</em></span></a><span>© <span id="year"></span> Clipzy AI. All rights reserved.</span><div class="footer-links"><a href="#features">Features</a><a href="#how">How it works</a><a href="#home">Back to top ↑</a></div></div></footer>
+  <!-- FOOTER -->
+  <footer class="border-t border-white/[0.08] bg-dark-950 py-12 text-neutral-400 text-xs">
+    <div class="max-w-7xl mx-auto px-5 sm:px-8 flex flex-col md:flex-row items-center justify-between gap-6">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-gold-grad flex items-center justify-center text-dark-950 font-black text-sm">
+          ▶
+        </div>
+        <span class="font-display font-bold text-white text-lg">clipzy<span class="text-gold-500 italic">AI</span></span>
+        <span class="text-neutral-600 pl-2 border-l border-white/10">Create More. Edit Less.</span>
+      </div>
 
+      <div class="flex flex-wrap items-center gap-6 text-neutral-400">
+        <a href="#features" class="hover:text-gold-400 transition-colors">Fitur</a>
+        <a href="#studio" class="hover:text-gold-400 transition-colors">Studio Demo</a>
+        <a href="#how" class="hover:text-gold-400 transition-colors">Cara Kerja</a>
+        <a href="#pricing" class="hover:text-gold-400 transition-colors">Harga</a>
+        <a href="#home" class="hover:text-gold-400 transition-colors">Kembali ke Atas ↑</a>
+      </div>
+
+      <div class="text-neutral-500">
+        © <span id="currentYear"></span> Clipzy AI Inc. All rights reserved.
+      </div>
+    </div>
+  </footer>
+
+  <!-- INTERACTIVE JAVASCRIPT LOGIC -->
   <script>
-    const menuToggle = document.getElementById('menuToggle');
-    const navLinks = document.getElementById('navLinks');
-    menuToggle.addEventListener('click', () => {
-      navLinks.classList.toggle('open');
-      menuToggle.textContent = navLinks.classList.contains('open') ? '✕' : '☰';
+    // State Data for clips
+    const clipsData = {
+      1: {
+        title: "Hook: Rahasia 10X Pertumbuhan Tanpa Iklan",
+        virality: "98%",
+        duration: "00:38",
+        captionHormozi: `"INI RAHASIA <span class="text-gold-400 underline decoration-2">10X LIPAT</span> PERTUMBUHANMU!"`,
+        captionNeon: `"PERTUMBUHAN <span class="text-emeraldAccent font-bold drop-shadow-[0_0_8px_#4ade80]">ORGANIK</span> TANPA BIAYA IKLAN"`,
+        captionMinimal: `"Kunci pertumbuhan eksponensial di media sosial saat ini."`,
+        captionKaraoke: `▶ <span class="bg-gold-500 text-dark-950 px-2 py-0.5 rounded">Bukan modal besar</span>, tapi konsistensi pesan!`,
+        gradient: "radial-gradient(circle at 50% 30%, #362c1c 0%, #0d0f14 85%)",
+        icon: "🎙️"
+      },
+      2: {
+        title: "Mindset: Kenapa 90% Kreator Menyerah di Bulan Ke-3",
+        virality: "94%",
+        duration: "00:52",
+        captionHormozi: `"BULAN KE-3 ADALAH <span class="text-gold-400 underline decoration-2">FILTER ALAMI</span> KREATOR!"`,
+        captionNeon: `"JANGAN PERNAH <span class="text-emeraldAccent font-bold drop-shadow-[0_0_8px_#4ade80]">MENYERAH</span> SEBELUM BULAN KE-6"`,
+        captionMinimal: `"Konsistensi tanpa validasi instan adalah ujian sesungguhnya."`,
+        captionKaraoke: `▶ <span class="bg-gold-500 text-dark-950 px-2 py-0.5 rounded">Filter alami</span> memisahkan pemenang & pecundang.`,
+        gradient: "radial-gradient(circle at 50% 30%, #1f2d3d 0%, #090c12 85%)",
+        icon: "💡"
+      },
+      3: {
+        title: "Actionable: 3 Rumus Hook Pembuka Detik 0-3",
+        virality: "89%",
+        duration: "00:44",
+        captionHormozi: `"JANGAN MULAI DENGAN <span class="text-gold-400 underline decoration-2">KATA HALO</span> GAIS!"`,
+        captionNeon: `"DETIK KE 0-3 <span class="text-emeraldAccent font-bold drop-shadow-[0_0_8px_#4ade80]">MENENTUKAN</span> NASIB KONTENMU"`,
+        captionMinimal: `"Tiga teknik membuka video agar penonton tidak swipe away."`,
+        captionKaraoke: `▶ <span class="bg-gold-500 text-dark-950 px-2 py-0.5 rounded">Langsung ke inti</span> tanpa basa-basi pembuka!`,
+        gradient: "radial-gradient(circle at 50% 30%, #2f1d2e 0%, #0d0910 85%)",
+        icon: "🚀"
+      }
+    };
+
+    let activeClipId = 1;
+    let activeStylePreset = 'hormozi';
+    let isPlaying = true;
+    let progressTimer = null;
+    let currentProgress = 65;
+
+    // Toast helper
+    function showToast(text) {
+      const toast = document.getElementById('toastMessage');
+      const toastText = document.getElementById('toastText');
+      toastText.textContent = text;
+      toast.classList.remove('translate-y-24', 'opacity-0');
+      toast.classList.add('translate-y-0', 'opacity-100');
+      setTimeout(() => {
+        toast.classList.remove('translate-y-0', 'opacity-100');
+        toast.classList.add('translate-y-24', 'opacity-0');
+      }, 3200);
+    }
+
+    // Update phone reel preview UI
+    function updatePhonePreview() {
+      const clip = clipsData[activeClipId];
+      const screen = document.getElementById('phoneScreen');
+      const avatar = document.getElementById('speakerAvatar');
+      const captionDisplay = document.getElementById('captionTextDisplay');
+
+      screen.style.background = clip.gradient;
+      avatar.innerHTML = `${clip.icon} <div class="absolute -inset-2 rounded-full border border-gold-400/40 animate-ping opacity-30"></div>`;
+
+      // Select subtitle preset
+      if (activeStylePreset === 'hormozi') {
+        captionDisplay.innerHTML = clip.captionHormozi;
+        captionDisplay.className = "font-display font-black text-lg text-white tracking-wide";
+      } else if (activeStylePreset === 'neon') {
+        captionDisplay.innerHTML = clip.captionNeon;
+        captionDisplay.className = "font-sans font-bold text-base text-neutral-100 tracking-normal";
+      } else if (activeStylePreset === 'minimal') {
+        captionDisplay.innerHTML = clip.captionMinimal;
+        captionDisplay.className = "font-sans font-normal text-sm text-neutral-200 italic";
+      } else if (activeStylePreset === 'karaoke') {
+        captionDisplay.innerHTML = clip.captionKaraoke;
+        captionDisplay.className = "font-sans font-extrabold text-sm text-white";
+      }
+    }
+
+    // Clip Selection Click Listeners
+    const clipCards = document.querySelectorAll('.clip-card');
+    clipCards.forEach(card => {
+      card.addEventListener('click', () => {
+        const id = card.getAttribute('data-clip-id');
+        activeClipId = id;
+
+        // Reset visual cards
+        clipCards.forEach(c => {
+          c.classList.remove('border-2', 'border-gold-500', 'bg-dark-800');
+          c.classList.add('border', 'border-white/5', 'bg-dark-800/60');
+          const badge = c.querySelector('span:last-child');
+          if (badge) badge.className = 'text-xs text-neutral-500 group-hover:text-neutral-300';
+          if (badge && badge.textContent === 'Aktif') badge.textContent = 'Pilih Klip →';
+        });
+
+        // Set active card styles
+        card.classList.remove('border-white/5', 'bg-dark-800/60');
+        card.classList.add('border-2', 'border-gold-500', 'bg-dark-800');
+        const activeBadge = card.querySelector('span:last-child');
+        if (activeBadge) {
+          activeBadge.className = 'text-xs text-gold-400 font-bold bg-dark-900/80 px-2.5 py-1 rounded-lg border border-gold-500/30';
+          activeBadge.textContent = 'Aktif';
+        }
+
+        updatePhonePreview();
+        showToast(`Klip #${id} dimuat ke dalam preview video vertikal.`);
+      });
     });
-    navLinks.querySelectorAll('a').forEach(link => link.addEventListener('click', () => {
-      navLinks.classList.remove('open');
-      menuToggle.textContent = '☰';
-    }));
-    const videoInput = document.getElementById('videoInput');
-    document.getElementById('chooseFile').addEventListener('click', () => videoInput.click());
-    videoInput.addEventListener('change', () => {
-      const file = videoInput.files && videoInput.files[0];
-      const output = document.getElementById('fileName');
-      if (!file) { output.textContent = ''; return; }
-      const size = (file.size / (1024 * 1024)).toFixed(2);
-      output.textContent = `✓ ${file.name} · ${size} MB`;
+
+    // Style presets switch
+    const presetButtons = document.querySelectorAll('.style-preset-btn');
+    presetButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        presetButtons.forEach(b => {
+          b.classList.remove('border-gold-500', 'bg-gold-500/10', 'text-gold-300');
+          b.classList.add('border-white/10', 'bg-dark-800', 'text-neutral-300');
+        });
+        btn.classList.remove('border-white/10', 'bg-dark-800', 'text-neutral-300');
+        btn.classList.add('border-gold-500', 'bg-gold-500/10', 'text-gold-300');
+
+        activeStylePreset = btn.getAttribute('data-style');
+        updatePhonePreview();
+        showToast(`Preset subtitle diubah ke "${btn.textContent.trim()}".`);
+      });
     });
-    document.getElementById('year').textContent = new Date().getFullYear();
+
+    // Play/Pause phone preview
+    const phonePlayPauseBtn = document.getElementById('phonePlayPauseBtn');
+    const playIcon = document.getElementById('playIcon');
+    const phoneProgressBar = document.getElementById('phoneProgressBar');
+
+    function togglePlayback() {
+      isPlaying = !isPlaying;
+      playIcon.textContent = isPlaying ? '⏸' : '▶';
+      if (isPlaying) {
+        startProgressAnimation();
+      } else {
+        clearInterval(progressTimer);
+      }
+    }
+    phonePlayPauseBtn.addEventListener('click', togglePlayback);
+
+    function startProgressAnimation() {
+      clearInterval(progressTimer);
+      progressTimer = setInterval(() => {
+        if (!isPlaying) return;
+        currentProgress += 1.5;
+        if (currentProgress > 100) currentProgress = 5;
+        phoneProgressBar.style.width = currentProgress + '%';
+      }, 200);
+    }
+    startProgressAnimation();
+
+    // YouTube Fetch Simulation
+    document.getElementById('fetchYoutubeBtn').addEventListener('click', () => {
+      const url = document.getElementById('youtubeUrlInput').value;
+      if (!url.trim()) {
+        showToast("Mohon masukkan tautan video terlebih dahulu.");
+        return;
+      }
+      showToast("Sedang memproses tautan YouTube dengan AI...");
+      setTimeout(() => {
+        showToast("Analisis selesai! 3 klip hook viral siap.");
+      }, 1400);
+    });
+
+    // Upload Trigger Simulation
+    const triggerUploadBtn = document.getElementById('triggerUploadBtn');
+    const localVideoFile = document.getElementById('localVideoFile');
+    const uploadLabel = document.getElementById('uploadLabel');
+
+    triggerUploadBtn.addEventListener('click', () => localVideoFile.click());
+    localVideoFile.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+        uploadLabel.textContent = `✓ ${file.name} (${sizeMb} MB)`;
+        showToast(`File ${file.name} berhasil diunggah.`);
+      }
+    });
+
+    // Re-analyze simulation
+    document.getElementById('reAnalyzeBtn').addEventListener('click', () => {
+      const icon = document.getElementById('reAnalyzeIcon');
+      icon.classList.add('animate-spin');
+      showToast("AI sedang mencari highlight momen baru...");
+      setTimeout(() => {
+        icon.classList.remove('animate-spin');
+        showToast("Klip berhasil diperbarui dengan ranking virality baru.");
+      }, 1200);
+    });
+
+    // Export button
+    document.getElementById('exportClipBtn').addEventListener('click', () => {
+      showToast("Rendering klip 1080p 60fps... Siap dalam 5 detik.");
+    });
+
+    // Copy Transcript Caption
+    document.getElementById('copyTranscriptBtn').addEventListener('click', () => {
+      const clip = clipsData[activeClipId];
+      // strip html tag for clean clipboard text
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = clip.captionHormozi;
+      const cleanText = tempDiv.textContent || tempDiv.innerText || "";
+      
+      // Fallback copy execCommand
+      const textArea = document.createElement('textarea');
+      textArea.value = cleanText + "\n\n#ClipzyAI #ViralReels #ContentCreator";
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        showToast("Teks subtitle & hashtag berhasil disalin ke clipboard!");
+      } catch (err) {
+        showToast("Gagal menyalin teks.");
+      }
+      document.body.removeChild(textArea);
+    });
+
+    // Aspect Ratio Buttons
+    const ratioButtons = [
+      document.getElementById('ratio916'),
+      document.getElementById('ratio11'),
+      document.getElementById('ratio169')
+    ];
+    ratioButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        ratioButtons.forEach(b => {
+          b.className = 'px-3 py-1 rounded-lg text-xs font-medium bg-dark-700 text-neutral-300 hover:text-white';
+        });
+        btn.className = 'px-3 py-1 rounded-lg text-xs font-bold bg-gold-grad text-dark-950';
+        showToast(`Rasio video diubah ke format ${btn.textContent.trim().split(' ')[0]}.`);
+      });
+    });
+
+    // Pricing Billing Switch
+    const monthlyBtn = document.getElementById('monthlyPlanBtn');
+    const yearlyBtn = document.getElementById('yearlyPlanBtn');
+    const proPriceDisplay = document.getElementById('proPriceDisplay');
+    const agencyPriceDisplay = document.getElementById('agencyPriceDisplay');
+    const billingPeriodText = document.getElementById('billingPeriodText');
+
+    monthlyBtn.addEventListener('click', () => {
+      monthlyBtn.className = 'px-5 py-2 rounded-xl font-bold bg-gold-grad text-dark-950 transition-all';
+      yearlyBtn.className = 'px-5 py-2 rounded-xl font-medium text-neutral-400 hover:text-white transition-all flex items-center gap-1.5';
+      proPriceDisplay.textContent = 'Rp 149.000';
+      agencyPriceDisplay.textContent = 'Rp 489.000';
+      billingPeriodText.textContent = ' / bulan';
+    });
+
+    yearlyBtn.addEventListener('click', () => {
+      yearlyBtn.className = 'px-5 py-2 rounded-xl font-bold bg-gold-grad text-dark-950 transition-all flex items-center gap-1.5';
+      monthlyBtn.className = 'px-5 py-2 rounded-xl font-medium text-neutral-400 hover:text-white transition-all';
+      proPriceDisplay.textContent = 'Rp 112.000';
+      agencyPriceDisplay.textContent = 'Rp 369.000';
+      billingPeriodText.textContent = ' / bulan (ditagih tahunan)';
+      showToast("Diskon 25% untuk langganan tahunan diaktifkan!");
+    });
+
+    // FAQ Accordion
+    document.querySelectorAll('.faq-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const ans = item.querySelector('.faq-answer');
+        const icon = item.querySelector('span:last-child');
+        const isHidden = ans.classList.contains('hidden');
+        
+        // close all
+        document.querySelectorAll('.faq-answer').forEach(a => a.classList.add('hidden'));
+        document.querySelectorAll('.faq-item span:last-child').forEach(i => i.textContent = '+');
+
+        if (isHidden) {
+          ans.classList.remove('hidden');
+          icon.textContent = '−';
+        }
+      });
+    });
+
+    // Mobile Menu Toggle
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+    const mobileMenu = document.getElementById('mobileMenu');
+    mobileMenuBtn.addEventListener('click', () => {
+      mobileMenu.classList.toggle('hidden');
+    });
+    function closeMenu() {
+      mobileMenu.classList.add('hidden');
+    }
+
+    // Current Year Footer
+    document.getElementById('currentYear').textContent = new Date().getFullYear();
   </script>
 </body>
 </html>

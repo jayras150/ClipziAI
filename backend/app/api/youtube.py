@@ -1,4 +1,4 @@
-"""
+﻿"""
 YouTube endpoints - OAuth, upload, status
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -14,6 +14,8 @@ from app.api.deps import get_db_session, get_current_user
 from app.core.config import get_settings
 from app.core.security import encrypt_field
 from app.models.user import User
+from app.models.clip import Clip
+from app.models.task import Task
 from app.models.youtube_credential import YouTubeCredential
 from app.schemas.youtube import (
     YouTubeAuthUrl,
@@ -23,6 +25,7 @@ from app.schemas.youtube import (
     ViralScoreResponse,
 )
 from app.services.youtube_service import YouTubeService
+from app.services.viral import score_clip
 
 router = APIRouter()
 settings = get_settings()
@@ -85,7 +88,7 @@ async def get_youtube_auth_url(current_user: User = Depends(get_current_user)):
 
 @router.get("/diagnostics")
 async def youtube_diagnostics(current_user: User = Depends(get_current_user)):
-    """Ringkasan konfigurasi OAuth YouTube — dipakai halaman profil untuk status."""
+    """Ringkasan konfigurasi OAuth YouTube â€” dipakai halaman profil untuk status."""
     configured = bool(
         youtube_service.client_id and youtube_service.client_secret and youtube_service.redirect_uri
     )
@@ -268,15 +271,50 @@ async def upload_to_youtube(
 @router.get("/viral-score/{clip_id}", response_model=ViralScoreResponse)
 async def get_viral_score(
     clip_id: str,
+    force: bool = Query(False, description="Hitung ulang walau skor sudah tersimpan"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ):
-    # TODO: Implement AI viral scoring
+    """
+    Skor viral satu klip.
+
+    Disimpan di `clips.viral_score` / `viral_factors` agar dashboard tidak
+    menghitung ulang tiap render. `force=true` memaksa hitung ulang (tombol â†»).
+    """
+    try:
+        cid = UUID(clip_id)
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=400, detail="Invalid clip id")
+
+    result = await db.execute(
+        select(Clip)
+        .join(Task, Clip.task_id == Task.id)
+        .where(Clip.id == cid, Task.user_id == current_user.id)
+    )
+    clip = result.scalar_one_or_none()
+    if not clip:
+        raise HTTPException(status_code=404, detail="Clip not found")
+
+    if force or clip.viral_score is None:
+        # Transkrip per klip tidak disimpan di DB, jadi pakai estimasi metadata.
+        payload = score_clip(
+            transcript="",
+            duration=float(clip.duration or 0),
+            has_subtitle=bool(clip.subtitle_url),
+            has_caption=bool(clip.editing_applied),
+            estimated=clip.viral_score is None and not force,
+        )
+        clip.viral_score = payload["score"]
+        clip.viral_factors = payload["factors"]
+        await db.commit()
+
+    factors = dict(clip.viral_factors or {})
+    tags = list(clip.ai_suggested_tags or [])
     return ViralScoreResponse(
-        clip_id=clip_id,
-        score=75.0,
-        factors={"hook_strength": 0.8, "retention_potential": 0.7},
-        recommended_title="Viral Clip Title",
-        recommended_tags=["viral", "shorts"],
-        reasoning="Strong hook and good retention potential",
+        clip_id=str(clip.id),
+        score=float(clip.viral_score or 0),
+        factors=factors,
+        recommended_title=clip.ai_suggested_title or clip.title or "Clip",
+        recommended_tags=tags or ["shorts", "viral"],
+        reasoning=str(factors.get("reasoning") or ""),
     )

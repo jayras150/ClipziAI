@@ -27,6 +27,16 @@ export interface MusicTrackData {
   url: string
 }
 
+/** Hasil skor viral klip (dipakai kartu klip di dashboard). */
+export interface ViralScoreData {
+  clip_id: string
+  score: number
+  factors: Record<string, any>
+  recommended_title: string
+  recommended_tags: string[]
+  reasoning: string
+}
+
 export interface YouTubeDiagnostics {
   configured: boolean
   client_id: string | null
@@ -75,6 +85,7 @@ export interface ClipData {
   thumbnail_url: string | null
   file_size: number | null
   viral_score: number | null
+  viral_factors: Record<string, any> | null
   ai_suggested_title: string | null
   ai_suggested_description: string | null
   ai_suggested_tags: string[] | null
@@ -247,6 +258,18 @@ export class ApiClient {
     const response = await this.client.get<MusicTrackData[]>("/api/music", {
       headers: { Authorization: `Bearer ${token}` },
     })
+    return response.data
+  }
+
+  /**
+   * Skor viral satu klip (0–100 + breakdown faktor).
+   * `force` = hitung ulang walau skor sudah tersimpan.
+   */
+  async getViralScore(token: string, clipId: string, force = false): Promise<ViralScoreData> {
+    const response = await this.client.get<ViralScoreData>(
+      `/api/youtube/viral-score/${clipId}${force ? "?force=true" : ""}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
     return response.data
   }
 
