@@ -97,11 +97,9 @@ function subtitlePreviewStyle(style: string): React.CSSProperties {
       return { color: "#ffffff", fontSize: 14, fontWeight: 600, textShadow: OUTLINE_DARK }
     case "karaoke":
       return {
-        color: "#ffffff",
         fontSize: 18,
         fontWeight: 800,
-        textShadow: OUTLINE_THICK,
-        background: "linear-gradient(90deg,#fff 0 55%,#f4c76b 55% 100%)",
+        background: "linear-gradient(90deg,#ffffff 0 55%,#f4c76b 55% 100%)",
         WebkitBackgroundClip: "text",
         WebkitTextFillColor: "transparent",
       }
@@ -1025,24 +1023,29 @@ export default function DashboardPage() {
                         </select>
                       </div>
                       <div className="ui-opt">
-                        <label className="ui-opt-label" htmlFor="watermark-file">
-                          Watermark logo (upload)
+                        <span className="ui-opt-label">Watermark logo (upload)</span>
+                        <label className="ui-file-btn" aria-disabled={watermarkBusy}>
+                          <input
+                            id="watermark-file"
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp"
+                            disabled={watermarkBusy}
+                            onChange={(event) => {
+                              const file = event.target.files?.[0] ?? null
+                              event.target.value = ""
+                              void uploadWatermark(file)
+                            }}
+                          />
+                          <Upload size={14} />
+                          <span>
+                            {watermarkBusy
+                              ? "Uploading…"
+                              : watermarkUrl
+                                ? "Replace logo"
+                                : "Choose image"}
+                          </span>
                         </label>
-                        <input
-                          id="watermark-file"
-                          type="file"
-                          accept="image/png,image/jpeg,image/webp"
-                          className="ui-input wm-file"
-                          disabled={watermarkBusy}
-                          onChange={(event) => {
-                            const file = event.target.files?.[0] ?? null
-                            event.target.value = ""
-                            void uploadWatermark(file)
-                          }}
-                        />
-                        <span className="ui-hint">
-                          {watermarkBusy ? "Uploading…" : "PNG, JPEG or WEBP · max 2 MB"}
-                        </span>
+                        <span className="ui-hint">PNG, JPEG or WEBP · max 2 MB</span>
                         {watermarkUrl && (
                           <div className="wm-logo-row">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
