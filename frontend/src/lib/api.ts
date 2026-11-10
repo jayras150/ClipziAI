@@ -166,6 +166,9 @@ export interface ClipMetadataData {
   /** "ai" = dibuat model, "manual" = hasil edit pengguna */
   generated_by: string
   ai_available: boolean
+  /** "ready" = metadata siap, "preparing" = transkrip klip masih dibuat di server */
+  status?: string
+  message?: string | null
 }
 
 export interface YouTubeUploadResult {

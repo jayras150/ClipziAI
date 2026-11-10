@@ -83,6 +83,12 @@ export default function ClipModal({
       setNotice(regenerate ? "Membuat versi baru dari transkrip…" : "AI membaca transkrip klip…")
       try {
         const data = await api.generateClipMetadata(token, clipId, regenerate)
+        if (data.status === "preparing") {
+          // Klip lama: transkrip dibuat di latar belakang (bisa >1 menit).
+          setNotice(data.message || "Transkrip klip sedang dibuat…")
+          void pollPrepared(0)
+          return
+        }
         applyMetadata({
           title: data.title,
           description: data.description,
@@ -90,16 +96,45 @@ export default function ClipModal({
           transcript: data.transcript,
           hook: data.hook,
         })
-        setNotice(
-          data.transcript_source === "whisper"
-            ? "Metadata dibuat AI setelah transkrip klip dihasilkan ulang."
-            : "Metadata dibuat AI dari transkrip Whisper klip ini.",
-        )
+        setNotice("Metadata dibuat AI dari transkrip Whisper klip ini.")
       } catch (err: any) {
         setNotice("")
         setError(readApiError(err.response?.data, "Gagal membuat metadata dari transkrip."))
       } finally {
         setGenerating(false)
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [applyMetadata, clipId, token],
+  )
+
+  /** Tunggu transkrip latar belakang selesai, lalu ambil metadata yang sudah tersimpan. */
+  const pollPrepared = useCallback(
+    async (attempt: number) => {
+      if (!clipId) return
+      if (attempt >= 30) {
+        setNotice("")
+        setError("Transkrip klip masih diproses. Coba tekan \"Generate ulang AI\" beberapa saat lagi.")
+        return
+      }
+      await new Promise((resolve) => setTimeout(resolve, 6000))
+      try {
+        const data = await api.generateClipMetadata(token, clipId, false)
+        if (data.status === "preparing" || !data.title) {
+          await pollPrepared(attempt + 1)
+          return
+        }
+        applyMetadata({
+          title: data.title,
+          description: data.description,
+          tags: data.tags,
+          transcript: data.transcript,
+          hook: data.hook,
+        })
+        setNotice("Metadata siap: dibuat AI dari transkrip klip.")
+      } catch (err: any) {
+        setNotice("")
+        setError(readApiError(err.response?.data, "Gagal memuat metadata setelah transkrip selesai."))
       }
     },
     [applyMetadata, clipId, token],

@@ -15,11 +15,12 @@ from typing import Optional, Tuple
 from uuid import UUID
 
 import requests
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db_session
+from app.db.session import AsyncSessionLocal
 from app.models.clip import Clip
 from app.models.task import Task
 from app.models.user import User
@@ -146,6 +147,40 @@ def _hook_of(clip: Clip) -> Optional[str]:
     return str(hook) if hook else None
 
 
+# Klip lama tanpa transkrip diproses di latar belakang (transkripsi bisa >100 detik,
+# lebih lama dari batas timeout Cloudflare), jadi statusnya dilacak di sini.
+_PREPARING: set[UUID] = set()
+
+
+async def _prepare_metadata_bg(clip_id: UUID, user_id: UUID) -> None:
+    """Transkripsi ulang klip lama lalu buat metadata AI (tanpa menahan request)."""
+    try:
+        async with AsyncSessionLocal() as db:
+            clip, _task = await _load_clip(db, str(clip_id), user_id)
+            transcript, _source = await _ensure_transcript(clip, db)
+            result = await MetadataGenerator().generate(
+                transcript=transcript,
+                source_title=clip.title or "",
+                duration=float(clip.duration or 0),
+                start_time=clip.start_time or "",
+                end_time=clip.end_time or "",
+            )
+            clip.ai_suggested_title = result["title"][:500]
+            clip.ai_suggested_description = result["description"]
+            clip.ai_suggested_tags = list(result["tags"])
+            factors = dict(clip.viral_factors or {})
+            factors["ai_hook"] = result.get("hook") or result["title"]
+            factors["ai_language"] = result.get("language")
+            clip.viral_factors = factors
+            await db.commit()
+            logger.info("Metadata klip %s siap (dibuat di latar belakang).", clip_id)
+    except Exception as exc:
+        logger.warning("Persiapan metadata klip %s gagal: %s", clip_id, str(exc)[:300])
+    finally:
+        _PREPARING.discard(clip_id)
+
+
+
 def _metadata_response(
     clip: Clip,
     *,
@@ -153,6 +188,8 @@ def _metadata_response(
     transcript_source: str,
     generated_by: str,
     ai_available: bool = True,
+    status_value: str = "ready",
+    message: Optional[str] = None,
 ) -> ClipMetadataResponse:
     return ClipMetadataResponse(
         clip_id=str(clip.id),
@@ -165,6 +202,8 @@ def _metadata_response(
         transcript_source=transcript_source,
         generated_by=generated_by,
         ai_available=ai_available,
+        status=status_value,
+        message=message,
     )
 
 
@@ -207,6 +246,7 @@ async def get_clip_detail(
 @router.post("/{clip_id}/metadata", response_model=ClipMetadataResponse)
 async def generate_clip_metadata(
     clip_id: str,
+    background_tasks: BackgroundTasks,
     payload: Optional[ClipMetadataRequest] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
@@ -215,7 +255,8 @@ async def generate_clip_metadata(
     Buat (atau segarkan) metadata YouTube dari transkrip klip.
 
     `regenerate=false` dan metadata sudah ada → langsung kembalikan cache supaya
-    popup tidak memanggil AI setiap kali dibuka.
+    popup tidak memanggil AI setiap kali dibuka. Klip lama yang belum punya
+    transkrip diproses di latar belakang (`status="preparing"`).
     """
     options = payload or ClipMetadataRequest()
     clip, _task = await _load_clip(db, clip_id, current_user.id)
@@ -228,12 +269,30 @@ async def generate_clip_metadata(
             generated_by="ai",
         )
 
-    transcript, source = await _ensure_transcript(clip, db)
-    generator = MetadataGenerator()
+    stored = _stored_transcript(clip)
+    if len(stored.split()) < MIN_TRANSCRIPT_WORDS:
+        # Transkripsi klip bisa memakan >100 detik (batas timeout Cloudflare),
+        # jadi jalankan di latar belakang dan minta klien menanyakan lagi.
+        if clip.id not in _PREPARING:
+            _PREPARING.add(clip.id)
+            background_tasks.add_task(_prepare_metadata_bg, clip.id, current_user.id)
+        return _metadata_response(
+            clip,
+            transcript="",
+            transcript_source="whisper",
+            generated_by="ai",
+            status_value="preparing",
+            message=(
+                "Transkrip klip ini belum ada. Sedang dibuat dengan Whisper di "
+                "latar belakang, lalu judul/deskripsi/tag dibuat AI — biasanya "
+                "1-2 menit."
+            ),
+        )
 
+    generator = MetadataGenerator()
     try:
         result = await generator.generate(
-            transcript=transcript,
+            transcript=stored,
             source_title=clip.title or "",
             duration=float(clip.duration or 0),
             start_time=clip.start_time or "",
@@ -260,8 +319,8 @@ async def generate_clip_metadata(
 
     return _metadata_response(
         clip,
-        transcript=transcript,
-        transcript_source=source,
+        transcript=stored,
+        transcript_source="stored",
         generated_by="ai",
         ai_available=generator.available,
     )

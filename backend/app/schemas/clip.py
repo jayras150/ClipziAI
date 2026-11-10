@@ -50,6 +50,9 @@ class ClipMetadataResponse(BaseModel):
     # "ai" = dibuat model, "manual" = diedit pengguna
     generated_by: str = "ai"
     ai_available: bool = True
+    # "ready" = metadata siap, "preparing" = transkrip klip sedang dibuat di latar
+    status: str = "ready"
+    message: Optional[str] = None
 
 
 class ClipMetadataRequest(BaseModel):

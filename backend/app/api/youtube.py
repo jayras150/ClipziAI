@@ -11,7 +11,7 @@ from jose import JWTError, jwt
 from uuid import UUID
 
 from app.api.deps import get_db_session, get_current_user
-from app.api.clips import _ensure_transcript, _load_clip
+from app.api.clips import _load_clip
 from app.core.config import get_settings
 from app.core.security import decrypt_field, encrypt_field
 from app.models.user import User
@@ -25,7 +25,11 @@ from app.schemas.youtube import (
     YouTubeUploadResponse,
     ViralScoreResponse,
 )
-from app.services.metadata_generator import MetadataGenerationError, MetadataGenerator
+from app.services.metadata_generator import (
+    MIN_TRANSCRIPT_WORDS,
+    MetadataGenerationError,
+    MetadataGenerator,
+)
 from app.services.youtube_service import YouTubeService
 from app.services.viral import score_clip
 
@@ -314,7 +318,18 @@ async def upload_to_youtube(
 
     metadata = upload_data.metadata
     if metadata is None and upload_data.auto_generate_metadata:
-        transcript, _source = await _ensure_transcript(clip, db)
+        stored = ""
+        if isinstance(clip.viral_factors, dict):
+            stored = str(clip.viral_factors.get("transcript") or "")
+        if len(stored.split()) < MIN_TRANSCRIPT_WORDS:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Transkrip klip belum siap. Buka popup klip, tekan "
+                    "\"Generate ulang AI\" sampai judul muncul, lalu upload lagi."
+                ),
+            )
+        transcript = stored
         generator = MetadataGenerator()
         try:
             generated = await generator.generate(
