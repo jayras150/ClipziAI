@@ -1,0 +1,4 @@
+# Dependensi khusus pengembangan/tes — TIDAK dipasang di image produksi.
+# Jalankan: pip install -r requirements-dev.txt && pytest -q
+pytest>=8.0
+pytest-asyncio>=0.23

@@ -1,0 +1,51 @@
+# =============================================================================
+# SITE ADMIN (Batch C/D) — TERKUNCI IP ALLOWLIST
+#
+# Blok di bawah sengaja DINONAKTIFKAN (dikomentari) karena DNS
+# `admin.proxyai.live` dan IP allowlist belum ada. Kalau diaktifkan lebih awal,
+# Caddy akan gagal menerbitkan sertifikat (domain belum resolve) dan log penuh
+# error ACME.
+#
+# Cara mengaktifkan (setelah Batch D membuat container `admin`):
+#   1) Tambahkan A record: admin.proxyai.live -> 43.167.162.69
+#   2) Isi di .env VPS:
+#        ADMIN_DOMAIN=admin.proxyai.live
+#        ADMIN_ALLOWED_IPS=<ip-kamu>[,<ip-lain>]
+#   3) Jalankan: bash /tmp/enable_admin_site.sh   (script meng-uncomment blok ini
+#      + recreate caddy)
+#
+# Untuk sementara, endpoint /api/admin/* di domain utama sudah di-404-kan di atas.
+# =============================================================================
+# {$ADMIN_DOMAIN} {
+# 	encode zstd gzip
+#
+# 	@allowed remote_ip {$ADMIN_ALLOWED_IPS}
+#
+# 	handle @allowed {
+# 		handle /api/* {
+# 			reverse_proxy backend:8000
+# 		}
+# 		handle {
+# 			reverse_proxy admin:3001
+# 		}
+# 	}
+#
+# 	# Semua IP lain: koneksi diputus (bukan sekadar 403) supaya tidak bisa
+# 	# dijadikan target probe.
+# 	handle {
+# 		abort
+# 	}
+#
+# 	header {
+# 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+# 		X-Content-Type-Options "nosniff"
+# 		X-Frame-Options "DENY"
+# 		Referrer-Policy "no-referrer"
+# 		-Server
+# 	}
+#
+# 	log {
+# 		output stdout
+# 		format console
+# 	}
+# }

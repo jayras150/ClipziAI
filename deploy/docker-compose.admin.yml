@@ -1,0 +1,46 @@
+# =============================================================================
+# Override compose KHUSUS admin panel (Batch C3, dipakai setelah Batch D).
+#
+# Perintah:
+#   docker compose -f docker-compose.vps.yml -f docker-compose.admin.yml up -d admin
+#
+# Sengaja dipisah dari docker-compose.vps.yml supaya deploy backend/frontend
+# yang sudah jalan tidak pernah gagal ketika folder ./admin belum ada.
+# =============================================================================
+name: clipzi
+
+services:
+  admin:
+    build:
+      context: ./admin
+      dockerfile: Dockerfile
+    image: sujinwo555/clipzi-admin:local
+    container_name: clipzi-admin
+    environment:
+      NODE_ENV: production
+      # Admin memanggil /api/* di origin yang sama (Caddy meneruskan ke backend),
+      # jadi tidak ada CORS dan token tetap di cookie HttpOnly.
+      NEXT_PUBLIC_API_BASE: ""
+      NEXT_PUBLIC_APP_NAME: "clipzyAI Admin"
+    expose:
+      - "3001"
+    mem_limit: 384m
+    restart: unless-stopped
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        { max-size: "10m", max-file: "3" }
+
+  # Env tambahan untuk Caddy saat site admin diaktifkan.
+  caddy:
+    environment:
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:-}
+      ADMIN_ALLOWED_IPS: ${ADMIN_ALLOWED_IPS:-}

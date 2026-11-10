@@ -11,6 +11,7 @@ aman dijalankan di worker mana pun, bahkan beberapa worker paralel sekaligus.
 """
 import logging
 import shutil
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -175,6 +176,13 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
         storage = R2Storage()
 
         options: Dict[str, Any] = task.editing_options or {}
+        # ---- observability: catat durasi tiap stage (B11) ----
+        stage_marks: Dict[str, float] = {}
+        _stage_start = time.perf_counter()
+
+        def _lap(stage: str) -> None:
+            stage_marks[stage] = round(time.perf_counter() - _stage_start, 2)
+
         burn_subtitle = bool(options.get("burn_subtitle", True))
         max_clips = int(options.get("max_clips", 3) or 3)
         min_duration = float(task.target_duration_min or 30)
@@ -231,6 +239,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
             task.original_duration = info.get("duration")
             await db.commit()
             await _set_progress(db, task, 15)
+            _lap("downloaded")
 
             # 3) Ekstrak audio + transkripsi (API provider)
             segments: List[Dict[str, Any]] = []
@@ -248,6 +257,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                 # dibuat, hanya tanpa subtitle.
                 logger.warning("Transkripsi gagal untuk task %s: %s", task.id, exc)
             await _set_progress(db, task, 35)
+            _lap("transcribed")
 
             # 4) Tentukan rentang klip — manual trim prioritas atas scene detection
             total_duration = float(info.get("duration") or 0)
@@ -546,6 +556,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                 await _set_progress(db, task, 35 + int(55 * index / max(1, total)))
 
             # 6) Simpan klip & tandai task selesai
+            _lap("rendered")
             for index, clip in enumerate(rendered, 1):
                 db.add(
                     Clip(
@@ -575,6 +586,21 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
             task.progress = 100
             task.completed_at = _now()
             await db.commit()
+            _lap("saved")
+
+            # Ringkasan durasi per stage — dipakai untuk analisa worker lambat.
+            def _delta(a: str, b: str) -> float:
+                return round(max(0.0, stage_marks.get(b, 0.0) - stage_marks.get(a, 0.0)), 2)
+
+            logger.info(
+                "Timing task %s: unduh=%.2fs transkripsi=%.2fs render=%.2fs simpan=%.2fs total=%.2fs",
+                task.id,
+                stage_marks.get("downloaded", 0.0),
+                _delta("downloaded", "transcribed"),
+                _delta("transcribed", "rendered"),
+                _delta("rendered", "saved"),
+                stage_marks.get("saved", 0.0),
+            )
 
             # 7) Potong kredit (1 per klip). Gagal potong tidak membatalkan hasil.
             try:

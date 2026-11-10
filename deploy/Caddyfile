@@ -15,19 +15,26 @@
 	# --- API FastAPI ---
 	# Catatan: JANGAN pakai handle_path (itu membuang prefix /api),
 	# karena rute backend memang /api/...
+	# Admin API DIBLOKIR di edge: hanya bisa diakses lewat site admin
+	# (admin.proxyai.live, IP allowlist). Kalau tidak, siapa pun bisa
+	# memetakan endpoint admin walau aplikasinya sudah pakai token.
+	handle /api/admin/* {
+		respond 404
+	}
+
 	handle /api/* {
 		reverse_proxy backend:8000
 	}
 
-	# Dokumentasi interaktif & OpenAPI (opsional; hapus kalau tidak ingin publik)
+	# Dokumentasi API tidak dipublikasikan (memudahkan pemetaan endpoint).
 	handle /docs* {
-		reverse_proxy backend:8000
+		respond 404
 	}
 	handle /redoc* {
-		reverse_proxy backend:8000
+		respond 404
 	}
 	handle /openapi.json {
-		reverse_proxy backend:8000
+		respond 404
 	}
 
 	# --- Frontend Next.js (semua rute lain) ---
