@@ -28,7 +28,9 @@ from app.services import cookie_store
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+from app.api.admin.deps import get_current_admin  # noqa: E402
+
+router = APIRouter(dependencies=[Depends(get_current_admin)])
 
 
 class CookieCreate(BaseModel):

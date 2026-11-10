@@ -10,7 +10,9 @@ from app.api.deps import get_db_session
 from app.models.pricing_plan import PricingPlan
 from app.schemas.pricing import PricingPlanResponse
 
-router = APIRouter()
+from app.api.admin.deps import get_current_admin  # noqa: E402
+
+router = APIRouter(dependencies=[Depends(get_current_admin)])
 
 
 @router.get("/", response_model=List[PricingPlanResponse])

@@ -18,6 +18,7 @@ from app.models.gdpr_request import GDPRRequest, GDPRRequestStatus, GDPRRequestT
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.multi_platform import MultiPlatformJob, PlatformOutput, PlatformPreset
 from app.models.pricing_plan import PricingPlan
+from app.models.platform_setting import PlatformSetting
 from app.models.security_event import EventType, RiskLevel, SecurityEvent
 from app.models.task import Task, TaskStatus
 from app.models.transaction import Transaction, TransactionStatus
@@ -42,6 +43,7 @@ __all__ = [
     "CopyrightStatus", "CreditTransaction", "CreditTransactionType",
     "EncryptedSecret", "GDPRRequest", "GDPRRequestStatus", "GDPRRequestType", "Invoice",
     "InvoiceStatus", "MultiPlatformJob", "PlatformOutput", "PlatformPreset", "PricingPlan",
+    "PlatformSetting",
     "SecurityEvent", "EventType", "RiskLevel", "Task", "TaskStatus", "Transaction",
     "TransactionStatus", "AuthProvider", "User", "UserAPIKey", "PlanType", "UserProfile",
     "SubscriptionStatus", "UserSubscription", "ViralPredictionHistory", "WebhookSubscription",

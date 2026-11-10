@@ -13,13 +13,15 @@ from app.models.user import User
 from app.models.user_profile import UserProfile
 from app.models.credit_transaction import CreditTransaction, CreditTransactionType
 
-router = APIRouter()
+from app.api.admin.deps import get_current_admin  # noqa: E402
+
+router = APIRouter(dependencies=[Depends(get_current_admin)])
 
 
 @router.get("/", response_model=List[dict])
 async def list_users(
     db: AsyncSession = Depends(get_db_session),
-    current_admin: AdminUser = Depends(lambda: None),  # Will be wired with admin auth
+    current_admin: AdminUser = Depends(get_current_admin),
 ):
     result = await db.execute(select(User))
     users = result.scalars().all()

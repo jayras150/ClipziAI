@@ -27,6 +27,7 @@ from app.services.processor import VideoProcessor, get_caption_style
 from app.services.storage import R2Storage
 from app.services.transcriber import AudioTranscriber
 from app.services.viral import score_clip
+from app.services.platform_watermark import apply_platform_watermark
 
 logger = logging.getLogger(__name__)
 
@@ -441,6 +442,22 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                             "Watermark gagal (task %s klip %s): %s", task.id, index, exc
                         )
 
+                # ---------- Watermark platform (wajib untuk plan tertentu) ----------
+                # Diterapkan SETELAH watermark user supaya logo Clipzy selalu di atas
+                # dan tidak bisa dihilangkan dengan mengunggah logo sendiri.
+                brand_applied = False
+                try:
+                    branded = str(work_dir / f"clip_{index:02d}_brand.mp4")
+                    brand_source, brand_applied = await apply_platform_watermark(
+                        processor, task, final_clip, branded, work_dir
+                    )
+                    if brand_applied:
+                        final_clip = brand_source
+                except Exception as exc:
+                    logger.warning(
+                        "Watermark platform gagal (task %s klip %s): %s", task.id, index, exc
+                    )
+
                 # ---------- Perbaikan audio (denoise + loudnorm) ----------
                 if clean_audio:
                     try:
@@ -508,6 +525,11 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                     has_subtitle=bool(subtitle_url),
                     has_caption=bool(caption_text),
                 )
+                # Simpan transkrip di JSONB viral_factors (tanpa kolom baru) supaya
+                # skor bisa dihitung ulang penuh & siap dipakai karaoke caption.
+                if clip_transcript:
+                    viral["factors"]["transcript"] = clip_transcript[:2000]
+                    viral["factors"]["transcript_words"] = len(clip_transcript.split())
 
                 rendered.append(
                     {
@@ -518,6 +540,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                         "thumbnail_url": thumbnail_url,
                         "file_size": Path(final_clip).stat().st_size,
                         "viral": viral,
+                        "brand": brand_applied,
                     }
                 )
                 await _set_progress(db, task, 35 + int(55 * index / max(1, total)))
@@ -542,7 +565,8 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                             k
                             for k, v in options.items()
                             if v is not None and v is not False and v != ""
-                        ],
+                        ]
+                        + (["platform_watermark"] if clip.get("brand") else []),
                     )
                 )
 

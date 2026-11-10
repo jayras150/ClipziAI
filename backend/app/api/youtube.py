@@ -296,15 +296,20 @@ async def get_viral_score(
         raise HTTPException(status_code=404, detail="Clip not found")
 
     if force or clip.viral_score is None:
-        # Transkrip per klip tidak disimpan di DB, jadi hasilnya selalu estimasi
-        # dari metadata klip — tandai supaya UI menampilkan "≈".
+        # Transkrip klip disimpan di `viral_factors.transcript` oleh pipeline.
+        # Kalau ada, skor dihitung penuh (bukan estimasi).
+        stored_transcript = ""
+        if isinstance(clip.viral_factors, dict):
+            stored_transcript = str(clip.viral_factors.get("transcript") or "")
         payload = score_clip(
-            transcript="",
+            transcript=stored_transcript,
             duration=float(clip.duration or 0),
             has_subtitle=bool(clip.subtitle_url),
             has_caption=bool(clip.editing_applied),
-            estimated=True,
+            estimated=not stored_transcript,
         )
+        if stored_transcript:
+            payload["factors"]["transcript"] = stored_transcript[:2000]
         clip.viral_score = payload["score"]
         clip.viral_factors = payload["factors"]
         await db.commit()

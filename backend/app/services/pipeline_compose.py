@@ -24,6 +24,7 @@ from app.models.clip import Clip
 from app.models.task import Task, TaskStatus
 from app.services.credit_service import CreditService
 from app.services.pipeline import _download_asset, _ext_from_url, _fmt_hms
+from app.services.platform_watermark import apply_platform_watermark
 from app.services.processor import VideoProcessor
 from app.services.storage import R2Storage
 
@@ -145,6 +146,19 @@ async def run_compose_pipeline(task_id: UUID) -> Dict[str, Any]:
                 except Exception as exc:
                     logger.warning("Watermark gagal (task %s): %s", task.id, exc)
 
+            # Watermark platform juga wajib di jalur compose/split — kalau tidak,
+            # user free bisa menghapus watermark dengan menggabungkan klip.
+            brand_applied = False
+            try:
+                branded = str(work_dir / "branded.mp4")
+                brand_source, brand_applied = await apply_platform_watermark(
+                    processor, task, final_clip, branded, work_dir
+                )
+                if brand_applied:
+                    final_clip = brand_source
+            except Exception as exc:
+                logger.warning("Watermark platform gagal (task %s): %s", task.id, exc)
+
             await _set_progress(db, task, 85)
 
             info = await processor.get_video_info(final_clip)
@@ -184,7 +198,8 @@ async def run_compose_pipeline(task_id: UUID) -> Dict[str, Any]:
                     editing_applied=[
                         k for k, v in options.items()
                         if v is not None and v is not False and v != ""
-                    ],
+                    ]
+                    + (["platform_watermark"] if brand_applied else []),
                 )
             )
 

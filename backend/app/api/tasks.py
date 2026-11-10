@@ -30,6 +30,18 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Kunci `editing_options` yang benar-benar dipakai pipeline/worker. Key lain
+# (typo dari klien) dibuang + dicatat, supaya tidak "hilang diam-diam".
+ALLOWED_EDITING_OPTIONS = {
+    "start_time", "end_time", "aspect_ratio", "caption_text", "caption_style",
+    "caption_color", "caption_size", "caption_font", "speed",
+    "filter_preset", "blur_fill", "remove_silence", "enhance_audio",
+    "watermark_url", "watermark_position", "watermark_opacity", "watermark_scale",
+    "intro_url", "outro_url", "auto_zoom", "zoom_level",
+    "music_url", "music_volume", "music_ducking",
+    "max_clips", "burn_subtitle", "segments",
+}
+
 
 @router.post("/", response_model=TaskResponse)
 async def create_task(
@@ -67,7 +79,15 @@ async def create_task(
         )
     
     # Kumpulkan opsi editing ke JSONB (tidak perlu migrasi DB)
-    editing_options = dict(task_data.editing_options or {})
+    raw_options = dict(task_data.editing_options or {})
+    unknown_keys = sorted(set(raw_options) - ALLOWED_EDITING_OPTIONS)
+    if unknown_keys:
+        logger.warning(
+            "Task baru: opsi editing tidak dikenal diabaikan: %s", unknown_keys
+        )
+    editing_options = {
+        key: value for key, value in raw_options.items() if key in ALLOWED_EDITING_OPTIONS
+    }
     if task_data.start_time is not None:
         editing_options["start_time"] = task_data.start_time
     if task_data.end_time is not None:
