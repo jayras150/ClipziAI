@@ -127,7 +127,7 @@ export default function LandingPage() {
         <div className="nav-actions">
           <Link className="btn btn-ghost" href="/login">Sign in</Link>
           <Link className="btn btn-gold" href="/register">
-            Start free <span>↗</span>
+            Start free <span>→</span>
           </Link>
           <button
             className="menu-toggle"
