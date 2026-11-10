@@ -183,6 +183,22 @@ export interface YouTubeUploadResult {
   already_uploaded?: boolean
 }
 
+/** Respons 202 dari POST /api/youtube/upload (unggahan jalan di background). */
+export interface YouTubeUploadAccepted {
+  accepted: true
+  status: string
+  clip_id: string
+  message?: string
+}
+
+export interface YouTubeUploadStatus {
+  clip_id: string
+  status: "idle" | "uploading" | "done" | "error" | string
+  error?: string | null
+  youtube_video_id?: string | null
+  youtube_video_url?: string | null
+}
+
 /** Tebak jenis sumber dari URL agar backend menyiapkan pipeline yang tepat. */
 export function detectSourceType(url: string): string {
   const lower = url.toLowerCase()
@@ -580,8 +596,8 @@ export class ApiClient {
       category_id?: string
       force?: boolean
     },
-  ): Promise<YouTubeUploadResult> {
-    const response = await this.client.post<YouTubeUploadResult>(
+  ): Promise<YouTubeUploadResult | YouTubeUploadAccepted> {
+    const response = await this.client.post<YouTubeUploadResult | YouTubeUploadAccepted>(
       "/api/youtube/upload",
       {
         clip_id: clipId,
@@ -598,6 +614,37 @@ export class ApiClient {
       { headers: { Authorization: `Bearer ${token}` } },
     )
     return response.data
+  }
+
+  /** Status unggahan (dipakai untuk polling setelah respons 202). */
+  async getYouTubeUploadStatus(token: string, clipId: string): Promise<YouTubeUploadStatus> {
+    const response = await this.client.get<YouTubeUploadStatus>(
+      `/api/youtube/upload/status/${clipId}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    return response.data
+  }
+
+  /** Poll status sampai selesai/gagal, dengan batas waktu agar UI tidak macet. */
+  async waitForYouTubeUpload(
+    token: string,
+    clipId: string,
+    options: { timeoutMs?: number; intervalMs?: number } = {},
+  ): Promise<YouTubeUploadStatus> {
+    const timeoutMs = options.timeoutMs ?? 15 * 60 * 1000
+    const intervalMs = options.intervalMs ?? 4000
+    const started = Date.now()
+    while (Date.now() - started < timeoutMs) {
+      const status = await this.getYouTubeUploadStatus(token, clipId)
+      if (status.status === "done" || status.status === "error") return status
+      await new Promise((resolve) => setTimeout(resolve, intervalMs))
+    }
+    return {
+      clip_id: clipId,
+      status: "error",
+      error:
+        "Upload is still running on the server. Reopen this popup in a few minutes to see the link.",
+    }
   }
 
   async deleteTask(token: string, taskId: string): Promise<{ message: string }> {

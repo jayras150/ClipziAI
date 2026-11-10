@@ -5,19 +5,21 @@ import asyncio
 import logging
 
 import requests
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime, timedelta, timezone
 from jose import JWTError, jwt
+from typing import Any, Dict, List
 from uuid import UUID
 
 from app.api.deps import get_db_session, get_current_user
 from app.api.clips import _load_clip
 from app.core.config import get_settings
 from app.core.security import decrypt_field, encrypt_field
+from app.db.session import AsyncSessionLocal
 from app.models.user import User
 from app.models.clip import Clip
 from app.models.task import Task
@@ -77,6 +79,65 @@ def _check_video_source(url: str) -> None:
             status_code=400,
             detail="Clip file is not a valid video (wrong content type or too small).",
         )
+
+
+# Status unggahan per klip (in-memory: API berjalan satu proses di VPS).
+# Nilai: uploading | done | error. `clip.youtube_uploaded` tetap sumber kebenaran.
+YOUTUBE_UPLOAD_JOBS: Dict[str, Dict[str, Any]] = {}
+
+
+async def _run_youtube_upload(
+    clip_id: UUID,
+    access_token: str,
+    source_url: str,
+    title: str,
+    description: str,
+    tags: List[str],
+    privacy: str,
+    category_id: str,
+    made_for_kids: bool,
+) -> None:
+    """
+    Jalankan unggahan di background.
+
+    Klip 2-3 menit bisa butuh >100 detik untuk sampai ke YouTube; kalau ditangani
+    di dalam request, Cloudflare memutus koneksi (HTTP 524). Jadi request hanya
+    menerima 202 lalu UI mem-poll status di bawah.
+    """
+    job = YOUTUBE_UPLOAD_JOBS.setdefault(str(clip_id), {})
+    try:
+        uploaded = await youtube_service.upload_video(
+            access_token=access_token,
+            source_url=source_url,
+            title=title,
+            description=description,
+            tags=tags,
+            privacy_status=privacy,
+            category_id=category_id,
+            made_for_kids=made_for_kids,
+        )
+        async with AsyncSessionLocal() as bg_db:
+            clip = (
+                await bg_db.execute(select(Clip).where(Clip.id == clip_id))
+            ).scalar_one_or_none()
+            if clip is not None:
+                clip.youtube_uploaded = True
+                clip.youtube_video_id = uploaded["video_id"]
+                await bg_db.commit()
+        job.update({"status": "done", "error": None, "video_id": uploaded["video_id"]})
+        logger.info(
+            "YouTube upload OK: clip=%s video=%s category=%s privacy=%s",
+            clip_id,
+            uploaded["video_id"],
+            category_id,
+            privacy,
+        )
+    except HTTPException as exc:
+        job.update({"status": "error", "error": str(exc.detail)[:500]})
+        logger.warning("YouTube upload gagal (clip=%s): %s", clip_id, exc.detail)
+    except Exception as exc:  # noqa: BLE001
+        job.update({"status": "error", "error": f"{type(exc).__name__}: {exc}"[:500]})
+        logger.exception("YouTube upload error (clip=%s)", clip_id)
 
 
 def _create_oauth_state(user_id: UUID) -> str:
@@ -302,9 +363,10 @@ async def disconnect_youtube(
     return YouTubeConnectionStatus(connected=False, message="Koneksi akun YouTube dihapus dari Clipzi AI.")
 
 
-@router.post("/upload", response_model=YouTubeUploadResponse)
+@router.post("/upload", response_model=None)
 async def upload_to_youtube(
     upload_data: YouTubeUploadRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ):
@@ -415,40 +477,51 @@ async def upload_to_youtube(
         raise HTTPException(status_code=400, detail="This clip has no video file to upload.")
     await asyncio.to_thread(_check_video_source, clip.download_url)
 
-    try:
-        uploaded = await youtube_service.upload_video(
-            access_token=access_token,
-            source_url=clip.download_url,
-            title=title,
-            description=description,
-            tags=tags,
-            privacy_status=privacy,
-            category_id=category_id,
-            made_for_kids=made_for_kids,
-        )
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"YouTube upload failed: {str(exc)[:300]}")
-
-    clip.youtube_uploaded = True
-    clip.youtube_video_id = uploaded["video_id"]
-    await db.commit()
-    logger.info(
-        "YouTube upload OK: clip=%s video=%s category=%s privacy=%s",
+    job = YOUTUBE_UPLOAD_JOBS.setdefault(str(clip.id), {})
+    job.update({"status": "uploading", "error": None, "video_id": None})
+    background_tasks.add_task(
+        _run_youtube_upload,
         clip.id,
-        uploaded["video_id"],
-        category_id,
+        access_token,
+        clip.download_url,
+        title,
+        description,
+        list(tags),
         privacy,
+        category_id,
+        made_for_kids,
     )
 
-    return YouTubeUploadResponse(
-        success=True,
-        youtube_video_id=uploaded["video_id"],
-        youtube_video_url=uploaded["video_url"],
-        title=title,
-        privacy_status=uploaded.get("privacy_status"),
+    return JSONResponse(
+        status_code=202,
+        content={
+            "accepted": True,
+            "status": "uploading",
+            "clip_id": str(clip.id),
+            "message": "Upload started. Poll /api/youtube/upload/status/{clip_id} for progress.",
+        },
     )
+
+
+@router.get("/upload/status/{clip_id}")
+async def get_youtube_upload_status(
+    clip_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Status unggahan klip (dipakai UI setelah POST /upload menerima 202)."""
+    clip, _task = await _load_clip(db, clip_id, current_user.id)
+    job = YOUTUBE_UPLOAD_JOBS.get(str(clip.id)) or {}
+    video_id = clip.youtube_video_id or job.get("video_id")
+    status_value = job.get("status") or ("done" if video_id else "idle")
+    return {
+        "clip_id": str(clip.id),
+        "status": status_value,
+        "error": job.get("error"),
+        "youtube_video_id": video_id,
+        "youtube_video_url": f"https://youtu.be/{video_id}" if video_id else None,
+        "privacy_status": None,
+    }
 
 
 

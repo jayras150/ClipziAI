@@ -222,18 +222,40 @@ export default function ClipModal({
         category_id: category,
         force: Boolean(uploadUrl),
       })
-      if (!result.success) {
-        throw new Error(result.error || "Upload failed.")
+      if ("accepted" in result && result.accepted) {
+        // 202: server mengunggah di background (klip panjang bisa >100 detik).
+        setNotice("Uploading to YouTube… this can take a couple of minutes.")
+        const final = await api.waitForYouTubeUpload(token, clipId)
+        if (final.status !== "done" || !final.youtube_video_id) {
+          throw new Error(final.error || "Upload stopped before YouTube returned a video id.")
+        }
+        setUploadUrl(final.youtube_video_url || "")
+        setNotice("Uploaded to YouTube.")
+        onUpdated(clipId, {
+          youtube_uploaded: true,
+          youtube_video_id: final.youtube_video_id,
+        })
+        return
       }
-      setUploadUrl(result.youtube_video_url || "")
+      const syncResult = result as {
+        success?: boolean
+        error?: string | null
+        youtube_video_url?: string | null
+        youtube_video_id?: string | null
+        already_uploaded?: boolean
+      }
+      if (!syncResult.success) {
+        throw new Error(syncResult.error || "Upload failed.")
+      }
+      setUploadUrl(syncResult.youtube_video_url || "")
       setNotice(
-        result.already_uploaded
+        syncResult.already_uploaded
           ? "This clip was already uploaded to YouTube."
           : "Uploaded to YouTube.",
       )
       onUpdated(clipId, {
         youtube_uploaded: true,
-        youtube_video_id: result.youtube_video_id || null,
+        youtube_video_id: syncResult.youtube_video_id || null,
       })
     } catch (err: any) {
       setNotice("")

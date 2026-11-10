@@ -12,14 +12,19 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.admin.deps import get_current_admin
 from app.api.deps import get_db_session
-from app.api.youtube import _check_video_source
+from app.api.youtube import (
+    YOUTUBE_UPLOAD_JOBS,
+    _check_video_source,
+    _run_youtube_upload,
+)
 from app.core.security import decrypt_field, encrypt_field
 from app.models.audit_log import ActorType, AuditLog
 from app.models.clip import Clip
@@ -41,6 +46,7 @@ class AdminYouTubeUploadIn(BaseModel):
 @router.post("/upload/{clip_id}")
 async def admin_upload_clip(
     clip_id: str,
+    background_tasks: BackgroundTasks,
     payload: Optional[AdminYouTubeUploadIn] = None,
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db_session),
@@ -121,36 +127,67 @@ async def admin_upload_clip(
 
     _check_video_source(clip.download_url)
 
-    uploaded = await youtube_service.upload_video(
-        access_token=access_token,
-        source_url=clip.download_url,
-        title=title,
-        description=description,
-        tags=tags,
-        privacy_status=options.privacy_status,
-        category_id=options.category_id,
+    job = YOUTUBE_UPLOAD_JOBS.setdefault(str(clip.id), {})
+    job.update({"status": "uploading", "error": None, "video_id": None})
+    background_tasks.add_task(
+        _run_youtube_upload,
+        clip.id,
+        access_token,
+        clip.download_url,
+        title,
+        description,
+        list(tags),
+        options.privacy_status,
+        options.category_id,
+        False,
     )
-
-    clip.youtube_uploaded = True
-    clip.youtube_video_id = uploaded["video_id"]
     db.add(
         AuditLog(
             actor_type=ActorType.ADMIN,
             actor_id=current_admin.id,
             actor_email=current_admin.email,
-            action="admin_youtube_upload",
+            action="admin_youtube_upload_started",
             resource_type="clip",
             resource_id=str(clip.id),
             old_values=None,
-            new_values={"video_id": uploaded["video_id"], "privacy": options.privacy_status},
+            new_values={"privacy": options.privacy_status, "category": options.category_id},
         )
     )
     await db.commit()
 
+    return JSONResponse(
+        status_code=202,
+        content={
+            "accepted": True,
+            "status": "uploading",
+            "clip_id": str(clip.id),
+            "message": "Upload started. Poll /api/admin/youtube/status/{clip_id}.",
+        },
+    )
+
+
+@router.get("/status/{clip_id}")
+async def admin_upload_status(
+    clip_id: str,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Status unggahan klip untuk admin (setelah POST menerima 202)."""
+    try:
+        cid = UUID(clip_id)
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid clip id.")
+
+    clip = (await db.execute(select(Clip).where(Clip.id == cid))).scalar_one_or_none()
+    if clip is None:
+        raise HTTPException(status_code=404, detail="Clip not found.")
+
+    job = YOUTUBE_UPLOAD_JOBS.get(str(clip.id)) or {}
+    video_id = clip.youtube_video_id or job.get("video_id")
     return {
-        "success": True,
-        "youtube_video_id": uploaded["video_id"],
-        "youtube_video_url": uploaded["video_url"],
-        "title": title,
-        "privacy_status": uploaded.get("privacy_status"),
+        "clip_id": str(clip.id),
+        "status": job.get("status") or ("done" if video_id else "idle"),
+        "error": job.get("error"),
+        "youtube_video_id": video_id,
+        "youtube_video_url": f"https://youtu.be/{video_id}" if video_id else None,
     }
