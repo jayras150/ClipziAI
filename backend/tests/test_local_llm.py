@@ -40,6 +40,36 @@ def _candidates() -> List[Dict[str, Any]]:
     ]
 
 
+class _FakeLLMAny(_FakeLLM):
+    """LLM palsu yang mendukung chat_json_any (bisa membalas array)."""
+
+    def chat_json_any(self, system: str, user: str, **kwargs: Any) -> Any:
+        self.calls += 1
+        return self.payload
+
+
+def test_parse_json_any_menerima_array_dan_objek():
+    from app.services.local_llm import parse_json_any
+
+    assert parse_json_any('[{"id": 0, "score": 10}]') == [{"id": 0, "score": 10}]
+    assert parse_json_any('```json\n{"clips": []}\n```') == {"clips": []}
+    assert parse_json_any("tidak ada json") is None
+
+
+def test_rerank_menerima_payload_array():
+    llm = _FakeLLMAny(
+        [
+            {"id": 0, "score": 40, "hook": "A", "reason": "ok"},
+            {"id": 1, "score": 60, "hook": "B", "reason": "bagus"},
+        ]
+    )
+    result = rerank_with_llm(_candidates(), llm, 60, 90)
+    # shortlist[0] = kandidat heuristik 80 -> 0.55*40 + 0.45*80 = 58.0
+    assert result[0]["score"] == 58.0
+    assert result[0]["factors"]["reranked_by"].startswith("qwen3")
+    assert result[0]["factors"]["llm_hook"] == "A"
+
+
 def test_parse_json_object_membersihkan_code_fence():
     assert parse_json_object('```json\n{"a": 1}\n```') == {"a": 1}
     assert parse_json_object("jawaban: {\"b\": 2} selesai") == {"b": 2}

@@ -279,6 +279,16 @@ async def _reap_instance(instance_id: int, task_id: UUID) -> None:
             )
 
 
+async def _supervise_safely(supervisor: "InstanceSupervisor") -> None:
+    """Jalankan supervisor; exception apa pun dicatat, bukan hilang diam-diam."""
+    from app.services.instance_supervisor import InstanceSupervisor  # noqa: F401
+
+    try:
+        await supervisor.run()
+    except Exception:
+        logger.exception("Supervisor instance gagal untuk task %s", supervisor.task_id)
+
+
 async def _dispatch_oneshot(task_id: UUID) -> Dict[str, Any]:
     """Buat instance GPU untuk task ini, lalu pantau & ganti otomatis bila gagal."""
     image = (settings.VAST_WORKER_IMAGE or "").strip()
@@ -335,7 +345,7 @@ async def _dispatch_oneshot(task_id: UUID) -> Dict[str, Any]:
         create_instance=_create,
     )
     # Pantau + auto-replace di background; respons ke user tidak menunggu boot.
-    asyncio.create_task(supervisor.run())
+    asyncio.create_task(_supervise_safely(supervisor))
 
     return {
         "mode": "oneshot",

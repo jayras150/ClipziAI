@@ -30,6 +30,36 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
+def parse_json_any(raw: str) -> Any:
+    """Ambil nilai JSON pertama (objek ATAU array) dari balasan model.
+
+    Qwen kadang membalas `[{...}]` (array) walau diminta objek, jadi parser harus
+    menerima keduanya. `None` bila tidak ada JSON valid.
+    """
+    text = (raw or "").strip()
+    if not text:
+        return None
+    text = re.sub(r"^```(?:json)?", "", text, flags=re.IGNORECASE).strip()
+    text = re.sub(r"```$", "", text).strip()
+
+    candidates: list[tuple[int, str]] = []
+    array_start, array_end = text.find("["), text.rfind("]")
+    object_start, object_end = text.find("{"), text.rfind("}")
+    if object_start != -1 and object_end > object_start:
+        candidates.append((object_start, text[object_start : object_end + 1]))
+    if array_start != -1 and array_end > array_start:
+        candidates.append((array_start, text[array_start : array_end + 1]))
+
+    # Coba yang posisinya paling awal lebih dulu: JSON objek yang berisi array
+    # (mis. {"clips": []}) tidak boleh terbaca sebagai array kosong.
+    for _, candidate in sorted(candidates, key=lambda item: item[0]):
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
 def parse_json_object(raw: str) -> Optional[Dict[str, Any]]:
     """Ambil objek JSON pertama dari balasan model (termasuk blok ```json)."""
     text = (raw or "").strip()
@@ -201,6 +231,24 @@ class LocalLLM:
         except Exception as exc:
             logger.warning("LLM lokal gagal menjawab: %s", str(exc)[:300])
             return None
+
+    def chat_json_any(
+        self,
+        system: str,
+        user: str,
+        max_tokens: int = 1200,
+        temperature: float = 0.2,
+    ) -> Any:
+        """Chat yang menghasilkan JSON objek/array (None bila tidak valid)."""
+        from app.services.local_llm import parse_json_any
+
+        raw = self.chat(system, user, max_tokens=max_tokens, temperature=temperature)
+        if raw is None:
+            return None
+        payload = parse_json_any(raw)
+        if payload is None:
+            logger.warning("Balasan LLM bukan JSON valid: %s", (raw or "")[:200])
+        return payload
 
     def chat_json(
         self,

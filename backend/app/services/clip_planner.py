@@ -318,8 +318,8 @@ def rerank_with_llm(
     shortlist = sorted(candidates, key=lambda c: -c["score"])[:limit]
     lines: List[str] = []
     for index, candidate in enumerate(shortlist):
-        first = str(candidate["factors"].get("first_sentence") or "")[:140]
-        last = str(candidate["factors"].get("last_sentence") or "")[:140]
+        first = str(candidate["factors"].get("first_sentence") or "")[:120]
+        last = str(candidate["factors"].get("last_sentence") or "")[:120]
         lines.append(
             f"[{index}] durasi={candidate['duration']:.0f}s "
             f"heuristik={candidate['score']:.0f} | awal: {first} | akhir: {last}"
@@ -329,11 +329,28 @@ def rerank_with_llm(
         "Kandidat:\n" + "\n".join(lines) + "\n\nBeri skor semua kandidat di atas."
     )
 
-    payload = llm.chat_json(RERANK_SYSTEM_PROMPT, user_prompt, max_tokens=1200, temperature=0.2)
+    chat_any = getattr(llm, "chat_json_any", None)
+    try:
+        payload = (
+            chat_any(RERANK_SYSTEM_PROMPT, user_prompt, max_tokens=1600, temperature=0.2)
+            if chat_any is not None
+            else llm.chat_json(
+                RERANK_SYSTEM_PROMPT, user_prompt, max_tokens=1600, temperature=0.2
+            )
+        )
+    except Exception as exc:
+        logger.warning("Rerank LLM error: %s", str(exc)[:200])
+        return list(candidates)
+
     if not payload:
         return list(candidates)
-    items = payload.get("clips")
-    if not isinstance(items, list):
+    if isinstance(payload, list):
+        items = payload
+    elif isinstance(payload, dict):
+        items = payload.get("clips") or payload.get("candidates") or payload.get("results") or []
+    else:
+        items = []
+    if not isinstance(items, list) or not items:
         return list(candidates)
 
     scores: Dict[int, Dict[str, Any]] = {}

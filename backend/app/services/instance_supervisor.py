@@ -74,21 +74,27 @@ class InstanceSupervisor:
         from app.db.session import AsyncSessionLocal
         from app.models.worker_instance import WorkerInstance
 
-        async with AsyncSessionLocal() as db:
-            row = WorkerInstance(
-                task_id=self.task_id,
-                instance_id=instance_id,
-                offer_id=offer.get("id"),
-                machine_id=offer.get("machine_id"),
-                gpu_name=str(offer.get("gpu_name") or "")[:80] or None,
-                price_per_hour=round(price, 4),
-                attempt=attempt,
-                state="creating",
-            )
-            db.add(row)
-            await db.commit()
-            await db.refresh(row)
-            return row.id
+        try:
+            async with AsyncSessionLocal() as db:
+                row = WorkerInstance(
+                    task_id=self.task_id,
+                    instance_id=instance_id,
+                    offer_id=offer.get("id"),
+                    machine_id=offer.get("machine_id"),
+                    gpu_name=str(offer.get("gpu_name") or "")[:80] or None,
+                    price_per_hour=round(price, 4),
+                    attempt=attempt,
+                    state="creating",
+                )
+                db.add(row)
+                await db.commit()
+                await db.refresh(row)
+                return row.id
+        except Exception:
+            # Observability tidak boleh menghentikan supervisor (kalau berhenti,
+            # instance GPU bisa tertinggal hidup dan terus ditagih).
+            logger.exception("Gagal mencatat worker_instances untuk instance %s", instance_id)
+            return None
 
     async def _update_record(self, record_id: Any, **fields: Any) -> None:
         from app.db.session import AsyncSessionLocal
