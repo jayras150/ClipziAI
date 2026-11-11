@@ -240,6 +240,21 @@ def _bad_start(words: Sequence[Word]) -> bool:
     return first in FILLERS or first in _BAD_FIRST
 
 
+def _preselect_for_rerank(
+    candidates: Sequence[Dict[str, Any]],
+    quota: int,
+    total_duration: float,
+    min_gap: float,
+) -> List[Dict[str, Any]]:
+    """Ambil kandidat terbaik per bucket timeline untuk dinilai LLM.
+
+    Tanpa ini, LLM hanya menilai N kandidat teratas secara global sehingga klip
+    yang akhirnya dipilih (dari bucket lain) tidak pernah mendapat skor LLM.
+    """
+    buckets = max(2, quota * 4)
+    return _select_stratified(candidates, buckets, total_duration, min_gap)
+
+
 def _overlaps(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
     return a["start"] < b["end"] and b["start"] < a["end"]
 
@@ -488,7 +503,13 @@ def plan_clips(
         return []
     if llm is not None:
         try:
-            candidates = rerank_with_llm(candidates, llm, target_min, target_max)
+            pool = _preselect_for_rerank(candidates, quota, total_duration, min_gap)
+            pool_ids = {id(item) for item in pool}
+            reranked_pool = rerank_with_llm(
+                pool, llm, target_min, target_max, limit=max(12, len(pool))
+            )
+            rest = [item for item in candidates if id(item) not in pool_ids]
+            candidates = reranked_pool + rest
         except Exception as exc:  # LLM lokal tidak boleh menggagalkan planning
             logger.warning("Rerank LLM gagal (%s); memakai skor heuristik", str(exc)[:200])
     return _select_stratified(candidates, quota, total_duration, min_gap)
