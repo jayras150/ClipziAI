@@ -305,7 +305,7 @@ def rerank_with_llm(
     llm: Any,
     target_min: float,
     target_max: float,
-    limit: int = 28,
+    limit: int = 12,
 ) -> List[Dict[str, Any]]:
     """Rerank kandidat dengan LLM lokal (Qwen3-4B).
 
@@ -347,7 +347,15 @@ def rerank_with_llm(
     if isinstance(payload, list):
         items = payload
     elif isinstance(payload, dict):
-        items = payload.get("clips") or payload.get("candidates") or payload.get("results") or []
+        items = payload.get("clips") or payload.get("candidates") or payload.get("results")
+        if items is None:
+            # Sebagian model membalas objek berkunci id: {"0": {...}, "1": {...}}
+            numeric = {
+                int(key): value
+                for key, value in payload.items()
+                if str(key).isdigit() and isinstance(value, dict)
+            }
+            items = [numeric[key] for key in sorted(numeric)] or []
     else:
         items = []
     if not isinstance(items, list) or not items:

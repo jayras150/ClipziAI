@@ -39,11 +39,14 @@ async def lifespan(app: FastAPI):
     # Bersihkan instance GPU yatim (mode `oneshot`) yang tertinggal karena
     # restart/crash: reaper di memori hilang, tapi instance tetap ditagih.
     try:
-        from app.services.vast_worker import cleanup_orphan_instances
+        from app.services.vast_worker import cleanup_orphan_instances, resume_supervisors
 
         removed = await cleanup_orphan_instances()
         if removed:
             logger.warning("%s instance Vast.ai yatim dihapus saat startup", removed)
+        resumed = await resume_supervisors()
+        if resumed:
+            logger.warning("%s instance Vast.ai dilanjutkan pemantauannya", resumed)
     except Exception as exc:  # jangan gagalkan startup karena Vast
         logger.warning("Pemeriksaan instance yatim gagal: %s", exc)
     yield

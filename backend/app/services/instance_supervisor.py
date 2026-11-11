@@ -66,6 +66,7 @@ class InstanceSupervisor:
             1.0, settings.VAST_MAX_PRICE_MULTIPLIER
         )
         self.exclude_machines: Set[int] = set()
+        self.adopt_instance_id: Optional[int] = None
 
     # ---------------- database ----------------
     async def _record_create(
@@ -292,7 +293,16 @@ class InstanceSupervisor:
         try:
             for attempt in range(1, attempts + 1):
                 try:
-                    instance_id = int(await self.create_instance(self.offer))
+                    if self.adopt_instance_id is not None and attempt == 1:
+                        # Lanjutkan instance yang sudah dibuat sebelum API restart.
+                        instance_id = int(self.adopt_instance_id)
+                        logger.warning(
+                            "Task %s: mengadopsi instance %s yang masih hidup",
+                            self.task_id,
+                            instance_id,
+                        )
+                    else:
+                        instance_id = int(await self.create_instance(self.offer))
                 except Exception as exc:
                     last_reason = f"create_instance gagal: {str(exc)[:200]}"
                     logger.error("Percobaan %s: %s", attempt, last_reason)

@@ -89,6 +89,7 @@ class LocalLLM:
         self.model_path = settings.LOCAL_LLM_MODEL_PATH
         self.process: Optional[subprocess.Popen] = None
         self._log_path = "/tmp/llama-server.log"
+        self.last_error: str = ""
 
     @classmethod
     def instance(cls) -> "LocalLLM":
@@ -244,9 +245,11 @@ class LocalLLM:
 
         raw = self.chat(system, user, max_tokens=max_tokens, temperature=temperature)
         if raw is None:
+            self.last_error = f"chat gagal: {self._tail_log(4)[:300]}"
             return None
         payload = parse_json_any(raw)
         if payload is None:
+            self.last_error = f"JSON tidak valid: {raw[:300]}"
             logger.warning("Balasan LLM bukan JSON valid: %s", (raw or "")[:200])
         return payload
 

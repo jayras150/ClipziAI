@@ -417,6 +417,73 @@ async def cleanup_orphan_instances() -> int:
     return removed
 
 
+async def resume_supervisors() -> int:
+    """Adopsi instance yang masih hidup setelah API restart.
+
+    Tanpa ini, restart container API membuat supervisor hilang sementara instance
+    GPU tetap jalan (dan terus ditagih) sampai task timeout. Dipanggil saat startup
+    bersama `cleanup_orphan_instances()`.
+    """
+    key = (settings.VAST_API_KEY or "").strip()
+    if not key or settings.VAST_DISPATCH_MODE not in {None, "", "oneshot"}:
+        return 0
+
+    from sqlalchemy import select
+
+    from app.db.session import AsyncSessionLocal
+    from app.models.task import Task, TaskStatus
+    from app.models.worker_instance import WorkerInstance
+    from app.services.instance_supervisor import InstanceSupervisor
+
+    adopted = 0
+    seen_tasks: set = set()
+    try:
+        client = _get_vast_client()
+        async with AsyncSessionLocal() as db:
+            rows = (
+                await db.execute(
+                    select(WorkerInstance)
+                    .where(WorkerInstance.state.in_(["creating", "running", "worker_started"]))
+                    .order_by(WorkerInstance.created_at.desc())
+                )
+            ).scalars().all()
+
+            for row in rows:
+                if row.task_id in seen_tasks or not row.instance_id:
+                    continue
+                seen_tasks.add(row.task_id)
+                task = await db.get(Task, row.task_id)
+                if task is None or task.status not in {
+                    TaskStatus.QUEUED,
+                    TaskStatus.PROCESSING,
+                }:
+                    continue
+
+                supervisor = InstanceSupervisor(
+                    client=client,
+                    task_id=row.task_id,
+                    offer={
+                        "id": row.offer_id,
+                        "machine_id": row.machine_id,
+                        "gpu_name": row.gpu_name,
+                        "dph_total": row.price_per_hour,
+                    },
+                    pick_offer=_pick_offer,
+                    create_instance=None,  # type: ignore[arg-type]
+                )
+                supervisor.adopt_instance_id = int(row.instance_id)
+                asyncio.create_task(_supervise_safely(supervisor))
+                adopted += 1
+                logger.warning(
+                    "Startup: melanjutkan pemantauan instance %s untuk task %s",
+                    row.instance_id,
+                    row.task_id,
+                )
+    except Exception as exc:
+        logger.warning("Resume supervisor dilewati: %s", exc)
+    return adopted
+
+
 async def submit_task(task_id: UUID) -> Dict[str, Any]:
     """Kirim satu task ke worker sesuai mode yang aktif.
 

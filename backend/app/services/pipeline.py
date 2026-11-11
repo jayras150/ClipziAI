@@ -385,6 +385,22 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                         task.id,
                         [f"{s:.1f}-{s + d:.1f}" for s, d in ranges],
                     )
+                    if llm_ready and not any(
+                        (item.get("factors") or {}).get("reranked_by") for item in planned
+                    ):
+                        # LLM hidup tapi rerank tidak terpakai — kirim alasannya ke
+                        # admin (worker log tidak bisa dibaca dari VPS).
+                        try:
+                            from app.services.worker_callback import report_worker_event
+
+                            await report_worker_event(
+                                task.id,
+                                "stage",
+                                stage="rerank_skipped",
+                                message=str(getattr(local_llm, "last_error", ""))[:400],
+                            )
+                        except Exception:
+                            pass
                 else:
                     scenes = await processor.detect_scenes(video_path)
                     ranges = _select_clip_ranges(
