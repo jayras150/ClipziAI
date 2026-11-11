@@ -29,6 +29,7 @@ from app.models.user_profile import PlanType, UserProfile
 from app.models.user_subscription import SubscriptionStatus, UserSubscription
 from app.models.viral_prediction_history import ViralPredictionHistory
 from app.models.webhook_subscription import WebhookSubscription
+from app.models.worker_instance import WorkerInstance
 from app.models.youtube_credential import YouTubeCredential
 from app.models.ytdlp_cookie import (
     COOKIE_STATUS_ACTIVE,
@@ -49,5 +50,6 @@ __all__ = [
     "TransactionStatus", "AuthProvider", "User", "UserAPIKey", "PlanType", "UserProfile",
     "SubscriptionStatus", "UserSubscription", "ViralPredictionHistory", "WebhookSubscription",
     "YouTubeCredential",
+    "WorkerInstance",
     "YtdlpCookie", "COOKIE_STATUS_ACTIVE", "COOKIE_STATUS_EXPIRED", "COOKIE_STATUS_DISABLED",
 ]

@@ -67,9 +67,15 @@ def _ext_from_url(url: str, default: str = "mp4") -> str:
     return tail if tail and len(tail) <= 5 and tail.isalnum() else default
 
 
-async def _set_progress(db, task: Task, percent: int) -> None:
+async def _set_progress(db, task: Task, percent: int, stage: str | None = None) -> None:
     task.progress = max(0, min(100, int(percent)))
     await db.commit()
+    try:
+        from app.services.worker_callback import report_worker_event
+
+        await report_worker_event(task.id, "stage", stage=stage, progress=task.progress)
+    except Exception:
+        pass
 
 
 def _select_clip_ranges(
@@ -810,6 +816,12 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                 logger.warning("Gagal memotong kredit task %s: %s", task.id, exc)
 
             logger.info("Pipeline selesai: task %s -> %s klip", task.id, len(rendered))
+            try:
+                from app.services.worker_callback import report_worker_event
+
+                await report_worker_event(task.id, "done", progress=100)
+            except Exception:
+                pass
             return {"ok": True, "clips": len(rendered), "error": None}
 
         except Exception as exc:
@@ -817,6 +829,12 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
             task.status = TaskStatus.ERROR
             task.error_message = str(exc)[:2000]
             await db.commit()
+            try:
+                from app.services.worker_callback import report_worker_event
+
+                await report_worker_event(task.id, "error", message=str(exc)[:400])
+            except Exception:
+                pass
             return {"ok": False, "clips": 0, "error": str(exc)}
 
         finally:

@@ -165,13 +165,16 @@ def _oneshot_onstart(task_id: UUID) -> str:
     return "/app/deployments/pipeline_onstart.sh"
 
 
-async def _pick_offer(client: Any) -> Dict[str, Any]:
-    """Cari offer GPU termurah yang memenuhi filter & batas harga.
+async def _pick_offer(
+    client: Any,
+    exclude_machines: Optional[set] = None,
+    price_ceiling: float = 0.0,
+) -> Dict[str, Any]:
+    """Cari offer GPU termurah yang memenuhi filter, harga, dan mesin.
 
-    Penting: `search_offers` mengembalikan offer sesuai urutan yang diminta.
-    Dengan urutan "score-" hanya 20 offer teratas yang dinilai bagus — offer
-    termurah bisa TIDAK ikut terbawa. Karena itu kita minta urutan harga naik
-    (`dph_total+`) dan ambil lebih banyak, lalu tetap sortir lokal.
+    `exclude_machines` dipakai supervisor untuk menghindari mesin yang baru saja
+    gagal boot. `price_ceiling` = batas harga percobaan berikutnya (boleh naik
+    sampai `VAST_MAX_PRICE_MULTIPLIER` × harga offer pertama).
     """
     query = (settings.VAST_GPU_FILTER or "").strip()
     offers = await asyncio.to_thread(client.search_offers, query, "on-demand", "dph_total+", 100)
@@ -183,20 +186,22 @@ async def _pick_offer(client: Any) -> Dict[str, Any]:
     def _price(offer: Dict[str, Any]) -> float:
         return float(offer.get("dph_total") or 0)
 
+    caps = [value for value in (price_ceiling, settings.VAST_ONESHOT_MAX_PRICE) if value and value > 0]
+    hard_cap = min(caps) if caps else 0.0
+    blocked = {int(m) for m in (exclude_machines or set())}
+
     usable = [
         offer
         for offer in offers
         if offer.get("rentable")
         and _price(offer) > 0
-        and (
-            settings.VAST_ONESHOT_MAX_PRICE <= 0
-            or _price(offer) <= settings.VAST_ONESHOT_MAX_PRICE
-        )
+        and (hard_cap <= 0 or _price(offer) <= hard_cap)
+        and int(offer.get("machine_id") or 0) not in blocked
     ]
     if not usable:
         raise RuntimeError(
-            f"tidak ada offer di bawah ${settings.VAST_ONESHOT_MAX_PRICE}/jam "
-            f"(filter: {query})"
+            f"tidak ada offer di bawah ${hard_cap or 'tanpa batas'}/jam "
+            f"(filter: {query}, mesin diblokir: {sorted(blocked)})"
         )
     usable.sort(key=_price)
     return usable[0]
@@ -275,7 +280,7 @@ async def _reap_instance(instance_id: int, task_id: UUID) -> None:
 
 
 async def _dispatch_oneshot(task_id: UUID) -> Dict[str, Any]:
-    """Buat satu instance GPU untuk task ini, lalu hapus otomatis setelah selesai."""
+    """Buat instance GPU untuk task ini, lalu pantau & ganti otomatis bila gagal."""
     image = (settings.VAST_WORKER_IMAGE or "").strip()
     template_hash = (settings.VAST_TEMPLATE_HASH or "").strip()
     if not image and not template_hash:
@@ -287,40 +292,58 @@ async def _dispatch_oneshot(task_id: UUID) -> Dict[str, Any]:
     client = _get_vast_client()
     offer = await _pick_offer(client)
     logger.info(
-        "Task %s: membuat instance one-shot pada offer %s (%s $%s/jam)",
+        "Task %s: offer awal %s (%s $%s/jam)",
         task_id,
         offer.get("id"),
         offer.get("gpu_name"),
         offer.get("dph_total"),
     )
 
-    kwargs: Dict[str, Any] = {
-        "disk": settings.VAST_WORKER_DISK,
-        # CLIPZI_TASK_ID dibaca script onstart di dalam image.
-        "env": {"CLIPZI_ROLE": "worker", "CLIPZI_TASK_ID": str(task_id)},
-        "label": f"clipzi-{str(task_id)[:8]}",
-        "onstart_cmd": _oneshot_onstart(task_id),
-        "cancel_unavail": True,
-    }
-    if template_hash:
-        kwargs["template_hash"] = template_hash
-    else:
-        kwargs["image"] = image
+    async def _create(selected: Dict[str, Any]) -> int:
+        worker_env = {"CLIPZI_ROLE": "worker", "CLIPZI_TASK_ID": str(task_id)}
+        if settings.CLIPZI_CALLBACK_URL:
+            worker_env["CLIPZI_CALLBACK_URL"] = settings.CLIPZI_CALLBACK_URL
+        if settings.CLIPZI_WORKER_TOKEN:
+            worker_env["CLIPZI_WORKER_TOKEN"] = settings.CLIPZI_WORKER_TOKEN
+        kwargs: Dict[str, Any] = {
+            "disk": settings.VAST_WORKER_DISK,
+            # CLIPZI_TASK_ID dibaca script onstart di dalam image.
+            "env": worker_env,
+            "label": f"clipzi-{str(task_id)[:8]}",
+            "onstart_cmd": _oneshot_onstart(task_id),
+            "cancel_unavail": True,
+        }
+        if template_hash:
+            kwargs["template_hash"] = template_hash
+        else:
+            kwargs["image"] = image
+        created = await asyncio.to_thread(
+            client.create_instance, selected["id"], **kwargs
+        )
+        instance_id = created.get("new_contract") or created.get("instance_id")
+        if not instance_id:
+            raise RuntimeError(f"create_instance tidak mengembalikan instance id: {created}")
+        return int(instance_id)
 
-    created = await asyncio.to_thread(client.create_instance, offer["id"], **kwargs)
-    instance_id = created.get("new_contract") or created.get("instance_id")
-    if not instance_id:
-        raise RuntimeError(f"create_instance tidak mengembalikan instance id: {created}")
+    from app.services.instance_supervisor import InstanceSupervisor
 
-    # Reaper dipasang segera; respons ke user tidak menunggu instance siap.
-    asyncio.create_task(_reap_instance(int(instance_id), task_id))
+    supervisor = InstanceSupervisor(
+        client=client,
+        task_id=task_id,
+        offer=offer,
+        pick_offer=_pick_offer,
+        create_instance=_create,
+    )
+    # Pantau + auto-replace di background; respons ke user tidak menunggu boot.
+    asyncio.create_task(supervisor.run())
 
     return {
         "mode": "oneshot",
         "queued": True,
-        "instance_id": instance_id,
         "offer_id": offer.get("id"),
+        "machine_id": offer.get("machine_id"),
         "price_per_hour": offer.get("dph_total"),
+        "max_attempts": settings.VAST_MAX_ATTEMPTS,
     }
 
 

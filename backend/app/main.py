@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.db.session import engine, init_db
-from app.api import tasks, health, formats, editing, youtube, clips
+from app.api import tasks, health, formats, editing, youtube, clips, internal
 from app.api import auth, users, pricing, payment, credits
 from app.api import music
 from app.api.admin import auth as admin_auth
@@ -22,6 +22,7 @@ from app.api.admin import security as admin_security
 from app.api.admin import ytdlp_cookies as admin_ytdlp_cookies
 from app.api.admin import settings as admin_settings
 from app.api.admin import youtube as admin_youtube
+from app.api.admin import workers as admin_workers
 from app.api import multi_platform, clip_templates, bulk_jobs, analytics
 from app.api import api_keys, webhooks, compliance
 from app.api import scheduled_publish
@@ -74,6 +75,7 @@ app.include_router(payment.router, prefix="/api/payment", tags=["Payment"])
 app.include_router(credits.router, prefix="/api/credits", tags=["Credits"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
 app.include_router(clips.router, prefix="/api/clips", tags=["Clips"])
+app.include_router(internal.router, prefix="/api/internal", tags=["Internal"])
 app.include_router(music.router, prefix="/api/music", tags=["Music"])
 app.include_router(health.router, prefix="/api", tags=["Health"])
 app.include_router(formats.router, prefix="/api", tags=["Formats"])
@@ -99,6 +101,7 @@ app.include_router(admin_system.router, prefix="/api/admin/system", tags=["Admin
 app.include_router(admin_security.router, prefix="/api/admin/security", tags=["Admin Security"])
 app.include_router(admin_settings.router, prefix="/api/admin/settings", tags=["Admin Settings"])
 app.include_router(admin_youtube.router, prefix="/api/admin/youtube", tags=["Admin YouTube"])
+app.include_router(admin_workers.router, prefix="/api/admin/workers", tags=["Admin Workers"])
 app.include_router(
     admin_ytdlp_cookies.router,
     prefix="/api/admin/ytdlp-cookies",
