@@ -203,6 +203,9 @@ ENV TRANSCRIPTION_PROVIDER="gpu" \
 # ---------------------------------------------------------------------------
 COPY --from=llama /app /opt/llama
 ENV PATH="/opt/llama:${PATH}"
+# libggml*/libllama*.so ada di /opt/llama; tanpa entri ini llama-server gagal
+# start dengan "error while loading shared libraries".
+ENV LD_LIBRARY_PATH="/opt/llama:/opt/venv/lib/python3.11/site-packages/nvidia/cublas/lib:/opt/venv/lib/python3.11/site-packages/nvidia/cudnn/lib:/opt/venv/lib/python3.11/site-packages/nvidia/cuda_runtime/lib:${LD_LIBRARY_PATH}"
 ENV AI_PROVIDER="custom" \
     AI_BASE_URL="http://127.0.0.1:8080/v1" \
     AI_MODEL="Qwen3-4B-Instruct-2507"

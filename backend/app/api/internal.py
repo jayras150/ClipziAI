@@ -91,11 +91,14 @@ async def worker_events(
     if row is not None:
         if payload.event in {"boot", "started"}:
             row.state = "worker_started"
-        elif payload.event == "error":
+        elif payload.event in {"error", "llm_failed"}:
             row.state = "worker_error"
-            row.status_msg = (payload.message or "worker error")[:1000]
+            row.status_msg = (payload.message or payload.event)[:1000]
         if payload.stage:
-            row.status_msg = f"stage:{payload.stage}"[:1000]
+            detail = payload.message or ""
+            row.status_msg = (
+                f"{payload.stage}: {detail}" if detail else f"stage:{payload.stage}"
+            )[:1000]
         await db.commit()
 
     return {"ok": True}

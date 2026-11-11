@@ -308,6 +308,17 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                     logger.warning(
                         "LLM lokal tidak siap — planner memakai skor heuristik saja"
                     )
+                    try:
+                        from app.services.worker_callback import report_worker_event
+
+                        await report_worker_event(
+                            task.id,
+                            "stage",
+                            stage="llm_failed",
+                            message=local_llm._tail_log()[:400],
+                        )
+                    except Exception:
+                        pass
                 _lap("llm_ready")
 
             # 4) Tentukan rentang klip — manual trim prioritas atas planner
