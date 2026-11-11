@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 from typing import Any, Optional
 
 import httpx
@@ -18,6 +19,26 @@ from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+def instance_id_from_env() -> Optional[int]:
+    """Ambil id instance dari environment container Vast.
+
+    Vast menamai container `C.<instance_id>` (mis. `C.60248471`) dan menaruhnya
+    di `VAST_CONTAINERLABEL`. Dipakai agar callback bisa menyertakan instance_id
+    sehingga API bisa mencocokkan baris `worker_instances` dengan tepat.
+    """
+    for key in ("CLIPZI_INSTANCE_ID", "VAST_CONTAINERLABEL", "CONTAINER_ID"):
+        raw = (os.environ.get(key) or "").strip()
+        if not raw:
+            continue
+        digits = "".join(ch for ch in raw.split(".")[-1] if ch.isdigit())
+        if digits:
+            try:
+                return int(digits)
+            except ValueError:
+                continue
+    return None
 
 
 async def report_worker_event(
@@ -36,6 +57,7 @@ async def report_worker_event(
     payload = {
         "task_id": str(task_id),
         "event": event,
+        "instance_id": instance_id_from_env(),
         "stage": stage,
         "progress": progress,
         "message": (message or "")[:500] or None,

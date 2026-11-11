@@ -15,6 +15,7 @@ import hashlib
 import hmac
 import json
 import logging
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
@@ -87,6 +88,23 @@ async def worker_events(
                 .limit(1)
             )
         ).scalar_one_or_none()
+
+    if row is None:
+        # Worker biasanya tidak tahu instance id-nya (env onstart dibuat sebelum
+        # instance ada), jadi cari baris terakhir milik task ini.
+        try:
+            task_uuid = UUID(str(payload.task_id))
+        except Exception:
+            task_uuid = None
+        if task_uuid is not None:
+            row = (
+                await db.execute(
+                    select(WorkerInstance)
+                    .where(WorkerInstance.task_id == task_uuid)
+                    .order_by(WorkerInstance.created_at.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
 
     if row is not None:
         if payload.event in {"boot", "started"}:
