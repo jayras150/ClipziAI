@@ -328,6 +328,18 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                     except Exception:
                         pass
                 _lap("llm_ready")
+                if llm_ready:
+                    try:
+                        from app.services.worker_callback import report_worker_event
+
+                        await report_worker_event(
+                            task.id,
+                            "stage",
+                            stage="llm_info",
+                            message=str(getattr(local_llm, "info", ""))[:400],
+                        )
+                    except Exception:
+                        pass
 
             # 4) Tentukan rentang klip — manual trim prioritas atas planner
             total_duration = float(info.get("duration") or 0)

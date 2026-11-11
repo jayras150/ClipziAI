@@ -90,6 +90,7 @@ class LocalLLM:
         self.process: Optional[subprocess.Popen] = None
         self._log_path = "/tmp/llama-server.log"
         self.last_error: str = ""
+        self.info: str = ""
 
     @classmethod
     def instance(cls) -> "LocalLLM":
@@ -134,6 +135,9 @@ class LocalLLM:
             "-ngl", str(settings.LOCAL_LLM_GPU_LAYERS),
             "-c", str(settings.LOCAL_LLM_CTX),
             "--parallel", str(settings.LOCAL_LLM_PARALLEL),
+            "--batch-size", "512",
+            "--ubatch-size", "512",
+            "-fa",
             "--no-webui",
             "--jinja",
         ]
@@ -157,12 +161,14 @@ class LocalLLM:
                 )
                 return False
             if self._healthy():
+                self.info = self._gpu_info()
                 logger.info(
-                    "LLM lokal siap: %s (ctx=%s, ngl=%s, port=%s)",
+                    "LLM lokal siap: %s (ctx=%s, ngl=%s, port=%s) | %s",
                     self.model_name,
                     settings.LOCAL_LLM_CTX,
                     settings.LOCAL_LLM_GPU_LAYERS,
                     self.port,
+                    self.info,
                 )
                 return True
             time.sleep(2.0)
@@ -190,6 +196,24 @@ class LocalLLM:
             except Exception:
                 pass
         logger.info("LLM lokal dihentikan; VRAM dibebaskan untuk render")
+
+    def _gpu_info(self, lines: int = 400) -> str:
+        """Ringkas baris log llama-server soal device/CUDA (untuk diagnosa)."""
+        try:
+            with open(self._log_path, "r", encoding="utf-8", errors="replace") as handle:
+                text = handle.read().splitlines()[-lines:]
+        except Exception:
+            return ""
+        picked = []
+        for line in text:
+            low = line.lower()
+            if any(key in low for key in ("cuda", "offload", "device", "ggml_cuda")):
+                cleaned = " ".join(line.split())
+                if cleaned and cleaned not in picked:
+                    picked.append(cleaned[:160])
+        if not picked:
+            return "tidak ada baris CUDA di log (kemungkinan fallback CPU)"
+        return " | ".join(picked[:3])
 
     def _tail_log(self, lines: int = 12) -> str:
         try:

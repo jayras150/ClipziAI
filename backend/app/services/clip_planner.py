@@ -303,15 +303,11 @@ def _select_stratified(
 
 
 RERANK_SYSTEM_PROMPT = (
-    "Kamu adalah editor short-form video profesional. Tugasmu memberi skor "
-    "potensi viral 0-100 untuk beberapa kandidat potongan video dari satu "
-    "video panjang berbahasa Indonesia/Inggris.\n"
-    "Nilai berdasarkan: kekuatan hook 3 detik pertama, kelengkapan kalimat "
-    "(tidak menggantung), emosi/konflik, kejelasan topik, dan potensi ditonton "
-    "sampai habis.\n"
-    "ATURAN: jangan mengarang isi; hanya menilai teks yang diberikan. Balas "
-    'HANYA JSON: {"clips":[{"id":int,"score":int,"hook":string,'
-    '"reason":string}]} dengan id persis seperti yang diberikan.'
+    "Kamu editor short-form video. Beri skor potensi viral 0-100 untuk setiap "
+    "kandidat potongan video. Nilai: kekuatan hook 3 detik pertama, kelengkapan "
+    "kalimat (tidak menggantung), emosi/konflik, dan kejelasan topik.\n"
+    "Balas HANYA JSON ringkas (tanpa penjelasan): "
+    '{"clips":[{"id":<id>,"score":<0-100>}]} — satu entri untuk SETIAP id.'
 )
 
 
@@ -320,7 +316,7 @@ def rerank_with_llm(
     llm: Any,
     target_min: float,
     target_max: float,
-    limit: int = 12,
+    limit: int = 8,
 ) -> List[Dict[str, Any]]:
     """Rerank kandidat dengan LLM lokal (Qwen3-4B).
 
@@ -347,10 +343,10 @@ def rerank_with_llm(
     chat_any = getattr(llm, "chat_json_any", None)
     try:
         payload = (
-            chat_any(RERANK_SYSTEM_PROMPT, user_prompt, max_tokens=1600, temperature=0.2)
+            chat_any(RERANK_SYSTEM_PROMPT, user_prompt, max_tokens=300, temperature=0.2)
             if chat_any is not None
             else llm.chat_json(
-                RERANK_SYSTEM_PROMPT, user_prompt, max_tokens=1600, temperature=0.2
+                RERANK_SYSTEM_PROMPT, user_prompt, max_tokens=300, temperature=0.2
             )
         )
     except Exception as exc:

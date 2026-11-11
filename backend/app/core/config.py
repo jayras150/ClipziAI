@@ -85,7 +85,9 @@ class Settings(BaseSettings):
     LOCAL_LLM_GPU_LAYERS: int = 99
     LOCAL_LLM_PARALLEL: int = 2
     LOCAL_LLM_START_TIMEOUT: int = 120
-    LOCAL_LLM_CHAT_TIMEOUT: int = 180
+    # CPU fallback hanya ±2 token/detik, jadi beri ruang lebar; kalau GPU aktif
+    # jawaban selesai jauh lebih cepat.
+    LOCAL_LLM_CHAT_TIMEOUT: int = 600
 
     # Model khusus tombol "Regenerate with AI" di popup klip (API/VPS).
     AI_REGENERATE_MODEL: Optional[str] = None
