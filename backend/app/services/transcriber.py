@@ -60,16 +60,24 @@ class AudioTranscriber:
         True bila ada GPU CUDA yang bisa dipakai.
 
         Menggunakan CTranslate2 (dipakai faster-whisper) sebagai deteksi — tidak
-        butuh torch.
+        butuh torch. Kegagalan impor/library CUDA (mis. libcudnn tidak ketemu)
+        dicatat sekali supaya penyebab fallback ke CPU kelihatan di log worker.
         """
         try:
             import ctranslate2
-        except Exception:
+        except Exception as exc:
+            logger.warning("CTranslate2 tidak tersedia (%s) — GPU tidak bisa dipakai", exc)
             return False
         try:
-            return int(ctranslate2.get_cuda_device_count()) > 0
-        except Exception:
+            count = int(ctranslate2.get_cuda_device_count())
+        except Exception as exc:
+            logger.warning(
+                "Deteksi CUDA gagal (%s) — cek LD_LIBRARY_PATH libcudnn/libcublas", exc
+            )
             return False
+        if count <= 0:
+            logger.warning("CTranslate2 tidak melihat GPU CUDA (count=0)")
+        return count > 0
 
     @staticmethod
     def _map_gpu_model(name: str) -> str:
@@ -96,7 +104,12 @@ class AudioTranscriber:
         logger.info(
             "Memuat Whisper GPU: model=%s device=cuda compute_type=float16", model_name
         )
-        self._gpu_model = WhisperModel(model_name, device="cuda", compute_type="float16")
+        self._gpu_model = WhisperModel(
+            model_name,
+            device="cuda",
+            compute_type="float16",
+            download_root=self._cache_dir(),
+        )
         return self._gpu_model
 
     async def _transcribe_gpu(
@@ -123,6 +136,8 @@ class AudioTranscriber:
         return {
             "language": info.language,
             "language_probability": info.language_probability,
+            "backend": "gpu",
+
             "duration": info.duration,
             "segments": self._split_long_segments(segments),
             # Segmen mentah (timestamp kata) untuk clip planner.
@@ -200,21 +215,31 @@ class AudioTranscriber:
         if self._is_local():
             return await self._transcribe_local(audio_path, language)
 
-        # GPU worker (Vast.ai): Whisper large-v3 di GPU, tanpa biaya API.
+        # GPU worker (Vast.ai): Whisper large-v3-turbo di GPU, tanpa biaya API.
         # Deteksi otomatis: kalau CUDA tersedia, GPU selalu diprioritaskan sehingga
         # tidak perlu mengubah env di Vast (API container tanpa GPU tetap memakai
         # provider API / Whisper lokal).
-        if self._is_gpu() or (not self._is_local() and self._cuda_available()):
+        cuda_ready = self._cuda_available()
+        logger.info(
+            "Transkripsi: provider=%s cuda=%s model=%s cache=%s",
+            self.provider,
+            cuda_ready,
+            self.model_size,
+            self._cache_dir(),
+        )
+        if self._is_gpu() and not cuda_ready:
+            logger.error(
+                "TRANSCRIPTION_PROVIDER=gpu tetapi CUDA tidak terdeteksi — "
+                "transkripsi akan jatuh ke provider API/CPU (jauh lebih lambat)."
+            )
+
+        if cuda_ready and not self._is_local():
             try:
                 return await self._transcribe_gpu(audio_path, language)
             except Exception as exc:
-                if self._is_gpu():
-                    raise RuntimeError(
-                        f"GPU transcription failed: {str(exc)[:300]}"
-                    ) from exc
-                logger.warning(
+                logger.error(
                     "Transkripsi GPU gagal (%s); mencoba provider API.",
-                    str(exc)[:200],
+                    str(exc)[:400],
                 )
 
         try:
@@ -255,6 +280,8 @@ class AudioTranscriber:
             "language": info.language,
             "language_probability": info.language_probability,
             "duration": info.duration,
+            "backend": "local",
+
             "segments": self._split_long_segments(segments),
             # Segmen mentah (timestamp kata) untuk clip planner.
             "raw_segments": segments,
@@ -353,6 +380,8 @@ class AudioTranscriber:
             "language": payload.get("language") or language,
             "language_probability": None,
             "duration": payload.get("duration"),
+            "backend": "remote",
+
             "segments": self._split_long_segments(segments),
             # Segmen mentah (timestamp kata) untuk clip planner.
             "raw_segments": segments,

@@ -183,4 +183,13 @@ USER clipzi
 
 COPY --from=builder-worker /opt/venv /opt/venv
 
+# Worker = GPU. Transkripsi dijalankan di GPU (faster-whisper CUDA float16)
+# supaya video panjang selesai dalam hitungan menit, bukan puluhan menit di CPU,
+# dan timestamp per kata lebih akurat untuk pemotongan klip.
+# `turbo` = large-v3-turbo (±1,6 GB VRAM) — aman untuk RTX A2000 dan jauh lebih
+# akurat daripada model `base` yang dipakai fallback CPU.
+ENV TRANSCRIPTION_PROVIDER="gpu" \
+    GPU_WHISPER_MODEL="turbo"
+
+
 ENV LD_LIBRARY_PATH="/opt/venv/lib/python3.11/site-packages/nvidia/cublas/lib:/opt/venv/lib/python3.11/site-packages/nvidia/cudnn/lib:${LD_LIBRARY_PATH}"

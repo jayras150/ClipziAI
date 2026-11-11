@@ -257,6 +257,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
             # 3) Ekstrak audio + transkripsi (API provider)
             segments: List[Dict[str, Any]] = []
             raw_segments: List[Dict[str, Any]] = []
+            transcription_backend = "unknown"
             try:
                 audio_path = await processor.extract_audio(
                     video_path, str(work_dir / "audio.mp3")
@@ -266,10 +267,12 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                 # Segmen mentah menyimpan timestamp kata — dipakai planner untuk
                 # memotong tepat di jeda kalimat.
                 raw_segments = list(result.get("raw_segments") or segments)
+                transcription_backend = str(result.get("backend") or "unknown")
                 logger.info(
-                    "Pipeline: %s segmen transkripsi (%s mentah) untuk task %s",
+                    "Pipeline: %s segmen transkripsi (%s mentah, backend=%s) untuk task %s",
                     len(segments),
                     len(raw_segments),
+                    transcription_backend,
                     task.id,
                 )
             except Exception as exc:
@@ -703,10 +706,11 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                 return round(max(0.0, stage_marks.get(b, 0.0) - stage_marks.get(a, 0.0)), 2)
 
             logger.info(
-                "Timing task %s: unduh=%.2fs transkripsi=%.2fs render=%.2fs simpan=%.2fs total=%.2fs",
+                "Timing task %s: unduh=%.2fs transkripsi=%.2fs (%s) render=%.2fs simpan=%.2fs total=%.2fs",
                 task.id,
                 stage_marks.get("downloaded", 0.0),
                 _delta("downloaded", "transcribed"),
+                transcription_backend,
                 _delta("transcribed", "rendered"),
                 _delta("rendered", "saved"),
                 stage_marks.get("saved", 0.0),
