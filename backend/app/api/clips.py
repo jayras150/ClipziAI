@@ -17,11 +17,13 @@ from uuid import UUID
 
 import requests
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db_session
+from app.core.config import get_settings
 from app.db.session import AsyncSessionLocal
+from app.models.ai_regenerate import AiRegenerateLog
 from app.models.clip import Clip
 from app.models.task import Task
 from app.models.user import User
@@ -266,6 +268,7 @@ def _metadata_response(
     ai_available: bool = True,
     status_value: str = "ready",
     message: Optional[str] = None,
+    regenerate_left: Optional[int] = None,
 ) -> ClipMetadataResponse:
     return ClipMetadataResponse(
         clip_id=str(clip.id),
@@ -280,6 +283,7 @@ def _metadata_response(
         ai_available=ai_available,
         status=status_value,
         message=message,
+        regenerate_left=regenerate_left,
     )
 
 
@@ -337,12 +341,34 @@ async def generate_clip_metadata(
     options = payload or ClipMetadataRequest()
     clip, _task = await _load_clip(db, clip_id, current_user.id)
 
+    settings = get_settings()
+    regen_limit = max(1, int(settings.AI_REGENERATE_LIMIT or 3))
+    regen_used = int(
+        await db.scalar(
+            select(func.count())
+            .select_from(AiRegenerateLog)
+            .where(AiRegenerateLog.clip_id == clip.id)
+        )
+        or 0
+    )
+    regen_left = max(0, regen_limit - regen_used)
+
+    if options.regenerate and regen_left <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                f"Regenerate limit reached ({regen_limit}× per clip). "
+                "Edit the title/description/tags manually instead."
+            ),
+        )
+
     if not options.regenerate and clip.ai_suggested_title:
         return _metadata_response(
             clip,
             transcript=_stored_transcript(clip),
             transcript_source="stored",
             generated_by="ai",
+            regenerate_left=regen_left,
         )
 
     stored = _stored_transcript(clip)
@@ -359,6 +385,7 @@ async def generate_clip_metadata(
                     "This clip has no transcript, so no metadata was created: "
                     f"{failure}"
                 ),
+                regenerate_left=regen_left,
             )
         if options.regenerate:
             _PREPARE_ERROR.pop(clip.id, None)
@@ -377,9 +404,14 @@ async def generate_clip_metadata(
                 "Preparing the clip transcript (SRT/Whisper); AI metadata follows. "
                 "This usually takes 1-2 minutes."
             ),
+            regenerate_left=regen_left,
         )
 
-    generator = MetadataGenerator()
+    # Regenerate memakai model khusus (OpenRouter gpt-6-luna); pembuatan pertama
+    # memakai AI_MODEL global.
+    generator = MetadataGenerator(
+        model=settings.AI_REGENERATE_MODEL if options.regenerate else None
+    )
     try:
         result = await generator.generate(
             transcript=stored,
@@ -404,6 +436,16 @@ async def generate_clip_metadata(
     factors["ai_language"] = result.get("language")
     clip.viral_factors = factors
 
+    if options.regenerate:
+        db.add(
+            AiRegenerateLog(
+                clip_id=clip.id,
+                user_id=current_user.id,
+                model=generator.model,
+            )
+        )
+        regen_left = max(0, regen_left - 1)
+
     await db.commit()
     await db.refresh(clip)
 
@@ -413,6 +455,7 @@ async def generate_clip_metadata(
         transcript_source="stored",
         generated_by="ai",
         ai_available=generator.available,
+        regenerate_left=regen_left,
     )
 
 
@@ -426,6 +469,18 @@ async def update_clip_metadata(
     """Simpan judul/deskripsi/tag hasil edit pengguna (tanpa memanggil AI)."""
     clip, _task = await _load_clip(db, clip_id, current_user.id)
 
+    settings = get_settings()
+    regen_limit = max(1, int(settings.AI_REGENERATE_LIMIT or 3))
+    regen_used = int(
+        await db.scalar(
+            select(func.count())
+            .select_from(AiRegenerateLog)
+            .where(AiRegenerateLog.clip_id == clip.id)
+        )
+        or 0
+    )
+    regen_left = max(0, regen_limit - regen_used)
+
     clip.ai_suggested_title = payload.title.strip()[:500]
     clip.ai_suggested_description = payload.description.strip()
     clip.ai_suggested_tags = _clean_tags(payload.tags)
@@ -437,5 +492,6 @@ async def update_clip_metadata(
         transcript=_stored_transcript(clip),
         transcript_source="stored",
         generated_by="manual",
+        regenerate_left=regen_left,
     )
 

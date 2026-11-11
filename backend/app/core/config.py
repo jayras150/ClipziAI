@@ -69,6 +69,29 @@ class Settings(BaseSettings):
     # openai/whisper-large-v3-turbo -> turbo (lebih cepat, akurasi hampir sama).
     GPU_WHISPER_MODEL: str = "large-v3"
 
+    # Izinkan fallback transkripsi ke provider API (OpenRouter dsb).
+    # Produksi WAJIB False: transkripsi hanya Whisper lokal/GPU di instance.
+    TRANSCRIPTION_ALLOW_REMOTE: bool = False
+
+    # ---------- LLM lokal (llama.cpp server) di worker GPU Vast.ai ----------
+    # Dipakai untuk rerank momen viral + metadata judul/deskripsi/tag, supaya
+    # analisis AI tidak keluar dari instance (tanpa biaya API).
+    LOCAL_LLM_ENABLED: bool = True
+    LOCAL_LLM_SERVER_BIN: str = "llama-server"
+    LOCAL_LLM_MODEL_PATH: str = "/app/models/Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf"
+    LOCAL_LLM_MODEL_NAME: str = "Qwen3-4B-Instruct-2507"
+    LOCAL_LLM_PORT: int = 8080
+    LOCAL_LLM_CTX: int = 8192
+    LOCAL_LLM_GPU_LAYERS: int = 99
+    LOCAL_LLM_PARALLEL: int = 2
+    LOCAL_LLM_START_TIMEOUT: int = 120
+    LOCAL_LLM_CHAT_TIMEOUT: int = 180
+
+    # Model khusus tombol "Regenerate with AI" di popup klip (API/VPS).
+    AI_REGENERATE_MODEL: Optional[str] = None
+    # Batas regenerate per klip (dihitung dari tabel ai_regenerate_log).
+    AI_REGENERATE_LIMIT: int = 3
+
     # Duitku Payment
     DUITKU_MERCHANT_CODE: Optional[str] = None
     DUITKU_API_KEY: Optional[str] = None

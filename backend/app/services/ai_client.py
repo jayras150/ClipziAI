@@ -143,3 +143,22 @@ def get_ai_client() -> openai.AsyncOpenAI:
         timeout=120.0,
         max_retries=2,
     )
+
+
+def make_ai_client(
+    base_url: str,
+    api_key: str = "sk-local",
+    timeout: float = 180.0,
+) -> openai.AsyncOpenAI:
+    """Client untuk endpoint OpenAI-compatible tertentu.
+
+    Dipakai worker untuk memanggil `llama-server` lokal (Qwen3-4B-Instruct-2507)
+    dan API untuk memanggil OpenRouter khusus tombol *Regenerate with AI*,
+    tanpa bergantung pada settings global proses.
+    """
+    return openai.AsyncOpenAI(
+        api_key=api_key or "sk-local",
+        base_url=base_url,
+        timeout=timeout,
+        max_retries=1,
+    )

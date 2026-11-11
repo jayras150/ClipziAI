@@ -49,6 +49,8 @@ export default function ClipModal({
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
   const [uploadUrl, setUploadUrl] = useState("")
+  // Sisa kuota tombol "Regenerate with AI" (maks 3 per klip), dari server.
+  const [regenLeft, setRegenLeft] = useState<number | null>(null)
 
   const autoTried = useRef<Set<string>>(new Set())
   const clipId = clip?.id ?? ""
@@ -84,6 +86,7 @@ export default function ClipModal({
       setNotice(regenerate ? "Writing a new version from the transcript…" : "AI is reading the clip transcript…")
       try {
         const data = await api.generateClipMetadata(token, clipId, regenerate)
+        if (typeof data.regenerate_left === "number") setRegenLeft(data.regenerate_left)
         if (data.status === "failed") {
           setNotice("")
           setError(data.message || "This clip has no transcript, so no metadata was created.")
@@ -126,6 +129,7 @@ export default function ClipModal({
       await new Promise((resolve) => setTimeout(resolve, 5000))
       try {
         const data = await api.generateClipMetadata(token, clipId, false)
+        if (typeof data.regenerate_left === "number") setRegenLeft(data.regenerate_left)
         if (data.status === "failed") {
           setNotice("")
           setError(data.message || "This clip has no transcript, so no metadata was created.")
@@ -406,14 +410,19 @@ export default function ClipModal({
                 type="button"
                 className="ui-btn ui-btn-ghost"
                 onClick={() => void generate(true)}
-                disabled={busy}
+                disabled={busy || regenLeft === 0}
+                title={
+                  regenLeft === 0
+                    ? "Regenerate limit reached (3× per clip) — edit manually instead"
+                    : "Ask AI for a different title/description/tags"
+                }
               >
                 {generating ? (
                   <LoaderCircle size={14} className="animate-spin" />
                 ) : (
                   <Sparkles size={14} />
                 )}
-                Regenerate with AI
+                Regenerate with AI{typeof regenLeft === "number" ? ` (${regenLeft} left)` : ""}
               </button>
               <button
                 type="button"

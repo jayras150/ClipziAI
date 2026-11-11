@@ -158,6 +158,11 @@ FROM runtime AS api
 COPY --from=builder-api-whisper /opt/venv /opt/venv
 
 # =============================================================================
+# Image resmi llama.cpp (CUDA) — hanya diambil binernya untuk LLM lokal.
+# =============================================================================
+FROM ghcr.io/ggml-org/llama.cpp:server-cuda AS llama
+
+# =============================================================================
 # TARGET "worker" — untuk Vast.ai serverless (GPU).
 #
 # Menambah Whisper (CTranslate2 large-v3) + lib CUDA. Tag inilah yang dipakai
@@ -186,10 +191,30 @@ COPY --from=builder-worker /opt/venv /opt/venv
 # Worker = GPU. Transkripsi dijalankan di GPU (faster-whisper CUDA float16)
 # supaya video panjang selesai dalam hitungan menit, bukan puluhan menit di CPU,
 # dan timestamp per kata lebih akurat untuk pemotongan klip.
-# `turbo` = large-v3-turbo (±1,6 GB VRAM) — aman untuk RTX A2000 dan jauh lebih
-# akurat daripada model `base` yang dipakai fallback CPU.
+# `large-v3` = model openai/whisper-large-v3 (CTranslate2).
 ENV TRANSCRIPTION_PROVIDER="gpu" \
-    GPU_WHISPER_MODEL="turbo"
+    GPU_WHISPER_MODEL="large-v3" \
+    TRANSCRIPTION_ALLOW_REMOTE="false"
+
+# ---------------------------------------------------------------------------
+# LLM lokal: llama.cpp server (CUDA) + Qwen3-4B-Instruct-2507 (GGUF Q4_K_XL).
+# Semua analisis AI (rerank momen viral, skor, judul/deskripsi/tag) berjalan di
+# instance ini — tidak ada audio/teks yang dikirim ke provider luar.
+# ---------------------------------------------------------------------------
+COPY --from=llama /app /opt/llama
+ENV PATH="/opt/llama:${PATH}"
+ENV AI_PROVIDER="custom" \
+    AI_BASE_URL="http://127.0.0.1:8080/v1" \
+    AI_MODEL="Qwen3-4B-Instruct-2507"
+
+USER root
+RUN mkdir -p /app/models \
+    && curl -fsSL -o /app/models/Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf \
+       https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf \
+    && test "$(stat -c%s /app/models/Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf)" -gt 2000000000 \
+    && chown -R clipzi:clipzi /app/models \
+    && /opt/llama/llama-server --version || true
+USER clipzi
 
 
 ENV LD_LIBRARY_PATH="/opt/venv/lib/python3.11/site-packages/nvidia/cublas/lib:/opt/venv/lib/python3.11/site-packages/nvidia/cudnn/lib:${LD_LIBRARY_PATH}"

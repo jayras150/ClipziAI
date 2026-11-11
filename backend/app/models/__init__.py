@@ -2,6 +2,7 @@
 
 from app.models.admin_session import AdminSession
 from app.models.admin_user import AdminRole, AdminUser
+from app.models.ai_regenerate import AiRegenerateLog
 from app.models.api_key import APIKey
 from app.models.api_usage_log import APIUsageLog
 from app.models.audit_log import ActorType, AuditLog
@@ -37,7 +38,7 @@ from app.models.ytdlp_cookie import (
 )
 
 __all__ = [
-    "AdminSession", "AdminRole", "AdminUser", "APIKey", "APIUsageLog", "ActorType",
+    "AdminSession", "AdminRole", "AdminUser", "AiRegenerateLog", "APIKey", "APIUsageLog", "ActorType",
     "AuditLog", "BestTimeToPost", "BulkJob", "BulkJobStatus", "Clip", "ClipPerformance",
     "ClipTemplate", "ContentModeration", "ModerationStatus", "CopyrightCheck", "CopyrightAction",
     "CopyrightStatus", "CreditTransaction", "CreditTransactionType",

@@ -26,6 +26,7 @@ from app.services import cookie_store
 from app.services.clip_planner import plan_clip_quota, plan_clips
 from app.services.credit_service import CreditService
 from app.services.downloader import VideoDownloader
+from app.services.local_llm import get_local_llm
 from app.services.processor import VideoProcessor, get_caption_style
 from app.services.speech_boundaries import detect_silences
 from app.services.storage import R2Storage
@@ -227,6 +228,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
         music_volume = float(options.get("music_volume", 0.22) or 0.22)
         music_ducking = bool(options.get("music_ducking", True))
 
+        local_llm = None
         try:
             # 1) Unduh sumber (memakai cookie pool bila ada)
             await _set_progress(db, task, 5)
@@ -282,6 +284,26 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
             await _set_progress(db, task, 35)
             _lap("transcribed")
 
+            # Whisper dilepas lebih dulu supaya VRAM cukup untuk LLM lokal.
+            try:
+                transcriber.unload_model()
+            except Exception as exc:
+                logger.warning("Gagal melepas model Whisper dari VRAM: %s", exc)
+
+            # LLM lokal (Qwen3-4B-Instruct-2507 via llama.cpp) untuk rerank momen
+            # viral + metadata. Kalau gagal start, planner tetap jalan heuristik.
+            local_llm = get_local_llm()
+            llm_ready = False
+            if settings.LOCAL_LLM_ENABLED:
+                llm_ready = await asyncio.get_event_loop().run_in_executor(
+                    None, local_llm.start
+                )
+                if not llm_ready:
+                    logger.warning(
+                        "LLM lokal tidak siap — planner memakai skor heuristik saja"
+                    )
+                _lap("llm_ready")
+
             # 4) Tentukan rentang klip — manual trim prioritas atas planner
             total_duration = float(info.get("duration") or 0)
             if total_duration and total_duration < 60:
@@ -324,6 +346,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                         min_duration,
                         max_duration,
                         max_clips,
+                        llm=local_llm if llm_ready else None,
                     )
                 except Exception as exc:
                     logger.warning(
@@ -358,6 +381,56 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                     raise RuntimeError(
                         "Tidak ada rentang klip yang bisa diproses dari video ini"
                     )
+
+            # ---------- Metadata AI lokal (judul/deskripsi/tag) ----------
+            # Dibuat SEBELUM render supaya LLM bisa dimatikan dan VRAM-nya dipakai
+            # ffmpeg. Hasil disimpan ke Clip.ai_suggested_* saat menyimpan klip.
+            clip_metadata: Dict[float, Dict[str, Any]] = {}
+            if llm_ready and ranges and segments:
+                try:
+                    from app.services.ai_client import make_ai_client
+                    from app.services.metadata_generator import MetadataGenerator
+
+                    generator = MetadataGenerator(
+                        client=make_ai_client(local_llm.base_url),
+                        model=local_llm.model_name,
+                    )
+                    for meta_start, meta_duration in ranges:
+                        transcript_text = " ".join(
+                            str(seg.get("text") or "").strip()
+                            for seg in _slice_segments(
+                                segments, meta_start, meta_start + meta_duration
+                            )
+                        ).strip()
+                        if len(transcript_text.split()) < 6:
+                            continue
+                        try:
+                            clip_metadata[round(meta_start, 2)] = await generator.generate(
+                                transcript=transcript_text,
+                                source_title="",
+                                duration=float(meta_duration),
+                                start_time=_fmt_hms(meta_start),
+                                end_time=_fmt_hms(meta_start + meta_duration),
+                            )
+                        except Exception as exc:
+                            logger.warning(
+                                "Metadata AI lokal gagal (task %s klip %.1fs): %s",
+                                task.id,
+                                meta_start,
+                                str(exc)[:200],
+                            )
+                except Exception as exc:
+                    logger.warning(
+                        "Metadata AI lokal dilewati untuk task %s: %s", task.id, exc
+                    )
+            _lap("metadata")
+
+            # VRAM harus bebas sebelum render ffmpeg.
+            if llm_ready:
+                try:
+                    local_llm.stop()
+                except Exception:
+                    pass
 
 
             # 5) Render tiap klip
@@ -664,6 +737,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                         "file_size": Path(final_clip).stat().st_size,
                         "viral": viral,
                         "brand": brand_applied,
+                        "meta": clip_metadata.get(round(start, 2)),
                     }
                 )
                 await _set_progress(db, task, 35 + int(55 * index / max(1, total)))
@@ -685,6 +759,11 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                         file_size=clip["file_size"],
                         viral_score=(clip.get("viral") or {}).get("score"),
                         viral_factors=(clip.get("viral") or {}).get("factors"),
+                        ai_suggested_title=((clip.get("meta") or {}).get("title") or None),
+                        ai_suggested_description=(
+                            (clip.get("meta") or {}).get("description") or None
+                        ),
+                        ai_suggested_tags=((clip.get("meta") or {}).get("tags") or None),
                         editing_applied=[
                             k
                             for k, v in options.items()
@@ -741,6 +820,11 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
             return {"ok": False, "clips": 0, "error": str(exc)}
 
         finally:
+            try:
+                if local_llm is not None:
+                    local_llm.stop()
+            except Exception:
+                pass
             shutil.rmtree(work_dir, ignore_errors=True)
 
 

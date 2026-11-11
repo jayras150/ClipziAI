@@ -53,6 +53,8 @@ class ClipMetadataResponse(BaseModel):
     # "ready" = metadata siap, "preparing" = transkrip klip sedang dibuat di latar
     status: str = "ready"
     message: Optional[str] = None
+    # Sisa kuota tombol "Regenerate with AI" untuk klip ini (maks 3).
+    regenerate_left: Optional[int] = None
 
 
 class ClipMetadataRequest(BaseModel):

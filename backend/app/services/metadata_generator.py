@@ -130,10 +130,26 @@ def _clean_tags(raw: Any) -> List[str]:
 class MetadataGenerator:
     """Buat metadata YouTube yang grounded ke transkrip klip."""
 
-    def __init__(self) -> None:
-        self.available = is_ai_configured()
-        self.client = get_ai_client() if self.available else None
-        self.model = get_ai_model()
+    def __init__(
+        self,
+        *,
+        client: Optional[Any] = None,
+        model: Optional[str] = None,
+    ) -> None:
+        """Generator metadata.
+
+        `client`/`model` opsional: worker mengirim client yang menunjuk ke
+        llama-server lokal (Qwen3-4B-Instruct-2507), sedangkan API memakai
+        konfigurasi global (OpenRouter untuk tombol Regenerate).
+        """
+        if client is not None:
+            self.client = client
+            self.model = model or "local-llm"
+            self.available = True
+        else:
+            self.available = is_ai_configured()
+            self.client = get_ai_client() if self.available else None
+            self.model = model or get_ai_model()
 
     def ensure_ready(self) -> None:
         """Lempar error jelas bila AI belum dikonfigurasi di server."""

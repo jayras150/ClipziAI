@@ -171,6 +171,8 @@ export interface ClipMetadataData {
   /** "ready" = metadata siap, "preparing" = transkrip klip masih dibuat di server */
   status?: string
   message?: string | null
+  /** Sisa kuota tombol "Regenerate with AI" untuk klip ini (maks 3). */
+  regenerate_left?: number | null
 }
 
 export interface YouTubeUploadResult {

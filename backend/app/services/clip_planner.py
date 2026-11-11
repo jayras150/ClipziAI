@@ -19,6 +19,7 @@ Kuota klip mengikuti panjang video sumber:
 """
 from __future__ import annotations
 
+import logging
 import math
 import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -35,6 +36,8 @@ from app.services.speech_boundaries import (
 from app.services.viral import POWER_WORDS, score_clip
 
 SECOND_PERSON = {"kamu", "kalian", "anda", "lo", "lu", "kau", "you", "your"}
+
+logger = logging.getLogger(__name__)
 
 _STOPWORDS = {
     "yang", "dan", "di", "ke", "dari", "itu", "ini", "ada", "untuk", "dengan",
@@ -284,6 +287,98 @@ def _select_stratified(
     return chosen[:quota]
 
 
+RERANK_SYSTEM_PROMPT = (
+    "Kamu adalah editor short-form video profesional. Tugasmu memberi skor "
+    "potensi viral 0-100 untuk beberapa kandidat potongan video dari satu "
+    "video panjang berbahasa Indonesia/Inggris.\n"
+    "Nilai berdasarkan: kekuatan hook 3 detik pertama, kelengkapan kalimat "
+    "(tidak menggantung), emosi/konflik, kejelasan topik, dan potensi ditonton "
+    "sampai habis.\n"
+    "ATURAN: jangan mengarang isi; hanya menilai teks yang diberikan. Balas "
+    'HANYA JSON: {"clips":[{"id":int,"score":int,"hook":string,'
+    '"reason":string}]} dengan id persis seperti yang diberikan.'
+)
+
+
+def rerank_with_llm(
+    candidates: Sequence[Dict[str, Any]],
+    llm: Any,
+    target_min: float,
+    target_max: float,
+    limit: int = 28,
+) -> List[Dict[str, Any]]:
+    """Rerank kandidat dengan LLM lokal (Qwen3-4B).
+
+    Mengembalikan daftar baru; kandidat yang tidak dinilai LLM tetap dipertahankan
+    dengan skor heuristik. Tidak pernah melempar exception.
+    """
+    if llm is None or not candidates:
+        return list(candidates)
+
+    shortlist = sorted(candidates, key=lambda c: -c["score"])[:limit]
+    lines: List[str] = []
+    for index, candidate in enumerate(shortlist):
+        first = str(candidate["factors"].get("first_sentence") or "")[:140]
+        last = str(candidate["factors"].get("last_sentence") or "")[:140]
+        lines.append(
+            f"[{index}] durasi={candidate['duration']:.0f}s "
+            f"heuristik={candidate['score']:.0f} | awal: {first} | akhir: {last}"
+        )
+    user_prompt = (
+        f"Target durasi klip {target_min:.0f}-{target_max:.0f} detik.\n"
+        "Kandidat:\n" + "\n".join(lines) + "\n\nBeri skor semua kandidat di atas."
+    )
+
+    payload = llm.chat_json(RERANK_SYSTEM_PROMPT, user_prompt, max_tokens=1200, temperature=0.2)
+    if not payload:
+        return list(candidates)
+    items = payload.get("clips")
+    if not isinstance(items, list):
+        return list(candidates)
+
+    scores: Dict[int, Dict[str, Any]] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        try:
+            idx = int(item.get("id"))
+        except (TypeError, ValueError):
+            continue
+        if 0 <= idx < len(shortlist):
+            scores[idx] = item
+
+    if not scores:
+        return list(candidates)
+
+    reranked: List[Dict[str, Any]] = []
+    for index, candidate in enumerate(shortlist):
+        item = scores.get(index)
+        updated = dict(candidate)
+        factors = dict(candidate["factors"])
+        if item is not None:
+            try:
+                llm_score = max(0.0, min(100.0, float(item.get("score"))))
+            except (TypeError, ValueError):
+                llm_score = None
+            if llm_score is not None:
+                combined = 0.55 * llm_score + 0.45 * float(candidate["score"])
+                updated["score"] = round(max(0.0, min(96.0, combined)), 1)
+            hook = str(item.get("hook") or "").strip()
+            reason = str(item.get("reason") or "").strip()
+            factors["llm_score"] = llm_score
+            factors["llm_reason"] = reason[:240] or None
+            if hook:
+                factors["llm_hook"] = hook[:120]
+                updated["hook"] = hook[:120]
+        factors["reranked_by"] = "qwen3-4b-instruct-2507"
+        updated["factors"] = factors
+        reranked.append(updated)
+
+    # Kandidat di luar shortlist tetap tersedia untuk pemilihan.
+    reranked.extend([c for c in candidates if c not in shortlist])
+    return reranked
+
+
 def plan_clips(
     segments: Sequence[Dict[str, Any]],
     silences: Sequence[Tuple[float, float]],
@@ -291,6 +386,7 @@ def plan_clips(
     target_min: float = 60.0,
     target_max: float = 90.0,
     quota: Optional[int] = None,
+    llm: Any = None,
 ) -> List[Dict[str, Any]]:
     """Rentang klip terbaik. Kosong bila transkrip tidak tersedia (fallback)."""
     words = extract_words(segments)
@@ -365,4 +461,9 @@ def plan_clips(
 
     if not candidates:
         return []
+    if llm is not None:
+        try:
+            candidates = rerank_with_llm(candidates, llm, target_min, target_max)
+        except Exception as exc:  # LLM lokal tidak boleh menggagalkan planning
+            logger.warning("Rerank LLM gagal (%s); memakai skor heuristik", str(exc)[:200])
     return _select_stratified(candidates, quota, total_duration, min_gap)

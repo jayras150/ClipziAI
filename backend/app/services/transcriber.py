@@ -1,5 +1,6 @@
 """Audio transcription service for local or OpenAI-compatible providers."""
 import asyncio
+import gc
 import logging
 import os
 import re
@@ -147,6 +148,31 @@ class AudioTranscriber:
         }
 
 
+    def unload_model(self) -> None:
+        """Lepas model Whisper dari VRAM (dipanggil sebelum LLM lokal dimuat).
+
+        Qwen3-4B (2,55 GB) + Whisper large-v3 (3,1 GB) tidak aman bila hidup
+        bersamaan di GPU 12 GB bersama KV cache, jadi pipeline mengosongkan
+        Whisper lebih dulu.
+        """
+        released = False
+        for attr in ("_gpu_model", "_model"):
+            model = getattr(self, attr, None)
+            if model is not None:
+                setattr(self, attr, None)
+                released = True
+                del model
+        gc.collect()
+        try:  # bila torch tersedia (tidak wajib di image worker)
+            import torch  # type: ignore
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
+        if released:
+            logger.info("Model Whisper dilepas dari VRAM")
+
     def _get_remote_client(self) -> openai.AsyncOpenAI:
         """Build a client for any provider implementing OpenAI audio transcriptions."""
         api_key = settings.TRANSCRIPTION_API_KEY or settings.AI_API_KEY or settings.OPENAI_API_KEY
@@ -238,9 +264,21 @@ class AudioTranscriber:
                 return await self._transcribe_gpu(audio_path, language)
             except Exception as exc:
                 logger.error(
-                    "Transkripsi GPU gagal (%s); mencoba provider API.",
+                    "Transkripsi GPU gagal (%s); lanjut ke jalur berikutnya.",
                     str(exc)[:400],
                 )
+
+        # Produksi: audio TIDAK boleh dikirim ke provider luar (OpenRouter).
+        # Bila GPU gagal, satu-satunya fallback adalah Whisper lokal (CPU).
+        if not settings.TRANSCRIPTION_ALLOW_REMOTE:
+            logger.info("TRANSCRIPTION_ALLOW_REMOTE=false → Whisper lokal (CPU) tanpa API")
+            try:
+                return await self._transcribe_local(audio_path, language)
+            except Exception as local_exc:
+                raise RuntimeError(
+                    "Transcription failed: GPU Whisper unavailable and the local "
+                    f"fallback failed too ({str(local_exc)[:200]})."
+                ) from local_exc
 
         try:
             return await self._transcribe_remote(audio_path, language)
