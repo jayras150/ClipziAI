@@ -103,7 +103,13 @@ def score_candidate(
     duration = max(0.1, end - start)
     words = speech.words_between(start, end)
     text = " ".join(w.text for w in words).strip()
-    base = score_clip(transcript=text, duration=duration, has_subtitle=True, has_caption=False)
+    base = score_clip(
+        transcript=text,
+        duration=duration,
+        has_subtitle=True,
+        has_caption=False,
+        target_range=(target_min, target_max),
+    )
     score = float(base["score"])
     factors: Dict[str, Any] = dict(base["factors"])
 

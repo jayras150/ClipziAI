@@ -20,6 +20,22 @@ def test_strong_transcript_scores_higher_than_empty():
     assert weak["factors"].get("estimated") is not True
 
 
+def test_target_range_membuat_klip_panjang_tetap_dinilai_bagus():
+    text = (
+        "Jangan pernah lakukan 3 kesalahan ini saat edit video! "
+        "Ternyata hook 3 detik pertama menentukan clip kamu viral atau tidak. "
+        "Makanya simpan video ini biar kamu tidak rugi waktu edit."
+    )
+    tanpa_target = score_clip(transcript=text, duration=80, has_subtitle=True)
+    dengan_target = score_clip(
+        transcript=text, duration=80, has_subtitle=True, target_range=(60, 90)
+    )
+    assert tanpa_target["factors"]["duration"] < 0.6
+    assert dengan_target["factors"]["duration"] == 1.0
+    assert dengan_target["score"] > tanpa_target["score"]
+
+
+
 def test_score_always_in_range_and_has_factors():
     for transcript in ("", "halo", "Ini rahasia cara cepat viral! " * 20):
         for duration in (0, 5, 28, 120):

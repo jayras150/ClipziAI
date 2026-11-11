@@ -117,16 +117,23 @@ def test_hook_meningkatkan_skor_kandidat():
     plain_map = _build_map(plain_segments, plain_total)
     hook_map = _build_map(hook_segments, hook_total)
 
-    plain = score_candidate(plain_map, 0.0, 70.0, 60, 90)
-    hook_sentence = hook_map.sentences[20]
-    hook = score_candidate(
-        hook_map,
-        hook_map.refine_start(hook_sentence.start),
-        hook_map.refine_end(hook_sentence.end + 25.0),
+    # Jendela sama panjang (12 kalimat) supaya perbandingan adil.
+    plain = score_candidate(
+        plain_map,
+        plain_map.refine_start(plain_map.sentences[20].start),
+        plain_map.refine_end(plain_map.sentences[31].end),
         60,
         90,
     )
-    assert hook["score"] >= plain["score"]
+    hook = score_candidate(
+        hook_map,
+        hook_map.refine_start(hook_map.sentences[20].start),
+        hook_map.refine_end(hook_map.sentences[31].end),
+        60,
+        90,
+    )
+    assert hook["score"] > plain["score"]
+    assert hook["factors"]["hook_bonus"] > plain["factors"]["hook_bonus"]
 
 
 def test_transkrip_kosong_tidak_melempar_exception():

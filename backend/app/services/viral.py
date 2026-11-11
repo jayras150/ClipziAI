@@ -10,7 +10,7 @@ Semua faktor disimpan sebagai 0..1 supaya UI bisa menampilkan breakdown, dan
 `score` 0..100 untuk badge.
 """
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 # Kata yang biasanya menaikkan retensi (campuran ID/EN).
 POWER_WORDS = {
@@ -58,8 +58,13 @@ def score_clip(
     has_subtitle: bool = False,
     has_caption: bool = False,
     estimated: bool = False,
+    target_range: Optional[Tuple[float, float]] = None,
 ) -> Dict[str, Any]:
-    """Hitung skor viral 0-100 + breakdown faktor (semua 0..1)."""
+    """Hitung skor viral 0-100 + breakdown faktor (semua 0..1).
+
+    `target_range` membuat penilaian durasi mengikuti jendela yang dipilih user
+    (mis. 60–90 detik). Tanpa itu, dipakai sweet spot Shorts 18–45 detik.
+    """
     words = _words(transcript)
     count = len(words)
     lower = (transcript or "").lower()
@@ -80,8 +85,17 @@ def score_clip(
     if not words:
         hook = 0.15
 
-    # 2) Durasi: sweet spot Shorts/Reels 18-45 detik.
-    if 18 <= duration <= 45:
+    # 2) Durasi: ikuti jendela target user, atau sweet spot Shorts 18-45 detik.
+    if target_range:
+        low = max(5.0, float(target_range[0]) * 0.92)
+        high = max(low + 1.0, float(target_range[1]) * 1.18)
+        if low <= duration <= high:
+            fit = 1.0
+        elif duration < low:
+            fit = max(0.35, duration / low)
+        else:
+            fit = max(0.35, high / duration)
+    elif 18 <= duration <= 45:
         fit = 1.0
     elif 12 <= duration < 18 or 45 < duration <= 60:
         fit = 0.8
