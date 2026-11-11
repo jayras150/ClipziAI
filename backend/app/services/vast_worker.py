@@ -289,8 +289,13 @@ async def _supervise_safely(supervisor: "InstanceSupervisor") -> None:
         logger.exception("Supervisor instance gagal untuk task %s", supervisor.task_id)
 
 
-async def _dispatch_oneshot(task_id: UUID) -> Dict[str, Any]:
-    """Buat instance GPU untuk task ini, lalu pantau & ganti otomatis bila gagal."""
+def _make_create_instance(task_id: UUID, client: Any):
+    """Factory pembuat instance (dipakai dispatch DAN resume setelah restart).
+
+    Sebelumnya `resume_supervisors()` mengirim `create_instance=None`, sehingga
+    saat instance hasil adopsi gagal dan supervisor mencoba percobaan ke-2,
+    muncul `'NoneType' object is not callable` dan task langsung mati.
+    """
     image = (settings.VAST_WORKER_IMAGE or "").strip()
     template_hash = (settings.VAST_TEMPLATE_HASH or "").strip()
     if not image and not template_hash:
@@ -299,25 +304,19 @@ async def _dispatch_oneshot(task_id: UUID) -> Dict[str, Any]:
             "Contoh: VAST_WORKER_IMAGE=budi/clipzi-backend:1.0.0"
         )
 
-    client = _get_vast_client()
-    offer = await _pick_offer(client)
-    logger.info(
-        "Task %s: offer awal %s (%s $%s/jam)",
-        task_id,
-        offer.get("id"),
-        offer.get("gpu_name"),
-        offer.get("dph_total"),
-    )
-
     async def _create(selected: Dict[str, Any]) -> int:
+        offer_id = selected.get("id")
+        if not offer_id:
+            raise RuntimeError(f"offer tidak punya id: {selected}")
+
         worker_env = {"CLIPZI_ROLE": "worker", "CLIPZI_TASK_ID": str(task_id)}
         if settings.CLIPZI_CALLBACK_URL:
             worker_env["CLIPZI_CALLBACK_URL"] = settings.CLIPZI_CALLBACK_URL
         if settings.CLIPZI_WORKER_TOKEN:
             worker_env["CLIPZI_WORKER_TOKEN"] = settings.CLIPZI_WORKER_TOKEN
+
         kwargs: Dict[str, Any] = {
             "disk": settings.VAST_WORKER_DISK,
-            # CLIPZI_TASK_ID dibaca script onstart di dalam image.
             "env": worker_env,
             "label": f"clipzi-{str(task_id)[:8]}",
             "onstart_cmd": _oneshot_onstart(task_id),
@@ -327,13 +326,28 @@ async def _dispatch_oneshot(task_id: UUID) -> Dict[str, Any]:
             kwargs["template_hash"] = template_hash
         else:
             kwargs["image"] = image
-        created = await asyncio.to_thread(
-            client.create_instance, selected["id"], **kwargs
-        )
+
+        created = await asyncio.to_thread(client.create_instance, offer_id, **kwargs)
         instance_id = created.get("new_contract") or created.get("instance_id")
         if not instance_id:
             raise RuntimeError(f"create_instance tidak mengembalikan instance id: {created}")
         return int(instance_id)
+
+    return _create
+
+
+async def _dispatch_oneshot(task_id: UUID) -> Dict[str, Any]:
+    """Buat instance GPU untuk task ini, lalu pantau & ganti otomatis bila gagal."""
+    client = _get_vast_client()
+    create_instance = _make_create_instance(task_id, client)
+    offer = await _pick_offer(client)
+    logger.info(
+        "Task %s: offer awal %s (%s $%s/jam)",
+        task_id,
+        offer.get("id"),
+        offer.get("gpu_name"),
+        offer.get("dph_total"),
+    )
 
     from app.services.instance_supervisor import InstanceSupervisor
 
@@ -342,7 +356,7 @@ async def _dispatch_oneshot(task_id: UUID) -> Dict[str, Any]:
         task_id=task_id,
         offer=offer,
         pick_offer=_pick_offer,
-        create_instance=_create,
+        create_instance=create_instance,
     )
     # Pantau + auto-replace di background; respons ke user tidak menunggu boot.
     asyncio.create_task(_supervise_safely(supervisor))
@@ -469,7 +483,9 @@ async def resume_supervisors() -> int:
                         "dph_total": row.price_per_hour,
                     },
                     pick_offer=_pick_offer,
-                    create_instance=None,  # type: ignore[arg-type]
+                    # WAJIB factory asli: kalau instance adopsi gagal, supervisor
+                    # harus bisa membuat instance pengganti.
+                    create_instance=_make_create_instance(row.task_id, client),
                 )
                 supervisor.adopt_instance_id = int(row.instance_id)
                 asyncio.create_task(_supervise_safely(supervisor))

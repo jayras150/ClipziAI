@@ -98,8 +98,11 @@ async def worker_events(
         # berikutnya): status LLM/CUDA, rerank, dan kegagalan unggah log.
         note_stages = {"llm_info", "llm_failed", "rerank_skipped", "logs_failed"}
         if payload.stage == "logs" and payload.message:
-            # URL bundle log (qurl.sh) — disimpan agar admin bisa mengunduh kapan pun.
-            row.log_tail = payload.message[:4000]
+            # URL bundle log (qurl.sh) ditaruh paling atas, catatan llm_info tetap ada.
+            existing = (row.log_tail or "").strip()
+            row.log_tail = (
+                f"LOG_URL={payload.message}" + (f"\n{existing}" if existing else "")
+            )[:4000]
         elif payload.stage in note_stages:
             note = f"[{payload.stage}] {(payload.message or '').strip()}"[:800]
             existing = row.log_tail or ""

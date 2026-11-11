@@ -147,6 +147,7 @@ class InstanceSupervisor:
         started = time.monotonic()
         ready_at: Optional[float] = None
         last_msg = ""
+        missing = 0
 
         while True:
             status = await self._task_status()
@@ -165,7 +166,17 @@ class InstanceSupervisor:
                 info = None
 
             if not info:
-                return "failed", "instance hilang (404)"
+                # Vast kadang membalas 404 sesaat saat container masih dibuat.
+                # Jangan langsung membunuh instance: konfirmasi dulu ke daftar
+                # instance, baru nyatakan hilang setelah 3 kali berturut-turut.
+                missing += 1
+                if missing >= 2 and await self._instance_exists(instance_id):
+                    missing = 0
+                elif missing >= 3:
+                    return "failed", "instance hilang (404 x3)"
+                await asyncio.sleep(settings.VAST_SUPERVISOR_INTERVAL)
+                continue
+            missing = 0
 
             actual = str(info.get("actual_status") or "").lower()
             cur_state = str(info.get("cur_state") or "").lower()
@@ -204,6 +215,17 @@ class InstanceSupervisor:
                 return "failed", f"boot timeout (status={actual or 'unknown'})"
 
             await asyncio.sleep(settings.VAST_SUPERVISOR_INTERVAL)
+
+    async def _instance_exists(self, instance_id: int) -> bool:
+        """Cek daftar instance milik user (lebih andal daripada 404 tunggal)."""
+        loop = asyncio.get_event_loop()
+        try:
+            rows = await loop.run_in_executor(None, self.client.show_instances)
+        except Exception:
+            return True  # gagal cek → anggap masih ada (jangan buang instance)
+        if not isinstance(rows, list):
+            return True
+        return any(int(row.get("id") or row.get("instance_id") or 0) == instance_id for row in rows)
 
     async def _update_record_by_instance(self, instance_id: int, **fields: Any) -> None:
         from sqlalchemy import select
@@ -302,6 +324,10 @@ class InstanceSupervisor:
                             instance_id,
                         )
                     else:
+                        # Saat adopsi, `self.offer` berasal dari baris DB dan bisa
+                        # tidak punya id offer → pilih offer baru dulu.
+                        if not self.offer.get("id"):
+                            self.offer = await self._next_offer()
                         instance_id = int(await self.create_instance(self.offer))
                 except Exception as exc:
                     last_reason = f"create_instance gagal: {str(exc)[:200]}"

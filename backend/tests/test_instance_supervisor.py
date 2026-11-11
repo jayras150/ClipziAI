@@ -10,20 +10,29 @@ from app.services import instance_supervisor as module
 from app.services.instance_supervisor import InstanceSupervisor
 
 
+_DEFAULT_INFO = {"actual_status": "running", "status_msg": "success"}
+_MISSING = object()
+
+
 class _FakeClient:
     def __init__(
         self,
         sequence: List[Optional[Dict[str, Any]]],
-        default: Optional[Dict[str, Any]] = None,
+        default: Any = _MISSING,
+        existing_ids: Optional[List[int]] = None,
     ) -> None:
         self.sequence = list(sequence)
-        self.default = default or {"actual_status": "running", "status_msg": "success"}
+        self.default = _DEFAULT_INFO if default is _MISSING else default
         self.destroyed: List[int] = []
+        self.existing_ids = [1] if existing_ids is None else existing_ids
 
     def show_instance(self, instance_id: int) -> Optional[Dict[str, Any]]:
         if not self.sequence:
             return self.default
         return self.sequence.pop(0)
+
+    def show_instances(self) -> List[Dict[str, Any]]:
+        return [{"id": i, "actual_status": "running"} for i in self.existing_ids]
 
     def destroy_instance(self, instance_id: int) -> Dict[str, Any]:
         self.destroyed.append(instance_id)
@@ -156,6 +165,49 @@ def test_run_mengganti_instance_lalu_berhasil():
     assert result["attempts"] == 2
     assert destroyed == [100, 200]
     assert sup.exclude_machines == {1}
+
+
+def test_watch_toleran_404_sesaat():
+    """Satu-dua kali None bukan alasan membuang instance (Vast sering telat)."""
+    client = _FakeClient([None, None, {"actual_status": "running"}, {"actual_status": "running"}])
+    sup = _supervisor(client, ["processing", "processing", "processing", "completed"])
+    outcome, reason = asyncio.run(sup._watch(1))
+    assert outcome == "done", reason
+
+
+def test_watch_404_tiga_kali_baru_gagal():
+    client = _FakeClient([], default=None, existing_ids=[])
+    sup = _supervisor(client, ["queued"])
+    outcome, reason = asyncio.run(sup._watch(1))
+    assert outcome == "failed"
+    assert "404" in reason
+
+
+def test_make_create_instance_meneruskan_env_dan_id(monkeypatch):
+    from app.services import vast_worker
+
+    captured: Dict[str, Any] = {}
+
+    class _Client:
+        def create_instance(self, offer_id: int, **kwargs: Any) -> Dict[str, Any]:
+            captured["offer_id"] = offer_id
+            captured["kwargs"] = kwargs
+            return {"success": True, "new_contract": 4242}
+
+    monkeypatch.setattr(vast_worker.settings, "VAST_WORKER_IMAGE", "user/img:worker")
+    monkeypatch.setattr(vast_worker.settings, "VAST_TEMPLATE_HASH", None)
+    monkeypatch.setattr(vast_worker.settings, "CLIPZI_CALLBACK_URL", "https://x/api/internal/worker/events")
+    monkeypatch.setattr(vast_worker.settings, "CLIPZI_WORKER_TOKEN", "tok")
+
+    create = vast_worker._make_create_instance("00000000-0000-0000-0000-000000000002", _Client())
+    instance_id = asyncio.run(create({"id": 99}))
+
+    assert instance_id == 4242
+    assert captured["offer_id"] == 99
+    assert captured["kwargs"]["image"] == "user/img:worker"
+    assert captured["kwargs"]["env"]["CLIPZI_CALLBACK_URL"].endswith("/worker/events")
+    assert captured["kwargs"]["label"].startswith("clipzi-")
+    assert captured["kwargs"]["onstart_cmd"] == "/app/deployments/pipeline_onstart.sh"
 
 
 def test_run_gagal_semua_percobaan_menandai_error():
