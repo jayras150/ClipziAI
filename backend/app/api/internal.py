@@ -94,7 +94,10 @@ async def worker_events(
         elif payload.event in {"error", "llm_failed"}:
             row.state = "worker_error"
             row.status_msg = (payload.message or payload.event)[:1000]
-        if payload.stage:
+        if payload.stage == "logs" and payload.message:
+            # URL bundle log (qurl.sh) — disimpan agar admin bisa mengunduh kapan pun.
+            row.log_tail = payload.message[:4000]
+        elif payload.stage:
             detail = payload.message or ""
             row.status_msg = (
                 f"{payload.stage}: {detail}" if detail else f"stage:{payload.stage}"

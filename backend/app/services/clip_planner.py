@@ -374,20 +374,47 @@ def rerank_with_llm(
     else:
         items = []
     if not isinstance(items, list) or not items:
+        if hasattr(llm, "last_error"):
+            llm.last_error = f"payload tanpa daftar clips: {str(payload)[:200]}"
         return list(candidates)
 
-    scores: Dict[int, Dict[str, Any]] = {}
+    def _as_int(value: Any) -> Optional[int]:
+        try:
+            return int(str(value).strip())
+        except (TypeError, ValueError):
+            return None
+
+    parsed: Dict[int, Dict[str, Any]] = {}
     for item in items:
         if not isinstance(item, dict):
             continue
-        try:
-            idx = int(item.get("id"))
-        except (TypeError, ValueError):
+        idx = _as_int(item.get("id", item.get("index")))
+        if idx is None:
             continue
-        if 0 <= idx < len(shortlist):
-            scores[idx] = item
+        parsed[idx] = item
+
+    if not parsed:
+        if hasattr(llm, "last_error"):
+            llm.last_error = f"payload tanpa id valid: {str(payload)[:200]}"
+        return list(candidates)
+
+    # Model sering membalas id 1-based (1..N) walau kandidat kita 0-based.
+    offset = 0
+    if 0 not in parsed and min(parsed) >= 1:
+        offset = 1
+
+    scores: Dict[int, Dict[str, Any]] = {}
+    for idx, item in parsed.items():
+        normalized = idx - offset
+        if 0 <= normalized < len(shortlist):
+            scores[normalized] = item
 
     if not scores:
+        if hasattr(llm, "last_error"):
+            llm.last_error = (
+                f"id tidak cocok (offset={offset}, ids={sorted(parsed)[:6]}, "
+                f"jumlah kandidat={len(shortlist)})"
+            )
         return list(candidates)
 
     reranked: List[Dict[str, Any]] = []

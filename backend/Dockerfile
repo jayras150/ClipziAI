@@ -158,6 +158,21 @@ FROM runtime AS api
 COPY --from=builder-api-whisper /opt/venv /opt/venv
 
 # =============================================================================
+# Model GGUF (Qwen3-4B-Instruct-2507) — stage terpisah TANPA ketergantungan kode.
+#
+# Kenapa dipisah: kalau unduhan 2,55 GB ada di stage `worker` (setelah `COPY . .`),
+# setiap perubahan kode membatalkan cache layer tersebut sehingga build ulang
+# mengunduh model lagi (build 7-19 menit). Stage ini cache-nya stabil.
+# =============================================================================
+FROM python:3.11-slim AS gguf
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+    && mkdir -p /models \
+    && curl -fsSL -o /models/Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf \
+       https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf \
+    && test "$(stat -c%s /models/Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf)" -gt 2000000000 \
+    && rm -rf /var/lib/apt/lists/*
+
+# =============================================================================
 # Image resmi llama.cpp (CUDA) — hanya diambil binernya untuk LLM lokal.
 # =============================================================================
 FROM ghcr.io/ggml-org/llama.cpp:server-cuda AS llama
@@ -211,10 +226,8 @@ ENV AI_PROVIDER="custom" \
     AI_MODEL="Qwen3-4B-Instruct-2507"
 
 USER root
-RUN mkdir -p /app/models \
-    && curl -fsSL -o /app/models/Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf \
-       https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf \
-    && test "$(stat -c%s /app/models/Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf)" -gt 2000000000 \
+COPY --from=gguf /models /app/models
+RUN test "$(stat -c%s /app/models/Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf)" -gt 2000000000 \
     && chown -R clipzi:clipzi /app/models \
     && /opt/llama/llama-server --version || true
 USER clipzi

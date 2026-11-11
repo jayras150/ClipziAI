@@ -192,13 +192,17 @@ class Settings(BaseSettings):
     VAST_MAX_ATTEMPTS: int = 5
     VAST_RETRY_BACKOFF: int = 5
     VAST_MAX_PRICE_MULTIPLIER: float = 2.0
-    VAST_BOOT_TIMEOUT: int = 180            # instance harus "running" dalam waktu ini
+    VAST_BOOT_TIMEOUT: int = 420            # image pull ±5 GB; instance harus running dalam waktu ini
     VAST_WORKER_START_TIMEOUT: int = 120    # task harus mulai diproses setelah running
     VAST_SUPERVISOR_INTERVAL: int = 5       # detik antar polling status instance
 
     # Callback worker → API (webhook milik kita; Vast tidak menyediakan webhook).
     CLIPZI_WORKER_TOKEN: Optional[str] = None
     CLIPZI_CALLBACK_URL: Optional[str] = None
+
+    # Unggah bundle log worker (worker.log + llama-server.log + env) ke qurl.sh
+    # di akhir setiap task, supaya bisa dianalisis walau instance sudah dihapus.
+    WORKER_LOG_UPLOAD: bool = True
 
     # Email SMTP
     SMTP_HOST: Optional[str] = None

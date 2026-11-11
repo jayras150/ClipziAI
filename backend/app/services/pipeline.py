@@ -180,6 +180,14 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
         work_dir = Path(settings.WORKER_WORK_DIR) / str(task.id)
         work_dir.mkdir(parents=True, exist_ok=True)
 
+        # Log proses worker → /tmp/clipzi-worker.log (diunggah ke qurl.sh di akhir).
+        try:
+            from app.services.log_bundle import install_file_logger
+
+            install_file_logger()
+        except Exception:
+            pass
+
         downloader = VideoDownloader(str(work_dir / "input"))
         processor = VideoProcessor(str(work_dir))
         transcriber = AudioTranscriber()
@@ -385,9 +393,18 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                         task.id,
                         [f"{s:.1f}-{s + d:.1f}" for s, d in ranges],
                     )
-                    if llm_ready and not any(
+                    rerank_applied = any(
                         (item.get("factors") or {}).get("reranked_by") for item in planned
-                    ):
+                    )
+                    rerank_error = "" if rerank_applied else str(
+                        getattr(local_llm, "last_error", "")
+                    )[:300]
+                    for item in planned:
+                        factors = item.setdefault("factors", {})
+                        factors["rerank_applied"] = rerank_applied
+                        if rerank_error:
+                            factors["rerank_error"] = rerank_error
+                    if llm_ready and not rerank_applied:
                         # LLM hidup tapi rerank tidak terpakai — kirim alasannya ke
                         # admin (worker log tidak bisa dibaca dari VPS).
                         try:
@@ -397,7 +414,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                                 task.id,
                                 "stage",
                                 stage="rerank_skipped",
-                                message=str(getattr(local_llm, "last_error", ""))[:400],
+                                message=rerank_error,
                             )
                         except Exception:
                             pass
@@ -870,6 +887,18 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                     local_llm.stop()
             except Exception:
                 pass
+            # Unggah log ke qurl.sh sebelum work_dir dihapus & instance dimatikan.
+            try:
+                from app.services.log_bundle import upload_log_bundle
+                from app.services.worker_callback import report_worker_event
+
+                log_url = await upload_log_bundle(str(task.id), str(work_dir))
+                if log_url:
+                    await report_worker_event(
+                        task.id, "stage", stage="logs", message=log_url
+                    )
+            except Exception as exc:
+                logger.warning("Unggah log worker dilewati: %s", exc)
             shutil.rmtree(work_dir, ignore_errors=True)
 
 

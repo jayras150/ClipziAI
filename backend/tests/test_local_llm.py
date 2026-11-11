@@ -70,6 +70,32 @@ def test_rerank_menerima_payload_array():
     assert result[0]["factors"]["llm_hook"] == "A"
 
 
+def test_rerank_menerima_id_1_based():
+    """Qwen sering membalas id 1..N; harus tetap dipetakan ke kandidat 0..N-1."""
+    llm = _FakeLLMAny(
+        [
+            {"id": 1, "score": 40, "hook": "A", "reason": "cukup"},
+            {"id": 2, "score": 60, "hook": "B", "reason": "bagus"},
+        ]
+    )
+    result = rerank_with_llm(_candidates(), llm, 60, 90)
+    by_start = {c["start"]: c for c in result}
+    # 0.55*40 + 0.45*80 = 58.0 ; 0.55*60 + 0.45*60 = 60.0
+    assert by_start[200.0]["score"] == 58.0
+    assert by_start[200.0]["factors"]["llm_hook"] == "A"
+    assert by_start[10.0]["score"] == 60.0
+
+
+def test_rerank_mencatat_error_saat_id_tidak_cocok():
+    class _LLMWithError(_FakeLLMAny):
+        last_error = ""
+
+    llm = _LLMWithError([{"id": 99, "score": 50}])
+    result = rerank_with_llm(_candidates(), llm, 60, 90)
+    assert {c["start"]: c["score"] for c in result} == {10.0: 60.0, 200.0: 80.0}
+    assert "id tidak cocok" in llm.last_error
+
+
 def test_parse_json_object_membersihkan_code_fence():
     assert parse_json_object('```json\n{"a": 1}\n```') == {"a": 1}
     assert parse_json_object("jawaban: {\"b\": 2} selesai") == {"b": 2}
