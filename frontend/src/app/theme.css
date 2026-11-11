@@ -1073,7 +1073,7 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
 .clip-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   padding-top: 9px;
   border-top: 1px solid rgba(255, 255, 255, 0.07);
   flex-wrap: wrap;
@@ -1088,7 +1088,7 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
   white-space: nowrap;
 }
 .clip-pick input { accent-color: var(--ui-gold); width: 13px; height: 13px; margin: 0; }
-.clip-split { display: flex; align-items: center; gap: 4px; flex: 1 1 auto; min-width: 0; }
+.clip-split { display: flex; align-items: center; gap: 4px; flex: 1 1 86px; min-width: 0; }
 .clip-split-input {
   width: 100%;
   min-width: 48px;
