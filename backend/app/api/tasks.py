@@ -40,6 +40,7 @@ ALLOWED_EDITING_OPTIONS = {
     "intro_url", "outro_url", "auto_zoom", "zoom_level",
     "music_url", "music_volume", "music_ducking",
     "max_clips", "burn_subtitle", "segments",
+    "target_duration_min", "target_duration_max",
 }
 
 
@@ -102,6 +103,13 @@ async def create_task(
         editing_options["caption_style"] = task_data.caption_style
     if task_data.speed != 1.0:
         editing_options["speed"] = task_data.speed
+
+    # Panjang klip = jendela target (soft). Hasil akhir mengikuti akhir kalimat,
+    # jadi boleh 1:03 / 1:16 — minimal 55 detik supaya tetap > 1 menit.
+    if task_data.target_duration_min is not None:
+        editing_options["target_duration_min"] = max(55, int(task_data.target_duration_min))
+    if task_data.target_duration_max is not None:
+        editing_options["target_duration_max"] = max(55, int(task_data.target_duration_max))
 
     # ---------- Fase 2: gaya & polish ----------
     if task_data.filter_preset:

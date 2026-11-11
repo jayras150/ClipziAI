@@ -39,6 +39,13 @@ import UserMenu from "@/components/UserMenu"
 
 const ACTIVE_STATUSES = ["queued", "processing"]
 
+/** Jendela panjang klip. Hasil akhir mengikuti akhir kalimat (bisa 1:03, 1:16). */
+const CLIP_LENGTH_PRESETS = [
+  { value: "60-90", label: "60–90 s · 1 min+", min: 60, max: 90 },
+  { value: "90-150", label: "90–150 s · 1.5–2.5 min", min: 90, max: 150 },
+  { value: "150-240", label: "150–240 s · 2.5–4 min", min: 150, max: 240 },
+]
+
 /**
  * Opsi gaya subtitle yang dikirim sebagai `editing_options.caption_style`.
  * Nilainya dipetakan ke preset CAPTION_STYLES di backend
@@ -142,6 +149,11 @@ export default function DashboardPage() {
   const [captionTextValue, setCaptionTextValue] = useState("")
   const [captionStyle, setCaptionStyle] = useState("")
   const [speedValue, setSpeedValue] = useState("1")
+  // Panjang klip = jendela target (soft): hasil akhir mengikuti batas kalimat,
+  // jadi boleh 1:03 / 1:16 — tidak dipaksa bulat 1 menit.
+  const [clipLength, setClipLength] = useState("60-90")
+  const [clipLengthCustom, setClipLengthCustom] = useState({ min: "", max: "" })
+  const [clipsQuota, setClipsQuota] = useState("auto")
   // Fase 2: gaya & polish
   const [filterPreset, setFilterPreset] = useState("none")
   const [blurFill, setBlurFill] = useState(false)
@@ -363,6 +375,24 @@ export default function DashboardPage() {
       if (caption) editingOptions.caption_text = caption
       if (captionStyle) editingOptions.caption_style = captionStyle
       if (!Number.isNaN(speed) && speed !== 1) editingOptions.speed = speed
+
+      // Panjang klip (soft window) + jumlah klip
+      if (clipLength === "custom") {
+        const customMin = parseFloat(clipLengthCustom.min)
+        const customMax = parseFloat(clipLengthCustom.max)
+        if (!Number.isNaN(customMin)) editingOptions.target_duration_min = Math.max(55, customMin)
+        if (!Number.isNaN(customMax)) editingOptions.target_duration_max = Math.max(55, customMax)
+      } else {
+        const preset = CLIP_LENGTH_PRESETS.find((item) => item.value === clipLength)
+        if (preset) {
+          editingOptions.target_duration_min = preset.min
+          editingOptions.target_duration_max = preset.max
+        }
+      }
+      if (clipsQuota !== "auto") {
+        const quota = parseInt(clipsQuota, 10)
+        if (!Number.isNaN(quota)) editingOptions.max_clips = quota
+      }
 
       // Fase 2: gaya & polish
       if (filterPreset && filterPreset !== "none") editingOptions.filter_preset = filterPreset
@@ -902,6 +932,78 @@ export default function DashboardPage() {
                     <option value="4">4×</option>
                   </select>
                 </div>
+
+                {/* Panjang klip (kanan kartu Speed). Soft target: batas akhir
+                    mengikuti akhir kalimat, jadi hasil bisa 1:03 / 1:16. */}
+                <div className="ui-opt">
+                  <label className="ui-opt-label" htmlFor="clip-length">
+                    Clip length
+                  </label>
+                  <select
+                    id="clip-length"
+                    value={clipLength}
+                    onChange={(e) => setClipLength(e.target.value)}
+                    className="ui-input"
+                  >
+                    {CLIP_LENGTH_PRESETS.map((preset) => (
+                      <option key={preset.value} value={preset.value}>
+                        {preset.label}
+                      </option>
+                    ))}
+                    <option value="custom">Custom…</option>
+                  </select>
+                  {clipLength === "custom" && (
+                    <div className="clip-length-custom">
+                      <input
+                        type="number"
+                        min="55"
+                        step="5"
+                        placeholder="min (s)"
+                        className="ui-input"
+                        value={clipLengthCustom.min}
+                        onChange={(e) =>
+                          setClipLengthCustom((current) => ({ ...current, min: e.target.value }))
+                        }
+                      />
+                      <input
+                        type="number"
+                        min="55"
+                        step="5"
+                        placeholder="max (s)"
+                        className="ui-input"
+                        value={clipLengthCustom.max}
+                        onChange={(e) =>
+                          setClipLengthCustom((current) => ({ ...current, max: e.target.value }))
+                        }
+                      />
+                    </div>
+                  )}
+                  <span className="ui-hint">
+                    Cuts land on finished sentences — 1:03 or 1:16 is normal.
+                  </span>
+                </div>
+
+                <div className="ui-opt">
+                  <label className="ui-opt-label" htmlFor="clips-count">
+                    Clips
+                  </label>
+                  <select
+                    id="clips-count"
+                    value={clipsQuota}
+                    onChange={(e) => setClipsQuota(e.target.value)}
+                    className="ui-input"
+                  >
+                    <option value="auto">Auto (by video length)</option>
+                    {[3, 4, 6, 8, 10].map((count) => (
+                      <option key={count} value={count}>
+                        {count} clips
+                      </option>
+                    ))}
+                  </select>
+                  <span className="ui-hint">
+                    Auto: 3 clips / 15 min · 6 / 30 min · 8 / 1 h · 10 / 2 h
+                  </span>
+                </div>
               </div>
                 {/* Opsi lanjutan (Fase 2) — kartu per kontrol. */}
                 <details className="ui-opt-details" style={{ marginTop: 14 }}>
@@ -1326,7 +1428,7 @@ export default function DashboardPage() {
                       </div>
                     )}
                     <div className="clip-grid">
-                      {clips.map((clip) => {
+                      {clips.map((clip, clipIndex) => {
                         const score = typeof clip.viral_score === "number" ? clip.viral_score : null
                         const band = viralBand(score ?? 0)
                         const factorLabel =
@@ -1337,7 +1439,10 @@ export default function DashboardPage() {
                           clip.ai_suggested_title ||
                           (/^Clip \d+ - /i.test(clip.title || "") ? "" : clip.title)
                         return (
-                          <article key={clip.id} className="clip-card">
+                          <article
+                            key={clip.id}
+                            className={`clip-card${selectedClips.includes(clip.id) ? " selected" : ""}`}
+                          >
                             <div className="clip-media">
                               {clip.download_url ? (
                                 <video
@@ -1358,23 +1463,31 @@ export default function DashboardPage() {
                                 />
                               ) : (
                                 <div
-                                  className="clip-video"
+                                  className="clip-fallback"
                                   style={{
                                     background: clip.thumbnail_url
                                       ? `url(${clip.thumbnail_url}) center / cover`
                                       : "linear-gradient(160deg,#2a2213,#141821)",
                                   }}
-                                />
+                                >
+                                  <Play size={20} />
+                                </div>
                               )}
                               <div className="clip-shade" />
                               <button
                                 type="button"
                                 className="clip-open"
-                                aria-label={`Open clip ${clip.clip_index + 1}`}
+                                aria-label={`Open clip ${clipIndex + 1}`}
                                 title="Open video, AI metadata, download, upload to YouTube"
                                 onClick={() => setModalClipId(clip.id)}
                               />
-                              <span className="clip-index">#{clip.clip_index + 1}</span>
+                              <span className="clip-index">
+                                {String(clipIndex + 1).padStart(2, "0")}
+                                <i>/{clips.length}</i>
+                              </span>
+                              <span className="clip-play" aria-hidden="true">
+                                <Play size={16} />
+                              </span>
 
                               {/* Viral Index bubble — klik = hitung ulang skor */}
                               <button
@@ -1396,21 +1509,18 @@ export default function DashboardPage() {
                                   </span>
                                 </span>
                                 <span className="viral-meta">
-                                  <span className="viral-cap">Viral Index</span>
+                                  <span className="viral-cap">Viral</span>
                                   <span className="viral-state">
-                                    {scoreBusy[clip.id] ? "Calculating…" : factorLabel || "Not scored yet"}
+                                    {scoreBusy[clip.id] ? "Calculating…" : factorLabel || "Not scored"}
                                   </span>
                                 </span>
                               </button>
-
-                              {hookText && (
-                                <p className="clip-hook">
-                                  <span>{hookText}</span>
-                                </p>
-                              )}
                             </div>
 
                             <div className="clip-body">
+                              <p className="clip-title">
+                                {hookText || `Clip ${clipIndex + 1}`}
+                              </p>
                               <div className="clip-meta">
                                 <span>{formatDuration(clip.duration)}</span>
                                 {clip.file_size ? (

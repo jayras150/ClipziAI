@@ -1129,7 +1129,10 @@ class VideoProcessor:
         """
         vf_filter = f"subtitles=filename={self._escape_filter_path(subtitle_path)}"
         preset = CAPTION_STYLES.get((style or "").strip().lower())
-        if preset:
+        # File .ass sudah membawa style sendiri (ukuran/posisi/karaoke), jadi
+        # force_style tidak boleh menimpanya.
+        is_ass = str(subtitle_path).lower().endswith(".ass")
+        if preset and not is_ass:
             # force_style berisi koma, jadi harus dibungkus kutip tunggal agar
             # filtergraph tidak menganggapnya pemisah antar-filter.
             force = str(preset["force_style"]).replace("'", "")

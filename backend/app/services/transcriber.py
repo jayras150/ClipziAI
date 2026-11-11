@@ -125,6 +125,9 @@ class AudioTranscriber:
             "language_probability": info.language_probability,
             "duration": info.duration,
             "segments": self._split_long_segments(segments),
+            # Segmen mentah (timestamp kata) untuk clip planner.
+            "raw_segments": segments,
+
             "full_text": " ".join(seg.get("text", "") for seg in segments),
         }
 
@@ -253,6 +256,9 @@ class AudioTranscriber:
             "language_probability": info.language_probability,
             "duration": info.duration,
             "segments": self._split_long_segments(segments),
+            # Segmen mentah (timestamp kata) untuk clip planner.
+            "raw_segments": segments,
+
             "full_text": " ".join(seg.get("text", "") for seg in segments),
         }
 
@@ -348,6 +354,9 @@ class AudioTranscriber:
             "language_probability": None,
             "duration": payload.get("duration"),
             "segments": self._split_long_segments(segments),
+            # Segmen mentah (timestamp kata) untuk clip planner.
+            "raw_segments": segments,
+
             "full_text": full_text.strip(),
         }
 

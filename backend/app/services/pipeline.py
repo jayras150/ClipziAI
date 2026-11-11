@@ -9,6 +9,7 @@ Alur:
 Semua state berada di luar proses (PostgreSQL, Redis, R2), sehingga fungsi ini
 aman dijalankan di worker mana pun, bahkan beberapa worker paralel sekaligus.
 """
+import asyncio
 import logging
 import shutil
 import time
@@ -22,9 +23,11 @@ from app.db.session import AsyncSessionLocal
 from app.models.clip import Clip
 from app.models.task import Task, TaskStatus
 from app.services import cookie_store
+from app.services.clip_planner import plan_clip_quota, plan_clips
 from app.services.credit_service import CreditService
 from app.services.downloader import VideoDownloader
 from app.services.processor import VideoProcessor, get_caption_style
+from app.services.speech_boundaries import detect_silences
 from app.services.storage import R2Storage
 from app.services.transcriber import AudioTranscriber
 from app.services.viral import score_clip
@@ -184,9 +187,19 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
             stage_marks[stage] = round(time.perf_counter() - _stage_start, 2)
 
         burn_subtitle = bool(options.get("burn_subtitle", True))
-        max_clips = int(options.get("max_clips", 3) or 3)
-        min_duration = float(task.target_duration_min or 30)
-        max_duration = float(task.target_duration_max or 60)
+        # Panjang klip: TIDAK dipaksa bulat. Ini hanya jendela target; batas
+        # akhir mengikuti akhir kalimat (bisa 1:03, 1:16, dst).
+        min_duration = float(
+            options.get("target_duration_min") or task.target_duration_min or 60
+        )
+        max_duration = float(
+            options.get("target_duration_max") or task.target_duration_max or 90
+        )
+        if max_duration < min_duration:
+            min_duration, max_duration = max_duration, min_duration
+        min_duration = max(55.0, min_duration)
+        requested_clips = options.get("max_clips")
+        max_clips = int(requested_clips) if requested_clips else 0  # 0 = auto
         # ---------- Fase 1: editing manual ----------
         manual_start = options.get("start_time")
         manual_end = options.get("end_time")
@@ -243,14 +256,21 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
 
             # 3) Ekstrak audio + transkripsi (API provider)
             segments: List[Dict[str, Any]] = []
+            raw_segments: List[Dict[str, Any]] = []
             try:
                 audio_path = await processor.extract_audio(
                     video_path, str(work_dir / "audio.mp3")
                 )
                 result = await transcriber.transcribe(audio_path)
                 segments = list(result.get("segments") or [])
+                # Segmen mentah menyimpan timestamp kata — dipakai planner untuk
+                # memotong tepat di jeda kalimat.
+                raw_segments = list(result.get("raw_segments") or segments)
                 logger.info(
-                    "Pipeline: %s segmen transkripsi untuk task %s", len(segments), task.id
+                    "Pipeline: %s segmen transkripsi (%s mentah) untuk task %s",
+                    len(segments),
+                    len(raw_segments),
+                    task.id,
                 )
             except Exception as exc:
                 # Transkripsi gagal bukan alasan menggagalkan task; klip tetap
@@ -259,8 +279,25 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
             await _set_progress(db, task, 35)
             _lap("transcribed")
 
-            # 4) Tentukan rentang klip — manual trim prioritas atas scene detection
+            # 4) Tentukan rentang klip — manual trim prioritas atas planner
             total_duration = float(info.get("duration") or 0)
+            if total_duration and total_duration < 60:
+                raise RuntimeError(
+                    "Source video must be at least 1 minute long — clips need enough "
+                    "conversation to cut at natural sentence boundaries."
+                )
+            if max_clips <= 0:
+                max_clips = plan_clip_quota(total_duration)
+            # Kapasitas fisik: tidak mungkin lebih banyak klip daripada durasi
+            # sumber dibagi panjang minimum klip.
+            capacity = max(1, int(total_duration // max(20.0, min_duration * 0.92)))
+            max_clips = max(1, min(max_clips, capacity, 10))
+            task.total_clips = max_clips
+            await db.commit()
+
+            planned: List[Dict[str, Any]] = []
+            planned_by_start: Dict[float, Dict[str, Any]] = {}
+
             if manual_start is not None:
                 start = float(manual_start)
                 end = float(manual_end) if manual_end is not None else total_duration
@@ -272,18 +309,53 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                     "Pipeline: trim manual task %s -> %.2f-%.2f detik", task.id, start, end
                 )
             else:
-                scenes = await processor.detect_scenes(video_path)
-                ranges = _select_clip_ranges(
-                    scenes,
-                    min_duration,
-                    max_duration,
-                    max_clips,
-                    total_duration,
-                )
+                # Planner berbasis ucapan: pilih kalimat utuh, sebar merata.
+                try:
+                    silences = await asyncio.get_event_loop().run_in_executor(
+                        None, detect_silences, video_path
+                    )
+                    planned = plan_clips(
+                        raw_segments,
+                        silences,
+                        total_duration,
+                        min_duration,
+                        max_duration,
+                        max_clips,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Clip planner gagal untuk task %s: %s", task.id, exc
+                    )
+                    planned = []
+
+                if planned:
+                    planned_by_start = {
+                        round(float(item["start"]), 2): item for item in planned
+                    }
+                    ranges = [
+                        (round(float(item["start"]), 2), round(float(item["duration"]), 2))
+                        for item in planned
+                    ]
+                    logger.info(
+                        "Pipeline: planner memilih %s klip untuk task %s: %s",
+                        len(ranges),
+                        task.id,
+                        [f"{s:.1f}-{s + d:.1f}" for s, d in ranges],
+                    )
+                else:
+                    scenes = await processor.detect_scenes(video_path)
+                    ranges = _select_clip_ranges(
+                        scenes,
+                        min_duration,
+                        max_duration,
+                        max_clips,
+                        total_duration,
+                    )
                 if not ranges:
                     raise RuntimeError(
                         "Tidak ada rentang klip yang bisa diproses dari video ini"
                     )
+
 
             # 5) Render tiap klip
             rendered: List[Dict[str, Any]] = []
@@ -331,13 +403,41 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                         srt_path = str(work_dir / f"clip_{index:02d}.srt")
                         transcriber.generate_srt(sliced, srt_path)
 
+                        # Utamakan ASS (karaoke per kata, 2 baris, posisi aman).
+                        # SRT tetap dibuat untuk tombol unduh subtitle.
+                        burn_path = srt_path
+                        try:
+                            from app.services.caption_ass import build_ass
+
+                            preset = get_caption_style(caption_style)
+                            out_w, out_h = processor._dimensions_for_ratio(aspect_ratio)
+                            ass_path = str(work_dir / f"clip_{index:02d}.ass")
+                            built = build_ass(
+                                raw_segments or segments,
+                                ass_path,
+                                str(preset.get("force_style") or ""),
+                                out_w,
+                                out_h,
+                                clip_start=start,
+                                clip_end=start + duration,
+                            )
+                            if built:
+                                burn_path = built
+                        except Exception as exc:
+                            logger.warning(
+                                "Caption ASS gagal (task %s klip %s): %s — pakai SRT",
+                                task.id,
+                                index,
+                                exc,
+                            )
+
                         # Burn subtitle bersifat opsional: kalau ffmpeg gagal
                         # (font/filter/path), klip tetap dikirim tanpa subtitle
                         # alih-alih menggagalkan seluruh task.
                         burned = str(work_dir / f"clip_{index:02d}_sub.mp4")
                         try:
                             await processor.burn_subtitle(
-                                raw_clip, srt_path, burned, style=caption_style
+                                raw_clip, burn_path, burned, style=caption_style
                             )
                             final_clip = burned
                         except Exception as exc:
@@ -523,23 +623,33 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                     )
                     thumbnail_url = storage.upload_file(thumb_path, thumb_key, "image/jpeg")
 
-                # Skor viral dihitung dari transkrip klip ini (bukan seluruh video)
-                # supaya hook/pacing mencerminkan potongan yang benar-benar diunggah.
-                clip_transcript = " ".join(
-                    str(seg.get("text") or "").strip()
-                    for seg in _slice_segments(segments or [], start, start + duration)
-                ).strip()
-                viral = score_clip(
-                    transcript=clip_transcript,
-                    duration=duration,
-                    has_subtitle=bool(subtitle_url),
-                    has_caption=bool(caption_text),
-                )
-                # Simpan transkrip di JSONB viral_factors (tanpa kolom baru) supaya
-                # skor bisa dihitung ulang penuh & siap dipakai karaoke caption.
-                if clip_transcript:
-                    viral["factors"]["transcript"] = clip_transcript[:2000]
-                    viral["factors"]["transcript_words"] = len(clip_transcript.split())
+                # Skor viral: pakai hasil planner (hook, payoff, kohesi, batas
+                # kalimat) bila ada; kalau tidak, hitung ulang dari transkrip klip.
+                plan = planned_by_start.get(round(start, 2))
+                if plan is not None:
+                    viral = {"score": plan["score"], "factors": dict(plan["factors"])}
+                    viral["factors"]["planned"] = True
+                    viral["factors"]["transcript"] = str(plan.get("transcript") or "")[:2000]
+                    viral["factors"]["transcript_words"] = len(
+                        str(plan.get("transcript") or "").split()
+                    )
+                else:
+                    clip_transcript = " ".join(
+                        str(seg.get("text") or "").strip()
+                        for seg in _slice_segments(segments or [], start, start + duration)
+                    ).strip()
+                    viral = score_clip(
+                        transcript=clip_transcript,
+                        duration=duration,
+                        has_subtitle=bool(subtitle_url),
+                        has_caption=bool(caption_text),
+                    )
+                    # Simpan transkrip di JSONB viral_factors (tanpa kolom baru) supaya
+                    # skor bisa dihitung ulang penuh & siap dipakai karaoke caption.
+                    if clip_transcript:
+                        viral["factors"]["transcript"] = clip_transcript[:2000]
+                        viral["factors"]["transcript_words"] = len(clip_transcript.split())
+
 
                 rendered.append(
                     {

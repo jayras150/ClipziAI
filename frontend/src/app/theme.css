@@ -818,14 +818,14 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
    ============================================================================= */
 .clip-grid {
   display: grid;
-  gap: 14px;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   align-items: stretch;
   width: 100%;
   margin-top: 16px;
 }
 @media (max-width: 620px) {
-  .clip-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .clip-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 }
 @media (max-width: 420px) {
   .clip-grid { grid-template-columns: 1fr; }
@@ -836,11 +836,11 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid rgba(244, 199, 107, 0.22);
-  border-radius: 18px;
-  background: linear-gradient(170deg, #12161f, #090b10);
-  box-shadow: var(--ui-shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  transition: transform 0.26s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.26s, box-shadow 0.26s;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: #0c0f16;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+  transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.24s, box-shadow 0.24s;
 }
 .clip-card::before {
   content: "";
@@ -848,26 +848,32 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
   inset: 0;
   border-radius: inherit;
   padding: 1px;
-  background: linear-gradient(150deg, rgba(244, 199, 107, 0.55), rgba(244, 199, 107, 0) 42%, rgba(110, 231, 215, 0.35));
+  background: linear-gradient(160deg, rgba(244, 199, 107, 0.34), rgba(244, 199, 107, 0) 38%, rgba(110, 231, 215, 0.18));
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
   pointer-events: none;
-  opacity: 0.85;
+  opacity: 0;
+  transition: opacity 0.24s;
 }
 .clip-card:hover {
-  transform: translateY(-4px);
-  border-color: rgba(244, 199, 107, 0.45);
-  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(244, 199, 107, 0.18);
+  transform: translateY(-3px);
+  border-color: rgba(244, 199, 107, 0.35);
+  box-shadow: 0 22px 44px rgba(0, 0, 0, 0.48);
 }
+.clip-card:hover::before { opacity: 1; }
+.clip-card.selected {
+  border-color: rgba(244, 199, 107, 0.75);
+  box-shadow: 0 0 0 1px rgba(244, 199, 107, 0.55), 0 18px 36px rgba(0, 0, 0, 0.42);
+}
+.clip-card.selected::before { opacity: 1; }
 .clip-media {
   position: relative;
   aspect-ratio: 9 / 16;
-  max-height: 380px;
+  max-height: 340px;
   overflow: hidden;
   background: #05070b;
   flex: 0 0 auto;
-  clip-path: polygon(0 14px, 14px 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%);
 }
 .clip-video {
   position: absolute;
@@ -877,17 +883,47 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
   display: block;
   transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.clip-card:hover .clip-video { transform: scale(1.05); }
+.clip-card:hover .clip-video { transform: scale(1.03); }
+.clip-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.5);
+  background: linear-gradient(160deg, #1a2030, #0b0e14);
+  background-size: cover;
+  background-position: center;
+}
+.clip-play {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(6, 8, 12, 0.66);
+  backdrop-filter: blur(8px);
+  color: #fff;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.2s, transform 0.2s;
+  pointer-events: none;
+}
+.clip-card:hover .clip-play { opacity: 1; transform: translateY(0); }
 .clip-shade {
   position: absolute;
   inset: 0;
   pointer-events: none;
   background: linear-gradient(
     180deg,
-    rgba(4, 6, 10, 0.78) 0%,
-    rgba(4, 6, 10, 0.05) 32%,
-    rgba(4, 6, 10, 0.22) 60%,
-    rgba(4, 6, 10, 0.95) 100%
+    rgba(4, 6, 10, 0.5) 0%,
+    rgba(4, 6, 10, 0) 26%,
+    rgba(4, 6, 10, 0) 74%,
+    rgba(4, 6, 10, 0.55) 100%
   );
 }
 .clip-open {
@@ -904,17 +940,21 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
   position: absolute;
   left: 10px; top: 10px;
   z-index: 2;
-  padding: 4px 9px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(6, 8, 12, 0.7);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 1px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(6, 8, 12, 0.62);
   backdrop-filter: blur(8px);
   font-family: var(--ui-mono);
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: 1px;
-  color: #ffe6b0;
+  letter-spacing: 0.8px;
+  color: #f4f6fa;
 }
+.clip-index i { font-style: normal; font-size: 9px; color: rgba(255, 255, 255, 0.45); }
 .clip-hook {
   position: absolute;
   left: 10px; right: 10px; bottom: 10px;
@@ -1000,18 +1040,34 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
 .viral-bubble.low { --ring: #f08a7a; }
 
 
-.clip-body { display: grid; gap: 9px; padding: 11px 12px 13px; flex: 1 1 auto; }
+.clip-body { display: grid; gap: 8px; padding: 12px 13px 13px; flex: 1 1 auto; }
+.clip-title {
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-family: var(--font-space), "Space Grotesk", sans-serif;
+  font-size: 13.5px;
+  font-weight: 650;
+  line-height: 1.35;
+  letter-spacing: -0.1px;
+  color: #eef0f5;
+}
+.clip-length-custom { display: flex; gap: 6px; }
+.clip-length-custom .ui-input { padding: 6px 8px; font-size: 12px; }
 .clip-meta {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
+  flex-wrap: wrap;
   font-family: var(--ui-mono);
   font-size: 10px;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
-  color: #9aa2b3;
+  color: #8d95a6;
 }
-.clip-meta b { font-size: 8px; color: #5f6779; }
+.clip-meta b { font-size: 8px; color: #4d5566; }
 .clip-actions {
   display: flex;
   align-items: center;
@@ -1515,7 +1571,7 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
   color: #fff3d3;
 }
 
-/* Tombol pilih file (watermark upload) — menyembunyikan input bawaan browser. */
+/* Tombol pilih file (watermark upload) ï¿½ menyembunyikan input bawaan browser. */
 .ui-file-btn {
   display: inline-flex;
   align-items: center;
