@@ -135,9 +135,6 @@ class LocalLLM:
             "-ngl", str(settings.LOCAL_LLM_GPU_LAYERS),
             "-c", str(settings.LOCAL_LLM_CTX),
             "--parallel", str(settings.LOCAL_LLM_PARALLEL),
-            "--batch-size", "512",
-            "--ubatch-size", "512",
-            "-fa",
             "--no-webui",
             "--jinja",
         ]
