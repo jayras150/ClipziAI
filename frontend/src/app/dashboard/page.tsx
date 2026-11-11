@@ -1434,9 +1434,15 @@ export default function DashboardPage() {
                         const factorLabel =
                           typeof clip.viral_factors?.label === "string" ? clip.viral_factors.label : ""
                         const estimated = Boolean(clip.viral_factors?.estimated)
-                        // Judul default pipeline ("Clip 2 - youtube") tidak layak jadi hook.
+                        // Judul kartu: judul AI → kalimat pembuka klip (hasil
+                        // planner) → judul lama; judul default "Clip N - ..." dibuang.
+                        const firstSentence =
+                          typeof clip.viral_factors?.first_sentence === "string"
+                            ? clip.viral_factors.first_sentence.replace(/\s+/g, " ").trim()
+                            : ""
                         const hookText =
                           clip.ai_suggested_title ||
+                          (firstSentence ? firstSentence.slice(0, 110) : "") ||
                           (/^Clip \d+ - /i.test(clip.title || "") ? "" : clip.title)
                         return (
                           <article
