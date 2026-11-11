@@ -332,6 +332,9 @@ class InstanceSupervisor:
 
                 outcome, reason = await self._watch(instance_id)
                 if outcome == "done":
+                    # Beri waktu singkat agar worker menyelesaikan unggahan log
+                    # (qurl.sh) sebelum instance dimatikan.
+                    await asyncio.sleep(10)
                     await self._destroy(instance_id, record_id, "task selesai")
                     active_instance = None
                     return {"ok": True, "instance_id": instance_id, "attempts": attempt}

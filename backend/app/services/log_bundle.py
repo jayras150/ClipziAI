@@ -138,21 +138,26 @@ async def upload_log_bundle(task_id: str, work_dir: Optional[str] = None) -> Opt
     try:
         with open(bundle_path, "rb") as handle:
             content = handle.read()
+        # qurl.sh butuh nama file di path (seperti upload dari pipe), dan
+        # `X-Format: url` membuat balasannya hanya URL (mudah diparse).
+        endpoint = f"{QURL_ENDPOINT}/{os.path.basename(bundle_path)}"
         async with httpx.AsyncClient(timeout=90) as client:
             response = await client.put(
-                QURL_ENDPOINT,
+                endpoint,
                 content=content,
                 headers={
                     "Content-Type": "application/gzip",
                     "X-TTL": "7d",
                     "X-Downloads": "100",
+                    "X-Format": "url",
                 },
             )
-        url = _parse_url(response.text)
+        text = (response.text or "").strip()
+        url = text if text.startswith("http") else _parse_url(text)
         if url:
             logger.info("Log worker terunggah: %s", url)
         else:
-            logger.warning("qurl.sh membalas tanpa URL: %s", (response.text or "")[:200])
+            logger.warning("qurl.sh membalas tanpa URL: %s", text[:200])
         return url
     except Exception as exc:
         logger.warning("Upload log ke qurl.sh gagal: %s", str(exc)[:200])
