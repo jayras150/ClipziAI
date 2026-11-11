@@ -59,7 +59,9 @@ def plan_clip_quota(source_seconds: float) -> int:
 
 
 def _clamp_score(value: float) -> float:
-    return round(max(0.0, min(100.0, value)), 1)
+    # Plafon 96 supaya skor tidak pernah "sempurna" dan antar klip tetap bisa
+    # dibedakan di UI.
+    return round(max(0.0, min(96.0, value)), 1)
 
 
 def _content_words(words: Sequence[Word]) -> List[str]:
@@ -106,7 +108,7 @@ def score_candidate(
     base = score_clip(
         transcript=text,
         duration=duration,
-        has_subtitle=True,
+        has_subtitle=False,  # subtitle baru dibuat setelah render
         has_caption=False,
         target_range=(target_min, target_max),
     )
@@ -147,7 +149,7 @@ def score_candidate(
     deviation = abs(duration - ideal) / max(1.0, ideal)
     fit_bonus = round(max(-6.0, 4.0 - deviation * 10.0), 1)
 
-    total = score + hook_bonus + payoff_bonus + filler_penalty + density_bonus + cohesion_bonus + fit_bonus
+    total = score + (hook_bonus + payoff_bonus + filler_penalty + density_bonus + cohesion_bonus + fit_bonus) * 0.55
     ok, notes = speech.validate(start, end)
 
     factors.update(

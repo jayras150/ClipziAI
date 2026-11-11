@@ -13,6 +13,7 @@ jadi tampilan konsisten di 9:16, 1:1, maupun 16:9.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -55,14 +56,27 @@ def group_into_cues(
     max_words: int = 5,
     max_chars: int = 26,
 ) -> List[List[Word]]:
-    """Kelompokkan kata menjadi cue pendek (maks 5 kata / 26 karakter)."""
+    """Kelompokkan kata menjadi cue pendek, pecah di tanda baca/jeda.
+
+    Cue tidak boleh melewati akhir kalimat atau jeda ≥ 0.35 s supaya teks tidak
+    terpotong di tengah frasa ("-berada banget / gue tetap").
+    """
     cues: List[List[Word]] = []
     current: List[Word] = []
     for word in words:
         if current:
             text_len = sum(len(w.text) + 1 for w in current) + len(word.text)
             gap = word.start - current[-1].end
-            if len(current) >= max_words or text_len > max_chars or gap > 0.65:
+            previous = current[-1].text.strip()
+            ends_sentence = bool(re.search(r"[.!?…]$", previous))
+            starts_fragment = word.text.strip().startswith(("-", "–", "—"))
+            if (
+                len(current) >= max_words
+                or text_len > max_chars
+                or gap > 0.35
+                or ends_sentence
+                or starts_fragment
+            ):
                 cues.append(current)
                 current = []
         current.append(word)
