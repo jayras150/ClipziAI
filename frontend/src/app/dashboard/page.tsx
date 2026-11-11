@@ -380,8 +380,8 @@ export default function DashboardPage() {
       if (clipLength === "custom") {
         const customMin = parseFloat(clipLengthCustom.min)
         const customMax = parseFloat(clipLengthCustom.max)
-        if (!Number.isNaN(customMin)) editingOptions.target_duration_min = Math.max(55, customMin)
-        if (!Number.isNaN(customMax)) editingOptions.target_duration_max = Math.max(55, customMax)
+        if (!Number.isNaN(customMin)) editingOptions.target_duration_min = Math.max(60, customMin)
+        if (!Number.isNaN(customMax)) editingOptions.target_duration_max = Math.max(60, customMax)
       } else {
         const preset = CLIP_LENGTH_PRESETS.find((item) => item.value === clipLength)
         if (preset) {
@@ -956,7 +956,7 @@ export default function DashboardPage() {
                     <div className="clip-length-custom">
                       <input
                         type="number"
-                        min="55"
+                        min="60"
                         step="5"
                         placeholder="min (s)"
                         className="ui-input"
@@ -967,7 +967,7 @@ export default function DashboardPage() {
                       />
                       <input
                         type="number"
-                        min="55"
+                        min="60"
                         step="5"
                         placeholder="max (s)"
                         className="ui-input"

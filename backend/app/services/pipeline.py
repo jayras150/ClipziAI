@@ -197,7 +197,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
         )
         if max_duration < min_duration:
             min_duration, max_duration = max_duration, min_duration
-        min_duration = max(55.0, min_duration)
+        min_duration = max(60.0, min_duration)
         requested_clips = options.get("max_clips")
         max_clips = int(requested_clips) if requested_clips else 0  # 0 = auto
         # ---------- Fase 1: editing manual ----------

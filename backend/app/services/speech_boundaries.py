@@ -55,7 +55,8 @@ class Word:
 
     @property
     def clean(self) -> str:
-        return _WORD_RE.sub("", self.text.strip().lower())
+        """Kata tanpa tanda baca, huruf kecil ('Rahasia?' -> 'rahasia')."""
+        return " ".join(_WORD_RE.findall(self.text.lower())).strip()
 
 
 @dataclass

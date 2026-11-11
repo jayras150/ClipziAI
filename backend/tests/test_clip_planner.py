@@ -136,5 +136,31 @@ def test_hook_meningkatkan_skor_kandidat():
     assert hook["factors"]["hook_bonus"] > plain["factors"]["hook_bonus"]
 
 
+def test_semua_klip_minimal_60_detik_dan_batas_bersih():
+    segments, total = _make_segments()
+    clips = plan_clips(segments, [], total, 60, 90, quota=3)
+    assert clips
+    for clip in clips:
+        assert clip["duration"] >= 60.0, "klip harus lebih dari 1 menit"
+        assert clip["factors"]["boundary_ok"] is True
+        assert clip["factors"]["boundary_notes"] == []
+
+
+def test_transkrip_halusinasi_berulang_ditolak():
+    repeated = _segments = [
+        {
+            "start": 0.0,
+            "end": 6.0,
+            "text": "halo ete " * 8,
+            "words": [
+                {"word": "halo", "start": i * 0.7, "end": i * 0.7 + 0.6, "probability": 0.4}
+                for i in range(8)
+            ],
+        }
+    ]
+    clips = plan_clips(repeated, [], 120.0, 60, 90, quota=1)
+    assert clips == []
+
+
 def test_transkrip_kosong_tidak_melempar_exception():
     assert plan_clips([], [], 600.0, 60, 90, quota=3) == []

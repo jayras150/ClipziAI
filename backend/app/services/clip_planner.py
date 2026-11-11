@@ -165,6 +165,75 @@ def score_candidate(
     return {"score": _clamp_score(total), "factors": factors, "transcript": text}
 
 
+def _build_units(segments: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Satuan ucapan = segmen Whisper (sudah VAD-aligned, berakhir di jeda).
+
+    Segmen sangat panjang dipecah agar titik potong tetap tersedia; segmen
+    pendek yang jedanya hampir nol digabung supaya tidak memotong frasa.
+    """
+    units: List[Dict[str, Any]] = []
+    for segment in segments or []:
+        try:
+            start = float(segment.get("start") or 0.0)
+            end = float(segment.get("end") or start)
+        except (TypeError, ValueError):
+            continue
+        text = str(segment.get("text") or "").strip()
+        words = extract_words([segment])
+        if end <= start or len(words) < 2:
+            continue
+        if units and start - units[-1]["end"] < 0.22:
+            units[-1]["end"] = max(units[-1]["end"], end)
+            units[-1]["text"] = (units[-1]["text"] + " " + text).strip()
+            units[-1]["words"].extend(words)
+            continue
+        units.append({"start": start, "end": end, "text": text, "words": words})
+
+    # Pecah unit > 18 detik (maks 3 bagian) supaya titik potong tetap rapat.
+    expanded: List[Dict[str, Any]] = []
+    for unit in units:
+        duration = unit["end"] - unit["start"]
+        if duration <= 18.0 or len(unit["words"]) < 8:
+            expanded.append(unit)
+            continue
+        parts = max(2, min(3, int(round(duration / 9.0))))
+        chunk = max(1, len(unit["words"]) // parts)
+        for index in range(parts):
+            subset = unit["words"][index * chunk: (index + 1) * chunk if index < parts - 1 else None]
+            if len(subset) < 2:
+                continue
+            expanded.append(
+                {
+                    "start": subset[0].start,
+                    "end": subset[-1].end,
+                    "text": " ".join(word.text for word in subset),
+                    "words": subset,
+                }
+            )
+    return expanded
+
+
+def _looks_repetitive(words: Sequence[Word]) -> bool:
+    """Deteksi halusinasi Whisper (kata berulang terus-menerus)."""
+    if len(words) < 14:
+        return False
+    unique = len({w.clean for w in words if w.clean})
+    return unique / max(1, len(words)) < 0.32
+
+
+_BAD_FIRST = {
+    "sih", "kan", "nah", "gitu", "gini", "kayak", "kaya", "terus", "lalu",
+    "dan", "tapi", "karena", "atau", "sama", "yaudah", "ya", "nih", "tuh",
+}
+
+
+def _bad_start(words: Sequence[Word]) -> bool:
+    """Awal klip tidak boleh partikel/gumaman ('sih', 'kan', 'eee')."""
+    if not words:
+        return True
+    first = words[0].clean
+    return first in FILLERS or first in _BAD_FIRST
+
 
 def _overlaps(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
     return a["start"] < b["end"] and b["start"] < a["end"]
@@ -226,50 +295,61 @@ def plan_clips(
     if len(words) < 12:
         return []
     sentences = build_sentences(words)
-    if len(sentences) < 2:
+    speech = SpeechMap(words, sentences, silences, total_duration)
+
+    units = _build_units(segments)
+    if len(units) < 3:
         return []
 
-    speech = SpeechMap(words, sentences, silences, total_duration)
     quota = int(quota or plan_clip_quota(total_duration))
-    quota = max(1, min(quota, len(sentences)))
+    quota = max(1, min(quota, len(units) // 2 or 1))
 
-    soft_min = max(20.0, float(target_min) * 0.92)
-    soft_max = max(soft_min + 5.0, float(target_max) * 1.25)
-    min_gap = max(8.0, float(target_min) * 0.5)
+    # Batas bawah HARAM di bawah 60 detik: klip harus > 1 menit.
+    hard_min = max(60.0, float(target_min))
+    soft_min = hard_min
+    soft_max = max(soft_min + 10.0, float(target_max) * 1.25)
+    min_gap = max(20.0, float(target_min) * 0.6)
 
     skip_intro_outro = total_duration > 180.0
     candidates: List[Dict[str, Any]] = []
 
-    for i, start_sentence in enumerate(sentences):
-        if _is_filler_start(start_sentence):
+    for i, first_unit in enumerate(units):
+        if _bad_start(first_unit["words"]):
             continue
         seen_starts: set[float] = set()
-        for j in range(i, len(sentences)):
-            end_sentence = sentences[j]
-            raw_duration = end_sentence.end - start_sentence.start
+        for j in range(i, len(units)):
+            last_unit = units[j]
+            raw_duration = last_unit["end"] - first_unit["start"]
             if raw_duration > soft_max:
                 break
             if raw_duration < soft_min:
                 continue
-            if not end_sentence.closes or end_sentence.ends_with_connector:
-                continue
 
-            start = speech.refine_start(start_sentence.start)
-            end = speech.refine_end(end_sentence.end)
+            start = speech.refine_start(first_unit["start"])
+            end = speech.refine_end(last_unit["end"])
             if start in seen_starts:
                 continue
             seen_starts.add(start)
 
             duration = end - start
-            if duration < soft_min * 0.95 or duration > soft_max * 1.08:
+            if duration < hard_min or duration > soft_max * 1.08:
                 continue
             if skip_intro_outro and (start < 2.0 or end > total_duration - 2.0):
+                continue
+            # Wajib: tidak memotong satu kata pun.
+            ok, notes = speech.validate(start, end)
+            if not ok:
+                continue
+            span_words = speech.words_between(start, end)
+            if _looks_repetitive(span_words):
+                continue
+            if speech.speech_seconds(start, end) / max(1.0, duration) < 0.32:
                 continue
 
             scored = score_candidate(speech, start, end, target_min, target_max)
             factors = scored["factors"]
-            factors["first_sentence"] = start_sentence.text[:280]
-            factors["last_sentence"] = end_sentence.text[:280]
+            factors["first_sentence"] = str(first_unit["text"])[:280]
+            factors["last_sentence"] = str(last_unit["text"])[:280]
             candidates.append(
                 {
                     "start": round(start, 3),

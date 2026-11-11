@@ -105,11 +105,11 @@ async def create_task(
         editing_options["speed"] = task_data.speed
 
     # Panjang klip = jendela target (soft). Hasil akhir mengikuti akhir kalimat,
-    # jadi boleh 1:03 / 1:16 — minimal 55 detik supaya tetap > 1 menit.
+    # jadi boleh 1:03 / 1:16 — minimal 60 detik supaya klip > 1 menit.
     if task_data.target_duration_min is not None:
-        editing_options["target_duration_min"] = max(55, int(task_data.target_duration_min))
+        editing_options["target_duration_min"] = max(60, int(task_data.target_duration_min))
     if task_data.target_duration_max is not None:
-        editing_options["target_duration_max"] = max(55, int(task_data.target_duration_max))
+        editing_options["target_duration_max"] = max(60, int(task_data.target_duration_max))
 
     # ---------- Fase 2: gaya & polish ----------
     if task_data.filter_preset:
