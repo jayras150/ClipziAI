@@ -262,10 +262,14 @@ class InstanceSupervisor:
         logger.info("Instance %s dihapus (task %s): %s", instance_id, self.task_id, reason)
 
     async def _collect_logs(self, instance_id: int) -> str:
+        """Ambil potongan log instance (maks 20 s — jangan sampai supervisor macet)."""
         loop = asyncio.get_event_loop()
         try:
-            text = await loop.run_in_executor(
-                None, lambda: self.client.logs(instance_id, tail="200")
+            text = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None, lambda: self.client.logs(instance_id, tail="200")
+                ),
+                timeout=20,
             )
             return str(text)[-4000:]
         except Exception as exc:
@@ -283,67 +287,89 @@ class InstanceSupervisor:
         """Jalankan sampai task selesai atau semua percobaan habis."""
         attempts = max(1, int(settings.VAST_MAX_ATTEMPTS))
         last_reason = "tidak diketahui"
+        active_instance: Optional[int] = None
 
-        for attempt in range(1, attempts + 1):
-            try:
-                instance_id = int(await self.create_instance(self.offer))
-            except Exception as exc:
-                last_reason = f"create_instance gagal: {str(exc)[:200]}"
-                logger.error("Percobaan %s: %s", attempt, last_reason)
+        try:
+            for attempt in range(1, attempts + 1):
+                try:
+                    instance_id = int(await self.create_instance(self.offer))
+                except Exception as exc:
+                    last_reason = f"create_instance gagal: {str(exc)[:200]}"
+                    logger.error("Percobaan %s: %s", attempt, last_reason)
+                    if attempt >= attempts:
+                        break
+                    await asyncio.sleep(settings.VAST_RETRY_BACKOFF)
+                    try:
+                        self.offer = await self._next_offer()
+                    except Exception as offer_exc:
+                        last_reason = f"tidak ada offer pengganti: {offer_exc}"
+                        break
+                    continue
+
+                active_instance = instance_id
+                record_id = await self._record_create(
+                    instance_id, self.offer, attempt, float(self.offer.get("dph_total") or 0)
+                )
+                logger.info(
+                    "Task %s percobaan %s/%s: instance %s di %s ($%s/jam)",
+                    self.task_id,
+                    attempt,
+                    attempts,
+                    instance_id,
+                    self.offer.get("gpu_name"),
+                    self.offer.get("dph_total"),
+                )
+
+                outcome, reason = await self._watch(instance_id)
+                if outcome == "done":
+                    await self._destroy(instance_id, record_id, "task selesai")
+                    active_instance = None
+                    return {"ok": True, "instance_id": instance_id, "attempts": attempt}
+
+                logger.warning(
+                    "Instance %s gagal (percobaan %s): %s", instance_id, attempt, reason
+                )
+                last_reason = reason
+                log_tail = await self._collect_logs(instance_id)
+                await self._update_record(
+                    record_id,
+                    state="failed",
+                    status_msg=reason[:1000],
+                    log_tail=log_tail or None,
+                )
+                await self._destroy(
+                    instance_id, record_id, f"attempt {attempt}: {reason}"
+                )
+                active_instance = None
+
+                machine = self.offer.get("machine_id")
+                if machine is not None:
+                    try:
+                        self.exclude_machines.add(int(machine))
+                    except (TypeError, ValueError):
+                        pass
+
                 if attempt >= attempts:
                     break
                 await asyncio.sleep(settings.VAST_RETRY_BACKOFF)
                 try:
                     self.offer = await self._next_offer()
                 except Exception as offer_exc:
-                    last_reason = f"tidak ada offer pengganti: {offer_exc}"
+                    last_reason = f"tidak ada offer pengganti: {str(offer_exc)[:160]}"
+                    logger.error("%s", last_reason)
                     break
-                continue
-
-            record_id = await self._record_create(
-                instance_id, self.offer, attempt, float(self.offer.get("dph_total") or 0)
-            )
-            logger.info(
-                "Task %s percobaan %s/%s: instance %s di %s ($%s/jam)",
-                self.task_id,
-                attempt,
-                attempts,
-                instance_id,
-                self.offer.get("gpu_name"),
-                self.offer.get("dph_total"),
-            )
-
-            outcome, reason = await self._watch(instance_id)
-            if outcome == "done":
-                await self._destroy(instance_id, record_id, "task selesai")
-                return {"ok": True, "instance_id": instance_id, "attempts": attempt}
-
-            last_reason = reason
-            log_tail = await self._collect_logs(instance_id)
-            await self._update_record(
-                record_id,
-                state="failed",
-                status_msg=reason[:1000],
-                log_tail=log_tail or None,
-            )
-            await self._destroy(instance_id, record_id, f"attempt {attempt}: {reason}")
-
-            machine = self.offer.get("machine_id")
-            if machine is not None:
+        finally:
+            # Jaring pengaman: kalau supervisor berhenti karena exception, instance
+            # yang masih hidup WAJIB dihapus supaya GPU tidak terus ditagih.
+            if active_instance is not None:
                 try:
-                    self.exclude_machines.add(int(machine))
-                except (TypeError, ValueError):
-                    pass
-
-            if attempt >= attempts:
-                break
-            await asyncio.sleep(settings.VAST_RETRY_BACKOFF)
-            try:
-                self.offer = await self._next_offer()
-            except Exception as offer_exc:
-                last_reason = f"tidak ada offer pengganti: {str(offer_exc)[:160]}"
-                logger.error("%s", last_reason)
-                break
+                    logger.error(
+                        "Supervisor berhenti tak terduga; menghapus instance %s",
+                        active_instance,
+                    )
+                    await self._destroy(active_instance, None, "supervisor berhenti")
+                except Exception:
+                    logger.exception("Gagal menghapus instance %s", active_instance)
 
         await self._fail_task(
             "Worker GPU gagal dijalankan setelah beberapa percobaan: " + last_reason
