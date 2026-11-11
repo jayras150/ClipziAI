@@ -94,9 +94,16 @@ async def worker_events(
         elif payload.event in {"error", "llm_failed"}:
             row.state = "worker_error"
             row.status_msg = (payload.message or payload.event)[:1000]
+        # Tahap yang informasinya harus tetap tersimpan (tidak tertimpa tahap
+        # berikutnya): status LLM/CUDA, rerank, dan kegagalan unggah log.
+        note_stages = {"llm_info", "llm_failed", "rerank_skipped", "logs_failed"}
         if payload.stage == "logs" and payload.message:
             # URL bundle log (qurl.sh) — disimpan agar admin bisa mengunduh kapan pun.
             row.log_tail = payload.message[:4000]
+        elif payload.stage in note_stages:
+            note = f"[{payload.stage}] {(payload.message or '').strip()}"[:800]
+            existing = row.log_tail or ""
+            row.log_tail = (f"{existing}\n{note}" if existing else note)[:4000]
         elif payload.stage:
             detail = payload.message or ""
             row.status_msg = (

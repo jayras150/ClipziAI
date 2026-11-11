@@ -904,10 +904,14 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                 from app.services.log_bundle import upload_log_bundle
                 from app.services.worker_callback import report_worker_event
 
-                log_url = await upload_log_bundle(str(task.id), str(work_dir))
+                log_url, log_error = await upload_log_bundle(str(task.id), str(work_dir))
                 if log_url:
                     await report_worker_event(
                         task.id, "stage", stage="logs", message=log_url
+                    )
+                else:
+                    await report_worker_event(
+                        task.id, "stage", stage="logs_failed", message=log_error[:400]
                     )
             except Exception as exc:
                 logger.warning("Unggah log worker dilewati: %s", exc)

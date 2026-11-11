@@ -25,8 +25,8 @@ def test_build_bundle_membuat_tar_gz(tmp_path):
     work_dir.mkdir()
     (work_dir / "clip_01.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\nhalo\n")
 
-    bundle = log_bundle._build_bundle("12345678-0000", str(work_dir))
-    assert bundle and os.path.exists(bundle)
+    bundle, error = log_bundle._build_bundle("12345678-0000", str(work_dir))
+    assert bundle and os.path.exists(bundle), error
     with tarfile.open(bundle, "r:gz") as tar:
         names = tar.getnames()
     assert any(name.startswith("work-clip_01.srt") for name in names)

@@ -13,6 +13,8 @@ import asyncio
 import logging
 import os
 import re
+import subprocess
+import sys
 import tarfile
 import time
 from typing import List, Optional
@@ -63,8 +65,8 @@ def _tail(path: str, limit: int = 200_000) -> Optional[str]:
         return None
 
 
-def _build_bundle(task_id: str, work_dir: Optional[str]) -> Optional[str]:
-    """Buat tar.gz berisi log + info lingkungan. Return path atau None."""
+def _build_bundle(task_id: str, work_dir: Optional[str]) -> tuple[Optional[str], str]:
+    """Buat tar.gz berisi log + info lingkungan. Return (path, error_message)."""
     bundle_path = f"/tmp/clipzi-logs-{str(task_id)[:8]}.tar.gz"
     staging = f"/tmp/clipzi-logstage-{str(task_id)[:8]}"
     try:
@@ -83,30 +85,70 @@ def _build_bundle(task_id: str, work_dir: Optional[str]) -> Optional[str]:
                 if not name.endswith((".srt", ".ass", ".log", ".txt")):
                     continue
                 src = os.path.join(work_dir, name)
-                if os.path.getsize(src) < 2_000_000:
-                    with open(src, encoding="utf-8", errors="replace") as handle:
+                try:
+                    if os.path.getsize(src) < 2_000_000:
+                        with open(src, encoding="utf-8", errors="replace") as handle:
+                            content = handle.read()
                         with open(
                             os.path.join(staging, f"work-{name}"), "w", encoding="utf-8"
                         ) as out:
-                            out.write(handle.read())
+                            out.write(content)
+                except Exception:
+                    continue
 
-        with open(os.path.join(staging, "env.txt"), "w", encoding="utf-8") as out:
-            out.write(f"task_id={task_id}\ntime={time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}\n")
-            for key in ("GPU_WHISPER_MODEL", "TRANSCRIPTION_PROVIDER", "AI_MODEL", "LOCAL_LLM_MODEL_PATH"):
+        env_path = os.path.join(staging, "env.txt")
+        with open(env_path, "w", encoding="utf-8") as out:
+            out.write(
+                f"task_id={task_id}\ntime="
+                f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}\n"
+            )
+            for key in (
+                "GPU_WHISPER_MODEL",
+                "TRANSCRIPTION_PROVIDER",
+                "AI_MODEL",
+                "LOCAL_LLM_MODEL_PATH",
+                "LD_LIBRARY_PATH",
+            ):
                 out.write(f"{key}={os.environ.get(key, '')}\n")
-            try:
-                out.write("--- pip (subset) ---\n")
-                os.system("pip list 2>/dev/null | grep -Ei 'whisper|ctranslate|numpy|httpx' >> " + os.path.join(staging, "env.txt"))
-            except Exception:
-                pass
+
+        # Versi paket penting (tanpa shell; pip bisa saja tidak ada).
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-m", "pip", "list"],
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+            interesting = [
+                line
+                for line in (proc.stdout or "").splitlines()
+                if any(k in line.lower() for k in ("whisper", "ctranslate", "httpx", "numpy"))
+            ]
+            with open(env_path, "a", encoding="utf-8") as out:
+                out.write("--- pip ---\n" + "\n".join(interesting[:20]) + "\n")
+        except Exception as exc:
+            with open(env_path, "a", encoding="utf-8") as out:
+                out.write(f"--- pip tidak tersedia: {exc} ---\n")
+
+        # Info GPU (kalau nvidia-smi ada).
+        try:
+            smi = subprocess.run(
+                ["nvidia-smi", "--query-gpu=name,memory.total,memory.used", "--format=csv,noheader"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            with open(env_path, "a", encoding="utf-8") as out:
+                out.write("--- nvidia-smi ---\n" + (smi.stdout or smi.stderr or "")[:500] + "\n")
+        except Exception:
+            pass
 
         with tarfile.open(bundle_path, "w:gz") as tar:
             for name in os.listdir(staging):
                 tar.add(os.path.join(staging, name), arcname=name)
-        return bundle_path
+        return bundle_path, ""
     except Exception as exc:
-        logger.warning("Gagal membuat bundle log: %s", exc)
-        return None
+        return None, f"{type(exc).__name__}: {exc}"
     finally:
         try:
             for name in os.listdir(staging):
@@ -125,15 +167,23 @@ def _parse_url(text: str) -> Optional[str]:
     return None
 
 
-async def upload_log_bundle(task_id: str, work_dir: Optional[str] = None) -> Optional[str]:
-    """Unggah bundle log ke qurl.sh; return URL (None kalau gagal/dimatikan)."""
+async def upload_log_bundle(
+    task_id: str, work_dir: Optional[str] = None
+) -> tuple[Optional[str], str]:
+    """Unggah bundle log ke qurl.sh.
+
+    Return `(url, error)`: url terisi kalau sukses, error berisi alasan bila gagal
+    (dipakai worker untuk melaporkan `logs_failed` ke admin).
+    """
     settings = get_settings()
     if not getattr(settings, "WORKER_LOG_UPLOAD", True):
-        return None
+        return None, "WORKER_LOG_UPLOAD=false"
 
-    bundle_path = await asyncio.to_thread(_build_bundle, str(task_id), work_dir)
+    bundle_path, build_error = await asyncio.to_thread(
+        _build_bundle, str(task_id), work_dir
+    )
     if not bundle_path:
-        return None
+        return None, f"bundle gagal dibuat: {build_error}"
 
     try:
         with open(bundle_path, "rb") as handle:
@@ -156,12 +206,12 @@ async def upload_log_bundle(task_id: str, work_dir: Optional[str] = None) -> Opt
         url = text if text.startswith("http") else _parse_url(text)
         if url:
             logger.info("Log worker terunggah: %s", url)
-        else:
-            logger.warning("qurl.sh membalas tanpa URL: %s", text[:200])
-        return url
+            return url, ""
+        logger.warning("qurl.sh membalas tanpa URL: %s", text[:200])
+        return None, f"qurl tanpa URL (HTTP {response.status_code}): {text[:200]}"
     except Exception as exc:
         logger.warning("Upload log ke qurl.sh gagal: %s", str(exc)[:200])
-        return None
+        return None, f"{type(exc).__name__}: {str(exc)[:200]}"
     finally:
         try:
             os.remove(bundle_path)
