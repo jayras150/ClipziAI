@@ -24,13 +24,18 @@ type BrandingData = {
 // Branding diambil dari API (diatur admin). Server-side fetch supaya favicon dan
 // judul halaman ikut berubah tanpa rebuild frontend.
 async function loadBranding(): Promise<BrandingData | null> {
+  // Nama service di docker compose adalah `backend` (container clipzi-api).
+  // API_INTERNAL_URL diisi compose; fallback ini hanya jaring pengaman.
   const base =
     process.env.API_INTERNAL_URL ||
     process.env.NEXT_PUBLIC_API_URL ||
-    "http://clipzi-api:8000"
+    "http://backend:8000"
   try {
+    // Timeout pendek: branding TIDAK boleh menahan render/healthcheck bila API
+    // sedang lambat atau mati. Gagal -> pakai default.
     const response = await fetch(base.replace(/\/$/, "") + "/api/branding", {
       cache: "no-store",
+      signal: AbortSignal.timeout(3000),
     })
     if (!response.ok) return null
     return (await response.json()) as BrandingData

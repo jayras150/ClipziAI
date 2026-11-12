@@ -328,6 +328,11 @@ File yang dipakai di VPS:
 | `deploy/Caddyfile` | site publik + site admin + 404 `/api/admin/*` di domain publik |
 | `deploy/clipzi-cf-firewall.sh` | firewall Cloudflare-only |
 
+Env penting service `frontend` di compose: `NEXT_PUBLIC_API_URL` (untuk browser) dan
+`API_INTERNAL_URL=http://backend:8000` (fetch server-side: judul/favicon dari branding).
+Tanpa `API_INTERNAL_URL`, render server akan mencari host `backend` dan halaman bisa
+menggantung bila API lambat.
+
 Deploy pertama:
 ```bash
 docker compose -f docker-compose.vps.yml -f docker-compose.admin.yml up -d --build
