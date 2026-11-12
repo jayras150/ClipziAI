@@ -3,6 +3,7 @@
 // yang ditulis oleh frontend/docker-entrypoint.sh ketika container start.
 import type { Metadata } from "next"
 import Script from "next/script"
+import { BrandingProvider, type Branding } from "@/components/BrandingProvider"
 import "./globals.css"
 import "./theme.css"
 import "./landing.css"
@@ -15,7 +16,7 @@ import "./landing.css"
 const GOOGLE_FONTS_HREF =
   "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap"
 
-type BrandingData = {
+type BrandingData = Branding & {
   app_name?: string
   tagline?: string | null
   favicon_url?: string | null
@@ -50,20 +51,34 @@ export async function generateMetadata(): Promise<Metadata> {
   const description =
     branding?.tagline ||
     "Clipzy AI turns long videos into short, ready-to-publish clips with AI highlight detection, subtitles, and vertical reframing."
-  const icon = branding?.favicon_url || undefined
+  const rawIcon = branding?.favicon_url || undefined
+  const version = branding?.version || undefined
+  // ?v=<hash> memaksa browser memuat favicon baru setelah admin mengganti logo.
+  const icon =
+    rawIcon && version
+      ? rawIcon.includes("?")
+        ? `${rawIcon}&v=${version}`
+        : `${rawIcon}?v=${version}`
+      : rawIcon
   return {
     title: name + " - Create More. Edit Less.",
     description,
     icons: icon ? { icon, shortcut: icon, apple: icon } : undefined,
+    openGraph: branding?.og_image_url
+      ? { title: name, description, images: [branding.og_image_url] }
+      : { title: name, description },
   }
 }
 
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  // Branding dipakai SEMUA halaman (header landing, login, register, dashboard,
+  // footer) lewat context, bukan hardcode per file.
+  const branding = await loadBranding()
   return (
     <html lang="en">
       <head>
@@ -74,7 +89,7 @@ export default function RootLayout({
       <body>
         {/* Konfigurasi runtime (NEXT_PUBLIC_API_URL) dimuat sebelum bundle klien */}
         <Script src="/runtime-env.js" strategy="beforeInteractive" />
-        {children}
+        <BrandingProvider initial={branding}>{children}</BrandingProvider>
       </body>
     </html>
   )

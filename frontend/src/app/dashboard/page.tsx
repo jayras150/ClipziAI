@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
+import { BrandLogo } from "@/components/BrandingProvider"
 import {
   Upload,
   Play,
@@ -644,12 +645,7 @@ export default function DashboardPage() {
   return (
     <div className="ui-shell">
       <header className="ui-container ui-container-wide ui-nav">
-        <Link className="ui-brand" href="/">
-          <span className="ui-brand-mark">▶</span>
-          <span>
-            clipzy<em>AI</em>
-          </span>
-        </Link>
+        <BrandLogo />
         <nav className="ui-nav-links">
           <Link href="/dashboard">Dashboard</Link>
           <Link href="/#features">Features</Link>

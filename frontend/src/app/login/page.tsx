@@ -4,6 +4,7 @@ import { ClipzySpinner } from "@/components/ClipzySpinner"
 
 import { useState } from "react"
 import Link from "next/link"
+import { BrandLogo, BrandMark, BrandName } from "@/components/BrandingProvider"
 import { Mail, Lock } from "lucide-react"
 
 import { getApiBaseUrl } from "@/lib/env"
@@ -55,12 +56,7 @@ export default function LoginPage() {
   return (
     <div className="ui-shell">
       <div className="ui-container ui-nav">
-        <Link className="ui-brand" href="/">
-          <span className="ui-brand-mark">▶</span>
-          <span>
-            clipzy<em>AI</em>
-          </span>
-        </Link>
+        <BrandLogo />
         <div className="ui-nav-actions">
           <Link className="ui-btn ui-btn-ghost" href="/register">
             Sign up
@@ -78,11 +74,11 @@ export default function LoginPage() {
       >
         <div style={{ width: "min(420px, calc(100vw - 44px))" }}>
           <div style={{ textAlign: "center", marginBottom: 26 }}>
-            <div className="ui-brand-mark" style={{ margin: "0 auto 14px", width: 42, height: 42 }}>
-              ▶
+            <div style={{ margin: "0 auto 14px", display: "grid", placeItems: "center" }}>
+              <BrandMark size={42} />
             </div>
             <h2 className="ui-title" style={{ fontSize: 28 }}>
-              Sign in to <span className="ui-shine">Clipzy AI</span>
+              Sign in to <span className="ui-shine"><BrandName /></span>
             </h2>
             <p className="ui-muted" style={{ marginTop: 8 }}>
               Welcome back. Pick up where you left off.

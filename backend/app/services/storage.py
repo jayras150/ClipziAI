@@ -38,13 +38,21 @@ class R2Storage:
         )
         return self.get_public_url(object_key)
     
-    def upload_bytes(self, data: bytes, object_key: str, content_type: str = "application/octet-stream") -> str:
+    def upload_bytes(
+        self,
+        data: bytes,
+        object_key: str,
+        content_type: str = "application/octet-stream",
+        cache_control: str | None = None,
+    ) -> str:
         """Upload raw bytes to R2 and return the public URL."""
+        extra = {"CacheControl": cache_control} if cache_control else {}
         self.s3_client.put_object(
             Bucket=self.bucket,
             Key=object_key,
             Body=data,
             ContentType=content_type,
+            **extra,
         )
         return self.get_public_url(object_key)
     

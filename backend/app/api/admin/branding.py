@@ -27,6 +27,19 @@ ALLOWED_TYPES = {
 MAX_BYTES = 2 * 1024 * 1024
 
 
+def _image_size(data: bytes) -> tuple[Optional[int], Optional[int]]:
+    """Dimensi gambar (untuk card preview di dashboard). SVG/ICO bisa gagal."""
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+
+        with Image.open(BytesIO(data)) as image:
+            return image.width, image.height
+    except Exception:
+        return None, None
+
+
 class BrandingIn(BaseModel):
     app_name: str = Field(default="Clipzy AI", max_length=60)
     tagline: Optional[str] = Field(default=None, max_length=120)
@@ -98,9 +111,17 @@ async def upload_branding_asset(
 
     key = "branding/%s/%s.%s" % (kind, uuid4().hex, extension)
     try:
-        url = storage.upload_bytes(data, key, content_type)
+        url = storage.upload_bytes(
+            data,
+            key,
+            content_type,
+            # Nama objek selalu unik (uuid) sehingga aman di-cache lama.
+            cache_control="public, max-age=31536000, immutable",
+        )
     except Exception as exc:
         raise HTTPException(status_code=502, detail="Gagal unggah ke storage: %s" % str(exc)[:200])
+
+    width, height = _image_size(data)
 
     before = await get_branding(db)
     payload = dict(before)
@@ -122,7 +143,17 @@ async def upload_branding_asset(
         )
     )
     await db.commit()
-    return after
+    # Kembalikan detail aset supaya dashboard bisa menampilkan card preview
+    # (dimensi & ukuran) tanpa mengunduh ulang gambar.
+    return {
+        "kind": kind,
+        "url": url,
+        "size_bytes": len(data),
+        "content_type": content_type,
+        "width": width,
+        "height": height,
+        "branding": after,
+    }
 
 
 @router.post("/branding/reset")

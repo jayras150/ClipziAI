@@ -4,6 +4,7 @@ import { ClipzySpinner } from "@/components/ClipzySpinner"
 
 import { useState } from "react"
 import Link from "next/link"
+import { BrandLogo, BrandMark, BrandName } from "@/components/BrandingProvider"
 import { User, Mail, Lock } from "lucide-react"
 
 import { getApiBaseUrl } from "@/lib/env"
@@ -70,12 +71,7 @@ export default function RegisterPage() {
   return (
     <div className="ui-shell">
       <div className="ui-container ui-nav">
-        <Link className="ui-brand" href="/">
-          <span className="ui-brand-mark">▶</span>
-          <span>
-            clipzy<em>AI</em>
-          </span>
-        </Link>
+        <BrandLogo />
         <div className="ui-nav-actions">
           <Link className="ui-btn ui-btn-ghost" href="/login">
             Sign in
@@ -93,11 +89,11 @@ export default function RegisterPage() {
       >
         <div style={{ width: "min(440px, calc(100vw - 44px))" }}>
           <div style={{ textAlign: "center", marginBottom: 26 }}>
-            <div className="ui-brand-mark" style={{ margin: "0 auto 14px", width: 42, height: 42 }}>
-              ▶
+            <div style={{ margin: "0 auto 14px", display: "grid", placeItems: "center" }}>
+              <BrandMark size={42} />
             </div>
             <h2 className="ui-title" style={{ fontSize: 28 }}>
-              Create your <span className="ui-shine">Clipzy AI</span> account
+              Create your <span className="ui-shine"><BrandName /></span> account
             </h2>
             <p className="ui-muted" style={{ marginTop: 8 }}>
               5 free credits included. No credit card required.

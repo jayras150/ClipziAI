@@ -4,7 +4,21 @@ import { revalidatePath } from 'next/cache';
 
 import { adminFetch } from '@/lib/clipzi';
 
-export type SaveResult = { ok: boolean; error?: string; injected?: string[] };
+export type UploadedAsset = {
+  kind: 'logo' | 'favicon' | 'og';
+  url: string;
+  size_bytes?: number;
+  width?: number | null;
+  height?: number | null;
+  content_type?: string;
+};
+
+export type SaveResult = {
+  ok: boolean;
+  error?: string;
+  injected?: string[];
+  asset?: UploadedAsset;
+};
 
 export async function saveAi(payload: Record<string, unknown>): Promise<SaveResult> {
   try {
@@ -97,8 +111,26 @@ export async function uploadBrandingAsset(formData: FormData): Promise<SaveResul
     if (!response.ok) {
       return { ok: false, error: `${response.status} ${(await response.text()).slice(0, 200)}` };
     }
+    const data = (await response.json()) as {
+      kind?: 'logo' | 'favicon' | 'og';
+      url?: string;
+      size_bytes?: number;
+      width?: number | null;
+      height?: number | null;
+      content_type?: string;
+    };
     revalidatePath('/dashboard/settings/branding');
-    return { ok: true };
+    return {
+      ok: true,
+      asset: {
+        kind: (data.kind || kind) as 'logo' | 'favicon' | 'og',
+        url: data.url || '',
+        size_bytes: data.size_bytes,
+        width: data.width ?? null,
+        height: data.height ?? null,
+        content_type: data.content_type
+      }
+    };
   } catch (error) {
     return { ok: false, error: (error as Error).message };
   }

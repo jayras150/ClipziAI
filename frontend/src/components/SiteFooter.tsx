@@ -1,4 +1,7 @@
+"use client"
+
 import Link from "next/link"
+import { BrandLogo, BrandName } from "@/components/BrandingProvider"
 
 /**
  * Footer bersama untuk halaman aplikasi & legal.
@@ -8,14 +11,9 @@ export default function SiteFooter() {
   return (
     <footer className="ui-footer">
       <div className="ui-container ui-footer-inner">
-        <Link className="ui-brand" href="/">
-          <span className="ui-brand-mark">▶</span>
-          <span>
-            clipzy<em>AI</em>
-          </span>
-        </Link>
+        <BrandLogo />
         <span className="ui-footer-copy">
-          © {new Date().getFullYear()} Clipzy AI. All rights reserved.
+          © {new Date().getFullYear()} <BrandName />. All rights reserved.
         </span>
         <nav className="ui-footer-links">
           <Link href="/pricing">Pricing</Link>

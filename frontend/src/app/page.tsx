@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { BrandLogo, BrandName } from "@/components/BrandingProvider"
 import LandingAuth from "@/components/LandingAuth"
 import { useEffect, useRef, useState } from "react"
 
@@ -113,12 +114,7 @@ export default function LandingPage() {
   return (
     <div className="landing">
       <header className="container navbar">
-        <Link className="brand" href="#home" onClick={closeMenu}>
-          <span className="brand-mark">▶</span>
-          <span>
-            clipzy<em>AI</em>
-          </span>
-        </Link>
+        <BrandLogo variant="landing" href="#home" onClick={closeMenu} />
         <nav className={`nav-links${menuOpen ? " open" : ""}`}>
           <a href="#features" onClick={closeMenu}>Features</a>
           <a href="#how" onClick={closeMenu}>How it works</a>
@@ -377,12 +373,7 @@ export default function LandingPage() {
         </section>
 
         <footer className="container footer">
-          <Link className="brand" href="#home">
-            <span className="brand-mark">▶</span>
-            <span>
-              clipzy<em>AI</em>
-            </span>
-          </Link>
+          <BrandLogo variant="landing" href="#home" />
           <p>AI-powered video clipping for creators.</p>
           <div className="footer-links">
             <Link href="/pricing">Pricing</Link>
@@ -392,7 +383,7 @@ export default function LandingPage() {
             <Link href="/contact">Contact</Link>
           </div>
           <div className="footer-note">
-            © {year ?? 2026} Clipzy AI. All rights reserved.
+            © {year ?? 2026} <BrandName />. All rights reserved.
           </div>
         </footer>
       </main>
