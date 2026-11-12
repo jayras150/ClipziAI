@@ -435,6 +435,7 @@ clone source dari `repo.bundle` bila repo belum ada -> `pg_restore --clean --if-
 | `Sign in to confirm you're not a bot` | YouTube minta cookies: unggah di Settings > YouTube Cookies (base64 atau Netscape) |
 | Cookies selalu `expired` | Ekspor ulang cookies dari browser (mode incognito, login YouTube), unggah lagi, lalu **Uji** |
 | Domain baru belum aktif setelah "Terapkan domain" | Cek `systemctl status clipzi-domain-sync.timer`, `journalctl -u clipzi-domain-sync.service -n 50`, dan status di Settings › Platform (harus `applied`) |
+| Admin tampak "tidak berubah" setelah deploy | Compose admin memakai tag **`:admin`**, bukan `:latest`. Jalankan `docker pull sujinwo555/clipzi-admin:admin` lalu `docker compose -f docker-compose.admin.yml up -d --force-recreate admin`. |
 | Disk VPS penuh | `docker builder prune -af && docker image prune -af` |
 | Instance tertinggal | `GET /api/admin/workers/instances`, destroy manual, atau tunggu supervisor |
 
