@@ -12,11 +12,11 @@
 # -----------------------------------------------------------------------------
 # Stage 1: install dependencies
 # -----------------------------------------------------------------------------
-FROM node:20-alpine AS deps
+# Debian slim (bukan Alpine): di VPS ini apk gagal TLS ke dl-cdn.alpinelinux.org
+# sehingga build frontend tidak pernah selesai. Debian tidak butuh apk sama sekali.
+FROM node:20-bookworm-slim AS deps
 
 WORKDIR /app
-# libc6-compat dibutuhkan beberapa paket native (mis. swc)
-RUN apk add --no-cache libc6-compat
 
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -24,7 +24,7 @@ RUN npm ci
 # -----------------------------------------------------------------------------
 # Stage 2: build aplikasi
 # -----------------------------------------------------------------------------
-FROM node:20-alpine AS builder
+FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1 \
@@ -38,7 +38,7 @@ RUN npm run build
 # -----------------------------------------------------------------------------
 # Stage 3: runtime image (hanya file hasil standalone build)
 # -----------------------------------------------------------------------------
-FROM node:20-alpine AS runner
+FROM node:20-bookworm-slim AS runner
 
 WORKDIR /app
 
@@ -47,18 +47,17 @@ ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=0.0.0.0
 
-RUN addgroup -g 10001 -S nodejs \
-    && adduser -u 10001 -S nextjs -G nodejs
+# Image node:*-slim sudah menyediakan user non-root `node`.
 
 # Output "standalone" hanya membawa dependency yang benar-benar dipakai.
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=node:node /app/.next/standalone ./
+COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+COPY --from=builder --chown=node:node /app/public ./public
 
-COPY --chown=nextjs:nodejs docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY --chown=node:node docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh
 
-USER nextjs
+USER node
 
 EXPOSE 3000
 
