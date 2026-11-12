@@ -6,6 +6,7 @@ from app.models.ai_regenerate import AiRegenerateLog
 from app.models.api_key import APIKey
 from app.models.api_usage_log import APIUsageLog
 from app.models.audit_log import ActorType, AuditLog
+from app.models.auth_revocation import AuthRevocation
 from app.models.best_time_to_post import BestTimeToPost
 from app.models.bulk_job import BulkJob, BulkJobStatus
 from app.models.clip import Clip
@@ -40,7 +41,7 @@ from app.models.ytdlp_cookie import (
 
 __all__ = [
     "AdminSession", "AdminRole", "AdminUser", "AiRegenerateLog", "APIKey", "APIUsageLog", "ActorType",
-    "AuditLog", "BestTimeToPost", "BulkJob", "BulkJobStatus", "Clip", "ClipPerformance",
+    "AuditLog", "AuthRevocation", "BestTimeToPost", "BulkJob", "BulkJobStatus", "Clip", "ClipPerformance",
     "ClipTemplate", "ContentModeration", "ModerationStatus", "CopyrightCheck", "CopyrightAction",
     "CopyrightStatus", "CreditTransaction", "CreditTransactionType",
     "EncryptedSecret", "GDPRRequest", "GDPRRequestStatus", "GDPRRequestType", "Invoice",

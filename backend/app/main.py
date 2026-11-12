@@ -24,6 +24,7 @@ from app.api.admin import ytdlp_cookies as admin_ytdlp_cookies
 from app.api.admin import settings as admin_settings
 from app.api.admin import ai as admin_ai
 from app.api.admin import branding as admin_branding
+from app.api.admin import platform as admin_platform
 from app.api import branding as public_branding
 from app.api.admin import youtube as admin_youtube
 from app.api.admin import workers as admin_workers
@@ -69,6 +70,14 @@ async def lifespan(app: FastAPI):
         await load_and_apply_ai_config()
     except Exception as exc:
         logger.warning("Gagal memuat setelan AI dari database: %s", exc)
+    # Setelan ekosistem (domain publik/admin, support email, maintenance) juga
+    # disimpan di DB supaya ganti domain tidak perlu rebuild/restart.
+    try:
+        from app.services.platform_config import load_and_apply_platform_config
+
+        await load_and_apply_platform_config()
+    except Exception as exc:
+        logger.warning("Gagal memuat setelan platform dari database: %s", exc)
     yield
     # Shutdown
     await engine.dispose()
@@ -96,6 +105,45 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def dynamic_origin_cors(request, call_next):
+    """
+    CORS untuk origin yang diatur dari dashboard (domain publik/admin).
+
+    `CORSMiddleware` di atas hanya mengenal origin dari env saat container
+    start. Supaya ganti domain langsung berlaku, origin dari setelan platform
+    ditangani di sini (daftar `EXTRA_ORIGINS` diperbarui saat setelan disimpan
+    atau saat startup).
+    """
+    from starlette.responses import Response
+
+    from app.services.platform_config import EXTRA_ORIGINS
+
+    origin = request.headers.get("origin")
+    if origin and origin.rstrip("/") in [item.rstrip("/") for item in EXTRA_ORIGINS]:
+        if request.method == "OPTIONS":
+            return Response(
+                status_code=200,
+                headers={
+                    "Access-Control-Allow-Origin": origin,
+                    "Access-Control-Allow-Credentials": "true",
+                    "Access-Control-Allow-Methods": "*",
+                    "Access-Control-Allow-Headers": request.headers.get(
+                        "access-control-request-headers", "*"
+                    ),
+                    "Access-Control-Max-Age": "600",
+                },
+            )
+        response = await call_next(request)
+        if "access-control-allow-origin" not in {
+            key.lower() for key in response.headers.keys()
+        }:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+        return response
+    return await call_next(request)
 
 # Routers - Public API
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
@@ -131,6 +179,9 @@ app.include_router(admin_system.router, prefix="/api/admin/system", tags=["Admin
 app.include_router(admin_security.router, prefix="/api/admin/security", tags=["Admin Security"])
 app.include_router(admin_settings.router, prefix="/api/admin/settings", tags=["Admin Settings"])
 app.include_router(admin_ai.router, prefix="/api/admin/settings", tags=["Admin AI Settings"])
+app.include_router(
+    admin_platform.router, prefix="/api/admin/settings", tags=["Admin Platform Settings"]
+)
 app.include_router(
     admin_branding.router, prefix="/api/admin/settings", tags=["Admin Branding"]
 )

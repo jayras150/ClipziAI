@@ -15,6 +15,7 @@ import hashlib
 import hmac
 import json
 import logging
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -31,7 +32,83 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-class WorkerEvent(BaseModel):
+def _verify_agent_token(request: Request) -> None:
+    """Autentikasi agent host (domain sync). Token sama dengan worker token."""
+    token = (get_settings().CLIPZI_WORKER_TOKEN or "").strip()
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Agent token is not configured (CLIPZI_WORKER_TOKEN).",
+        )
+    provided = (request.headers.get("x-clipzi-token") or "").strip()
+    if not provided or not hmac.compare_digest(token, provided):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+
+class DomainAppliedIn(BaseModel):
+    domain: str
+    admin_domain: str | None = None
+    ok: bool = True
+    error: str | None = None
+
+
+@router.get("/domain-task")
+async def domain_task(request: Request, db: AsyncSession = Depends(get_db_session)):
+    """
+    Dipakai `deploy/clipzi-domain-sync.sh` di VPS: membaca permintaan ganti
+    domain yang masih pending. Kosong = tidak ada pekerjaan.
+    """
+    from app.services import platform_config as pc
+
+    _verify_agent_token(request)
+    config = await pc.get_platform_config(db)
+    if config.get("domain_status") != "pending" or not config.get("pending_domain"):
+        return {"pending": False}
+    return {
+        "pending": True,
+        "domain": config.get("pending_domain"),
+        "admin_domain": config.get("pending_admin_domain"),
+        "requested_at": config.get("domain_requested_at"),
+        "current_site_url": pc.site_url(config),
+    }
+
+
+@router.post("/domain-applied")
+async def domain_applied(
+    payload: DomainAppliedIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Laporan hasil penerapan domain oleh agent host."""
+    from app.services import platform_config as pc
+
+    _verify_agent_token(request)
+    if payload.ok:
+        config = await pc.set_platform_config(
+            db,
+            {
+                "site_url": f"https://{payload.domain}",
+                "admin_url": (
+                    f"https://{payload.admin_domain}" if payload.admin_domain else None
+                ),
+                "applied_domain": payload.domain,
+                "pending_domain": None,
+                "pending_admin_domain": None,
+                "domain_status": "applied",
+                "domain_applied_at": datetime.now(timezone.utc).isoformat(),
+                "domain_last_error": None,
+            },
+        )
+        pc.apply_platform_config_to_env(config)
+        return {"status": "applied", "site_url": pc.site_url(config)}
+
+    await pc.set_platform_config(
+        db, {"domain_status": "failed", "domain_last_error": (payload.error or "")[:500]}
+    )
+    return {"status": "failed"}
+
+
+
     task_id: str
     event: str                      # boot | started | stage | done | error
     instance_id: int | None = None

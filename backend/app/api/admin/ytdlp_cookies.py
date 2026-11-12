@@ -13,6 +13,8 @@ Alur rotasi:
      (otomatis lewat probe/cron atau manual), lalu cookies baru di-upload
      ke endpoint ini.
 """
+import base64
+import binascii
 import logging
 from typing import Optional
 from uuid import UUID
@@ -35,7 +37,73 @@ router = APIRouter(dependencies=[Depends(get_current_admin)])
 
 class CookieCreate(BaseModel):
     label: str = Field(min_length=1, max_length=120, description="Nama unik, mis. 'akun-1'")
-    cookies: str = Field(min_length=10, description="Isi cookies.txt (format Netscape)")
+    cookies: Optional[str] = Field(
+        default=None, description="Isi cookies.txt (format Netscape)"
+    )
+    cookies_base64: Optional[str] = Field(
+        default=None, description="Alternatif: isi cookies.txt yang di-encode base64"
+    )
+
+
+def decode_cookies_base64(value: str) -> str:
+    """
+    Ubah base64 -> teks cookies.txt dengan toleransi:
+      - prefix `data:text/plain;base64,`
+      - spasi/baris baru sisa copy-paste
+      - varian urlsafe (- dan _)
+    """
+    text = (value or "").strip()
+    if not text:
+        raise ValueError("Isi base64 kosong.")
+    if text.startswith("data:") and "," in text:
+        text = text.split(",", 1)[1]
+    text = "".join(text.split())
+    text = text.replace("-", "+").replace("_", "/")
+    padding = len(text) % 4
+    if padding:
+        text += "=" * (4 - padding)
+    try:
+        raw = base64.b64decode(text, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("Base64 tidak valid. Pastikan menyalin seluruh isi file.") from exc
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError("Hasil decode bukan teks UTF-8 (bukan cookies.txt).") from exc
+
+
+def encode_cookies_base64(value: str) -> str:
+    return base64.b64encode(value.encode("utf-8")).decode("ascii")
+
+
+def summarize_cookies(text: str) -> dict:
+    """Ringkasan aman (tanpa membocorkan value) untuk ditampilkan di UI."""
+    lines = [line for line in text.splitlines() if line.strip() and not line.startswith("#")]
+    domains = set()
+    expires = []
+    for line in lines:
+        parts = line.split("\t")
+        if len(parts) < 7:
+            continue
+        domains.add(parts[0].lstrip("."))
+        try:
+            stamp = int(parts[4])
+            if stamp > 0:
+                expires.append(stamp)
+        except ValueError:
+            continue
+    fastest = None
+    if expires:
+        from datetime import datetime, timezone
+
+        fastest = datetime.fromtimestamp(min(expires), tz=timezone.utc).isoformat()
+    return {
+        "cookie_count": len(lines),
+        "domains": sorted(domains)[:10],
+        "earliest_expiry": fastest,
+        "bytes": len(text.encode("utf-8")),
+    }
+
 
 
 class CookieItem(BaseModel):
@@ -82,12 +150,158 @@ async def create_cookie(
     payload: CookieCreate,
     db: AsyncSession = Depends(get_db_session),
 ):
-    """Upload cookies.txt baru (menimpa label yang sama)."""
+    """
+    Upload cookies baru (menimpa label yang sama).
+
+    Bisa mengirim `cookies` (format Netscape apa adanya) ATAU `cookies_base64`
+    (hasil `base64 cookies.txt`) — base64 akan di-decode & divalidasi lebih dulu.
+    """
+    text = (payload.cookies or "").strip()
+    if not text and payload.cookies_base64:
+        try:
+            text = decode_cookies_base64(payload.cookies_base64)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not text:
+        raise HTTPException(status_code=400, detail="Isi cookies wajib (Netscape atau base64).")
+
     try:
-        cookie = await cookie_store.add_cookie(db, payload.label, payload.cookies)
+        cookie = await cookie_store.add_cookie(db, payload.label, text)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _to_item(cookie)
+
+
+@router.post("/validate")
+async def validate_input(payload: CookieCreate):
+    """
+    Cek isi cookies sebelum disimpan: deteksi format, jumlah cookie, domain,
+    dan kedaluwarsa tercepat. Tidak menyimpan apa pun.
+    """
+    raw = (payload.cookies or "").strip()
+    source = "netscape"
+    if not raw and payload.cookies_base64:
+        try:
+            raw = decode_cookies_base64(payload.cookies_base64)
+        except ValueError as exc:
+            return {"valid": False, "error": str(exc)}
+        source = "base64"
+    if not raw:
+        return {"valid": False, "error": "Isi cookies kosong."}
+
+    try:
+        cookie_store.validate_cookies_text(raw)
+    except ValueError as exc:
+        return {"valid": False, "error": str(exc), "source": source}
+
+    return {"valid": True, "source": source, "summary": summarize_cookies(raw)}
+
+
+@router.post("/import-base64", response_model=CookieItem, status_code=201)
+async def import_base64(
+    payload: CookieCreate,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Endpoint khusus base64 (dipakai form 'Tempel base64' di dashboard)."""
+    if not payload.cookies_base64:
+        raise HTTPException(status_code=400, detail="Field cookies_base64 wajib diisi.")
+    try:
+        text = decode_cookies_base64(payload.cookies_base64)
+        cookie = await cookie_store.add_cookie(db, payload.label, text)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _to_item(cookie)
+
+
+@router.get("/settings")
+async def read_youtube_settings(db: AsyncSession = Depends(get_db_session)):
+    """Mode cookies yang aktif: rotasi DB (disarankan) atau base64 env."""
+    from app.services import platform_settings as ps
+
+    raw = await ps.get_setting(db, "youtube", {}) or {}
+    return {
+        "mode": raw.get("mode") or "db",
+        "label": raw.get("label"),
+        "updated_at": raw.get("updated_at"),
+        "base64_set": bool(raw.get("cookies_base64_enc")),
+        "base64_chars": len(raw.get("cookies_base64_enc") or ""),
+        "summary": raw.get("summary"),
+    }
+
+
+@router.put("/settings")
+async def update_youtube_settings(
+    payload: dict,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """
+    Simpan setelan cookies YouTube.
+
+    body: {"mode": "db"|"base64", "label": "akun-1", "cookies_base64": "..."}
+
+    Mode `base64` menyimpan base64 terenkripsi di platform_settings dan langsung
+    meng-inject ke `settings.YTDLP_COOKIES_BASE64` (tanpa rebuild image).
+    """
+    from datetime import datetime, timezone
+
+    from app.core.config import get_settings
+    from app.core.security import encrypt_field
+    from app.services import platform_settings as ps
+
+    mode = str(payload.get("mode") or "db").lower()
+    if mode not in ("db", "base64"):
+        raise HTTPException(status_code=400, detail="Mode harus 'db' atau 'base64'.")
+
+    label = str(payload.get("label") or "").strip() or "env-base64"
+    base64_text = (payload.get("cookies_base64") or "").strip()
+    stored = await ps.get_setting(db, "youtube", {}) or {}
+    value = dict(stored) if isinstance(stored, dict) else {}
+    value["mode"] = mode
+
+    if base64_text:
+        try:
+            plain = decode_cookies_base64(base64_text)
+            cookie_store.validate_cookies_text(plain)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        # Simpan sebagai baris rotasi DB (primary) + simpan base64 (untuk worker
+        # yang masih membaca env) dalam bentuk terenkripsi.
+        await cookie_store.add_cookie(db, label, plain)
+        value["cookies_base64_enc"] = encrypt_field(base64_text)
+        value["label"] = label
+        value["summary"] = summarize_cookies(plain)
+        value["updated_at"] = datetime.now(timezone.utc).isoformat()
+        get_settings().YTDLP_COOKIES_BASE64 = base64_text
+
+    await ps.set_setting(db, "youtube", value)
+
+    return {
+        "mode": value.get("mode"),
+        "label": value.get("label"),
+        "base64_set": bool(value.get("cookies_base64_enc")),
+        "updated_at": value.get("updated_at"),
+        "summary": value.get("summary"),
+        "env_injected": bool(base64_text),
+    }
+
+
+@router.get("/{cookie_id}/base64")
+async def export_base64(cookie_id: UUID, db: AsyncSession = Depends(get_db_session)):
+    """
+    Ekspor cookies tersimpan sebagai base64 (untuk ditempel ke env worker
+    seperti `YTDLP_COOKIES_BASE64`). Hanya admin.
+    """
+    cookie = await _get_or_404(db, cookie_id)
+    try:
+        plain = decrypt_field(cookie.encrypted_cookies)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Gagal dekripsi: {exc}") from exc
+    return {
+        "label": cookie.label,
+        "base64": encode_cookies_base64(plain),
+        "summary": summarize_cookies(plain),
+    }
 
 
 @router.post("/probe-all")

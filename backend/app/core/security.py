@@ -80,7 +80,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     to_encode = data.copy()
     lifetime = expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_MINUTES)
     expire = datetime.now(timezone.utc) + lifetime
-    to_encode.update({"exp": expire, "type": "access"})
+    to_encode.update({"exp": expire, "iat": datetime.now(timezone.utc), "type": "access"})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm="HS256")
 
 
@@ -89,7 +89,7 @@ def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) 
     to_encode = data.copy()
     lifetime = expires_delta or timedelta(days=settings.REFRESH_TOKEN_DAYS)
     expire = datetime.now(timezone.utc) + lifetime
-    to_encode.update({"exp": expire, "type": "refresh"})
+    to_encode.update({"exp": expire, "iat": datetime.now(timezone.utc), "type": "refresh"})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm="HS256")
 
 

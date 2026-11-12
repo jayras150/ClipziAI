@@ -9,7 +9,7 @@ from app.api.admin.deps import get_current_admin
 from app.api.deps import get_db_session
 from app.models.audit_log import ActorType, AuditLog
 from app.models.user import User
-from app.services.ai_client import PROVIDER_DEFAULTS
+from app.services.ai_client import PROVIDER_DEFAULTS, provider_metadata
 from app.services.ai_config import (
     ai_is_configured,
     apply_ai_config_to_env,
@@ -40,6 +40,134 @@ class AIConfigIn(BaseModel):
     metadata_enabled: bool = True
     rerank_budget_seconds: int = Field(default=120, ge=20, le=600)
     metadata_budget_seconds: int = Field(default=180, ge=20, le=900)
+
+
+class AIModelsIn(BaseModel):
+    provider: Optional[str] = None
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
+
+
+# Cache daftar model: 5 menit. Katalog provider jarang berubah, sedangkan
+# dashboard bisa memanggil endpoint ini berkali-kali saat user memilih model.
+_MODEL_CACHE: Dict[str, tuple[float, List[dict]]] = {}
+_MODEL_CACHE_TTL = 300
+
+
+@router.get("/ai/providers")
+async def list_ai_providers(current_admin: User = Depends(get_current_admin)):
+    """Metadata provider (label, base URL bawaan, model default, link API key)."""
+    return {"items": provider_metadata()}
+
+
+@router.post("/ai/models")
+async def list_ai_models(
+    payload: AIModelsIn,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """
+    Ambil daftar model langsung dari provider (`GET {base_url}/models`).
+
+    Dipakai dashboard supaya admin memilih model dari daftar nyata (dengan
+    pencarian) alih-alih mengetik manual. Bila provider tidak menyediakan
+    /models, admin tetap bisa mengisi nama model manual.
+    """
+    import time
+
+    import httpx
+
+    cfg = await get_ai_config(db)
+    provider = (payload.provider or cfg.get("provider") or "custom").strip().lower()
+    defaults = PROVIDER_DEFAULTS.get(provider, PROVIDER_DEFAULTS["custom"])
+
+    if payload.base_url and payload.base_url.strip():
+        base_url = payload.base_url.strip()
+    elif provider == (cfg.get("provider") or "").strip().lower():
+        base_url = effective_base_url(cfg) or defaults.get("base_url") or ""
+    else:
+        base_url = defaults.get("base_url") or ""
+
+    if not base_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Provider ini butuh Base URL. Isi Base URL lalu muat ulang daftar model.",
+        )
+
+    api_key = (payload.api_key or "").strip() or decrypt_api_key(cfg.get("api_key_enc")) or ""
+    if not api_key and provider not in ("ollama", "vllm", "custom"):
+        raise HTTPException(
+            status_code=400,
+            detail="API key belum ada. Simpan API key dulu, lalu muat ulang daftar model.",
+        )
+
+    cache_key = f"{provider}|{base_url.rstrip('/')}"
+    cached = _MODEL_CACHE.get(cache_key)
+    if cached and time.time() - cached[0] < _MODEL_CACHE_TTL:
+        return {
+            "provider": provider,
+            "base_url": base_url,
+            "cached": True,
+            "count": len(cached[1]),
+            "models": cached[1],
+        }
+
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    url = base_url.rstrip("/") + "/models"
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.get(url, headers=headers)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Gagal menghubungi {url}: {type(exc).__name__}: {str(exc)[:160]}",
+        )
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=f"{url} -> {response.status_code}: {response.text[:200]}",
+        )
+
+    try:
+        data = response.json()
+    except Exception:
+        raise HTTPException(status_code=502, detail="Respons provider bukan JSON.")
+
+    raw_items = data.get("data") if isinstance(data, dict) else None
+    if raw_items is None and isinstance(data, dict):
+        raw_items = data.get("models")
+    if not isinstance(raw_items, list):
+        raise HTTPException(status_code=502, detail="Provider tidak mengembalikan daftar model.")
+
+    models: List[dict] = []
+    for item in raw_items:
+        if isinstance(item, str):
+            models.append({"id": item, "owned_by": None, "context_length": None})
+            continue
+        if not isinstance(item, dict):
+            continue
+        model_id = item.get("id") or item.get("name") or item.get("model")
+        if not model_id:
+            continue
+        models.append(
+            {
+                "id": str(model_id),
+                "owned_by": item.get("owned_by") or item.get("organization") or None,
+                "context_length": item.get("context_length") or item.get("context_window"),
+                "pricing": item.get("pricing"),
+            }
+        )
+
+    models.sort(key=lambda entry: entry["id"].lower())
+    _MODEL_CACHE[cache_key] = (time.time(), models)
+    return {
+        "provider": provider,
+        "base_url": base_url,
+        "cached": False,
+        "count": len(models),
+        "models": models,
+    }
 
 
 @router.get("/ai")

@@ -45,44 +45,136 @@ settings = get_settings()
 
 # Provider -> default base URL + sensible default chat model.
 # "custom" requires the user to set AI_BASE_URL and AI_MODEL explicitly.
+# Semua provider di bawah memakai API chat-completions yang kompatibel OpenAI
+# (`POST {base_url}/chat/completions`) sehingga satu klien bisa menangani semua.
 PROVIDER_DEFAULTS: Dict[str, Dict[str, str]] = {
     "openai": {
-        "base_url": "",
+        "label": "OpenAI",
+        "base_url": "https://api.openai.com/v1",
         "model": "gpt-4o-mini",
-    },
-    "groq": {
-        "base_url": "https://api.groq.com/openai/v1",
-        "model": "llama-3.1-8b-instant",
+        "docs": "https://platform.openai.com/api-keys",
     },
     "openrouter": {
+        "label": "OpenRouter (banyak model, 1 key)",
         "base_url": "https://openrouter.ai/api/v1",
         "model": "openai/gpt-4o-mini",
+        "docs": "https://openrouter.ai/keys",
+    },
+    "groq": {
+        "label": "Groq (cepat, ada free tier)",
+        "base_url": "https://api.groq.com/openai/v1",
+        "model": "llama-3.1-8b-instant",
+        "docs": "https://console.groq.com/keys",
     },
     "together": {
+        "label": "Together AI",
         "base_url": "https://api.together.xyz/v1",
         "model": "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+        "docs": "https://api.together.xyz/settings/api-keys",
     },
     "deepseek": {
+        "label": "DeepSeek",
         "base_url": "https://api.deepseek.com/v1",
         "model": "deepseek-chat",
+        "docs": "https://platform.deepseek.com/api_keys",
     },
     "mistral": {
+        "label": "Mistral AI",
         "base_url": "https://api.mistral.ai/v1",
         "model": "mistral-small-latest",
+        "docs": "https://console.mistral.ai/api-keys",
     },
-    "azure": {
-        "base_url": "https://YOUR_RESOURCE.openai.azure.com/openai/v1/?api-version=2024-08-01-preview",
-        "model": "",  # AI_MODEL must hold the deployment name for Azure
+    "xai": {
+        "label": "xAI Grok",
+        "base_url": "https://api.x.ai/v1",
+        "model": "grok-2-latest",
+        "docs": "https://console.x.ai",
+    },
+    "fireworks": {
+        "label": "Fireworks AI",
+        "base_url": "https://api.fireworks.ai/inference/v1",
+        "model": "accounts/fireworks/models/llama-v3p1-8b-instruct",
+        "docs": "https://fireworks.ai/account/api-keys",
+    },
+    "cerebras": {
+        "label": "Cerebras",
+        "base_url": "https://api.cerebras.ai/v1",
+        "model": "llama3.1-8b",
+        "docs": "https://cloud.cerebras.ai",
+    },
+    "sambanova": {
+        "label": "SambaNova",
+        "base_url": "https://api.sambanova.ai/v1",
+        "model": "Meta-Llama-3.1-8B-Instruct",
+        "docs": "https://cloud.sambanova.ai/apis",
+    },
+    "perplexity": {
+        "label": "Perplexity",
+        "base_url": "https://api.perplexity.ai",
+        "model": "sonar",
+        "docs": "https://www.perplexity.ai/settings/api",
+    },
+    "gemini": {
+        "label": "Google Gemini (endpoint OpenAI-compatible)",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "model": "gemini-1.5-flash",
+        "docs": "https://aistudio.google.com/apikey",
+    },
+    "moonshot": {
+        "label": "Moonshot Kimi",
+        "base_url": "https://api.moonshot.ai/v1",
+        "model": "moonshot-v1-8k",
+        "docs": "https://platform.moonshot.ai/console/api-keys",
+    },
+    "zhipu": {
+        "label": "Zhipu GLM",
+        "base_url": "https://open.bigmodel.cn/api/paas/v4",
+        "model": "glm-4-flash",
+        "docs": "https://open.bigmodel.cn/usercenter/apikeys",
     },
     "ollama": {
+        "label": "Ollama (lokal, tanpa key)",
         "base_url": "http://localhost:11434/v1",
         "model": "llama3.1",
+        "docs": "https://ollama.com",
+    },
+    "vllm": {
+        "label": "vLLM / LM Studio / llama.cpp server",
+        "base_url": "http://localhost:8000/v1",
+        "model": "",
+        "docs": "https://docs.vllm.ai",
+    },
+    "azure": {
+        "label": "Azure OpenAI",
+        "base_url": "https://YOUR_RESOURCE.openai.azure.com/openai/v1/?api-version=2024-08-01-preview",
+        "model": "",  # AI_MODEL must hold the deployment name for Azure
+        "docs": "https://portal.azure.com",
     },
     "custom": {
+        "label": "Custom (OpenAI-compatible)",
         "base_url": "",
         "model": "",
+        "docs": "",
+        "needs_base_url": "1",
     },
 }
+
+
+def provider_metadata() -> list[Dict[str, str]]:
+    """Daftar provider untuk dropdown admin (label + base URL bawaan)."""
+    items = []
+    for key, value in PROVIDER_DEFAULTS.items():
+        items.append(
+            {
+                "id": key,
+                "label": value.get("label", key),
+                "base_url": value.get("base_url", ""),
+                "default_model": value.get("model", ""),
+                "docs": value.get("docs", ""),
+                "needs_base_url": value.get("needs_base_url", ""),
+            }
+        )
+    return sorted(items, key=lambda item: item["label"].lower())
 
 
 def get_ai_api_key() -> Optional[str]:

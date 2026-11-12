@@ -62,7 +62,17 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found or inactive",
         )
-    
+
+    # Token yang sudah dicabut (logout-all / paksa logout admin) ditolak lebih
+    # awal, tanpa menunggu kedaluwarsa alami.
+    from app.services.auth_session import is_token_revoked
+
+    if await is_token_revoked(db, user.id, payload):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sesi sudah berakhir, silakan masuk lagi",
+        )
+
     return user
 
 
