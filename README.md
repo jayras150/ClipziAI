@@ -243,3 +243,146 @@ Test penting: `test_ai_config.py` (enkripsi + injeksi env), `test_provider_llm.p
 
 Di domain publik, `/api/admin/*` dibalas **404** (bukan 401) supaya endpoint tidak
 terkonfirmasi. Dokumentasi API juga dibalas 404.
+
+## Pindah VPS / setup dari nol (runbook lengkap)
+
+Semua yang WAJIB dikonfigurasi saat pindah server, berurutan. Ganti
+`<IP-VPS>` dengan IP baru, dan `admin.proxyai.live` bila domain berubah.
+
+### 1. DNS (Cloudflare)
+
+| Record | Type | Value | Proxy |
+|---|---|---|---|
+| `proxyai.live` | A | `<IP-VPS>` | **Proxied (oranye)** |
+| `www` | CNAME | `proxyai.live` | Proxied |
+| `admin` | A | `<IP-VPS>` | **Proxied (oranye)** |
+
+SSL/TLS mode: **Full (strict)** (Caddy memakai Let's Encrypt).
+
+### 2. Cloudflare Access (admin)
+
+Zero Trust -> Access -> Applications -> Add -> Self-hosted:
+- Application: `ClipzyAI Admin`, domain `admin.proxyai.live`, session **6 hours**
+- Policy `Admin Only`: action **Allow**, include **Emails**:
+  `sujinwo555@gmail.com`, `admin@proxyai.live`
+
+Bila record `admin` masih DNS-only, Access TIDAK berfungsi (request langsung ke origin).
+
+### 3. Firewall: port 80/443 hanya dari Cloudflare
+
+Caddy berjalan di container, jadi ufw pada INPUT tidak berpengaruh. Aturan dipasang di
+chain `DOCKER-USER` (IPv4 + IPv6) oleh script yang disertakan repo:
+
+```bash
+scp deploy/clipzi-cf-firewall.sh root@<IP-VPS>:/usr/local/sbin/
+scp deploy/clipzi-cf-firewall.service root@<IP-VPS>:/etc/systemd/system/
+ssh root@<IP-VPS> 'chmod +x /usr/local/sbin/clipzi-cf-firewall.sh \
+  && /usr/local/sbin/clipzi-cf-firewall.sh \
+  && systemctl daemon-reload && systemctl enable --now clipzi-cf-firewall'
+```
+
+Script mengambil daftar IP Cloudflare terbaru dari cloudflare.com/ips-v4 + ips-v6,
+mengizinkan port 80/443 hanya dari range itu, lalu DROP sisanya. **Port 22 (SSH) tidak
+disentuh.** Bila pengambilan daftar gagal, script berhenti tanpa mengubah aturan
+(mencegah lockout). Daftar IP Cloudflare berubah sesekali -> jalankan ulang script
+(atau `systemctl restart clipzi-cf-firewall`) setiap beberapa bulan.
+
+Verifikasi:
+```bash
+# harus TIMEOUT (origin tertutup)
+curl -s -o /dev/null -w '%{http_code}\n' --max-time 10 \
+  --resolve admin.proxyai.live:443:<IP-VPS> https://admin.proxyai.live/auth/sign-in
+# harus 302 ke cloudflareaccess.com (jalur resmi)
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://admin.proxyai.live/auth/sign-in
+# harus 200
+curl -s -o /dev/null -w '%{http_code}\n' https://proxyai.live/api/health
+```
+
+### 4. Repo & environment
+
+```bash
+mkdir -p /opt/clipzi && cd /opt/clipzi
+git clone https://github.com/jayras150/ClipziAI.git app
+ln -sfn /opt/clipzi/app /root/ClipziAI
+cp app/backend/.env.example app/backend/.env   # lalu isi
+```
+
+Variabel **wajib** di `backend/.env` (tidak bisa diatur dari dashboard):
+`SECRET_KEY`, `DATABASE_URL`, `REDIS_URL`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
+`R2_ENDPOINT_URL`, `R2_BUCKET_NAME`, `R2_PUBLIC_DOMAIN`, `YOUTUBE_CLIENT_ID`,
+`YOUTUBE_CLIENT_SECRET`, `YOUTUBE_REDIRECT_URI`, `YOUTUBE_API_KEY`, `VAST_API_KEY`,
+`VAST_WORKER_IMAGE=sujinwo555/clipzi-backend:worker`, `VAST_GPU_FILTER`,
+`VAST_BOOT_TIMEOUT=900`, `CLIPZI_WORKER_TOKEN`, `CLIPZI_CALLBACK_URL`,
+`DUITKU_*` (payment), `SMTP_*` (email), `ADMIN_EMAILS`.
+
+Nilai AI (provider, API key, model) **tidak** perlu di .env - diatur di dashboard admin.
+
+### 5. Compose + Caddy
+
+File yang dipakai di VPS:
+
+| File | Isi |
+|---|---|
+| `docker-compose.vps.yml` | backend (api), frontend, caddy; env `DOMAIN`, `ADMIN_DOMAIN`, `ADMIN_BASIC_AUTH` (opsional) |
+| `docker-compose.admin.yml` | service `admin` (image `sujinwo555/clipzi-admin:admin`, `CLIPZI_API_URL=http://backend:8000`) |
+| `deploy/Caddyfile` | site publik + site admin + 404 `/api/admin/*` di domain publik |
+| `deploy/clipzi-cf-firewall.sh` | firewall Cloudflare-only |
+
+Deploy pertama:
+```bash
+docker compose -f docker-compose.vps.yml -f docker-compose.admin.yml up -d --build
+```
+
+### 6. Database & seed
+
+`init_db()` membuat tabel otomatis saat API start (`create_all`). Setelah container hidup:
+```bash
+docker exec clipzi-api python -m scripts.seed_pricing        # harga paket
+# akun admin: daftar lewat aplikasi lalu pastikan email ada di ADMIN_EMAILS
+docker exec clipzi-api python -c "import asyncio; from app.db.session import init_db; asyncio.run(init_db())"
+```
+
+### 7. Vast.ai
+
+Worker menerima rahasia lewat env-var Vast (bukan argumen):
+```bash
+vastai create env-var DATABASE_URL "postgresql+asyncpg://..."
+vastai create env-var R2_ACCESS_KEY_ID "..."
+vastai create env-var R2_SECRET_ACCESS_KEY "..."
+vastai create env-var R2_ENDPOINT_URL "..."
+vastai create env-var R2_BUCKET_NAME "..."
+vastai create env-var R2_PUBLIC_DOMAIN "..."
+vastai create env-var CLIPZI_WORKER_TOKEN "..."
+vastai create env-var SECRET_KEY "..."
+```
+Image worker = `sujinwo555/clipzi-backend:worker` (di-push oleh GitHub Actions).
+Vast tidak punya webhook: supervisor memantau instance tiap 5 detik dan worker
+mengirim callback HMAC ke `CLIPZI_CALLBACK_URL`.
+
+### 8. Verifikasi setelah pindah
+
+```bash
+curl -s -o /dev/null -w 'health=%{http_code}\n' https://proxyai.live/api/health          # 200
+curl -s -o /dev/null -w 'admin=%{http_code}\n'  https://admin.proxyai.live/auth/sign-in  # 302 (Access)
+curl -s -o /dev/null -w 'adm_api=%{http_code}\n' https://proxyai.live/api/admin/system/stats # 404
+docker ps --format '{{.Names}} {{.Status}}'                                                # api/web/caddy/admin healthy
+docker exec clipzi-api env | grep -c VAST_API_KEY                                         # >= 1
+```
+Login admin (setelah lolos Cloudflare Access) -> Settings > AI -> **Test Connection** harus `ok`.
+
+### 9. Backup & restore
+
+```bash
+bash scripts/backup-all.sh                 # satu arsip lengkap (db + repo + config)
+bash scripts/restore-all.sh <arsip>        # restore ke VPS baru
+```
+
+### 10. Update rutin
+
+```bash
+git pull
+docker compose -f docker-compose.vps.yml -f docker-compose.admin.yml pull backend
+docker compose -f docker-compose.vps.yml -f docker-compose.admin.yml up -d
+docker builder prune -af && docker image prune -af   # bila disk menipis
+```
+

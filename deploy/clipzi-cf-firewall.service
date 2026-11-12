@@ -1,0 +1,13 @@
+[Unit]
+Description=ClipzyAI - batasi port 80/443 hanya untuk Cloudflare
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/clipzi-cf-firewall.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
