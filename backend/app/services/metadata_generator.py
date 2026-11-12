@@ -127,6 +127,98 @@ def _clean_tags(raw: Any) -> List[str]:
     return tags[:MAX_TAGS]
 
 
+FILLER_PREFIXES = (
+    "jadi", "nah", "oke", "ok", "ya", "kan", "hmm", "eh", "well", "so",
+    "like", "you know", "gitu", "begini",
+)
+
+
+def _clean_sentence(value: str) -> str:
+    cleaned = re.sub(r"\s+", " ", str(value or "")).strip()
+    cleaned = re.sub(r"^[-\u2013\u2014\u2022*\s]+", "", cleaned)
+    words = cleaned.split()
+    while words and re.sub(r"[^\w]", "", words[0]).lower() in FILLER_PREFIXES:
+        words.pop(0)
+    return " ".join(words).strip(" ,;:-")
+
+
+def _split_sentences(value: str) -> List[str]:
+    parts = re.split(r"(?<=[.!?])\s+", str(value or "").strip())
+    return [part for part in (_clean_sentence(p) for p in parts) if len(part.split()) >= 3]
+
+
+EXTRA_STOPWORDS = {
+    "sampai", "setiap", "butuh", "harus", "bikin", "bilang", "gitu", "kayak",
+    "sperti", "seperti", "dalam", "sama", "lebih", "banyak", "orang", "waktu",
+}
+
+
+def _top_keywords(value: str, limit: int = 8) -> List[str]:
+    counts: Dict[str, int] = {}
+    for raw in re.findall(r"[A-Za-z\u00c0-\u00ff]{4,}", value or ""):
+        word = raw.lower()
+        if word in STOPWORDS or word in GENERIC_TAGS or word in EXTRA_STOPWORDS:
+            continue
+        counts[word] = counts.get(word, 0) + 1
+    ranked = sorted(counts.items(), key=lambda item: (-item[1], -len(item[0])))
+    return [word for word, _ in ranked[:limit]]
+
+
+def build_heuristic_metadata(
+    transcript: str,
+    *,
+    duration: float,
+    start_time: str = "",
+    end_time: str = "",
+    source_title: str = "",
+) -> Dict[str, Any]:
+    """Metadata berkualitas dari transkrip saat LLM tidak tersedia/gagal.
+
+    Tidak memakai kalimat template: judul diambil dari kalimat pertama yang
+    benar-benar diucapkan, deskripsi = kalimat awal + akhir, tag = kata kunci
+    yang paling sering muncul. Timestamp disimpan terpisah (bukan di judul).
+    """
+    text = re.sub(r"\s+", " ", str(transcript or "")).strip()
+    sentences = _split_sentences(text)
+    keywords = _top_keywords(text)
+    first = sentences[0] if sentences else _clean_sentence(text)
+    last = sentences[-1] if len(sentences) > 1 else ""
+
+    title = first[:70].strip(" ,;:-.").strip()
+    if title:
+        title = title[0].upper() + title[1:]
+    if len(title.split()) < 3:
+        title = (source_title or " ".join(keywords[:3]) or "Momen penting").strip()
+    if not title:
+        title = "Klip %s-%s" % (start_time or "0:00", end_time or "")
+
+    description_parts = [first] if first else []
+    if last and last != first:
+        description_parts.append(last)
+    description = " ".join(description_parts).strip()
+    if keywords:
+        extra = "Topik utama: %s." % ", ".join(keywords[:5])
+        if extra.lower() not in description.lower():
+            description = (description + " " + extra).strip()
+    if not description:
+        description = title
+
+    tags = list(dict.fromkeys(keywords[:8] + ["shorts"]))[:MAX_TAGS]
+
+    return {
+        "title": title[:MAX_TITLE_LENGTH],
+        "description": description[:MAX_DESCRIPTION_LENGTH],
+        "tags": tags,
+        "hook": (first or title)[:80],
+        "language": None,
+        "variation": 0,
+        "heuristic": True,
+        "start_time": start_time,
+        "end_time": end_time,
+        "duration": round(float(duration or 0), 2),
+    }
+
+
 class MetadataGenerator:
     """Buat metadata YouTube yang grounded ke transkrip klip."""
 

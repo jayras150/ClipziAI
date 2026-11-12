@@ -65,10 +65,22 @@ def _tail(path: str, limit: int = 200_000) -> Optional[str]:
         return None
 
 
+def _instance_suffix() -> str:
+    """Akhiran `_<instance8>` supaya log bisa dilacak per task + instance."""
+    raw = (
+        os.environ.get("WORKER_INSTANCE_ID")
+        or os.environ.get("VAST_CONTAINERLABEL")
+        or ""
+    )
+    digits = re.sub(r"[^0-9a-zA-Z]", "", str(raw))
+    return "_%s" % digits[-8:] if digits else ""
+
+
 def _build_bundle(task_id: str, work_dir: Optional[str]) -> tuple[Optional[str], str]:
     """Buat tar.gz berisi log + info lingkungan. Return (path, error_message)."""
-    bundle_path = f"/tmp/clipzi-logs-{str(task_id)[:8]}.tar.gz"
-    staging = f"/tmp/clipzi-logstage-{str(task_id)[:8]}"
+    suffix = _instance_suffix()
+    bundle_path = f"/tmp/clipzi-logs-{str(task_id)[:8]}{suffix}.tar.gz"
+    staging = f"/tmp/clipzi-logstage-{str(task_id)[:8]}{suffix}"
     try:
         os.makedirs(staging, exist_ok=True)
         for source, name in (

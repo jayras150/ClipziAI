@@ -100,6 +100,57 @@ def parse_last_speed(text: str) -> str:
     return f"{matches[-1]} t/s"
 
 
+OFFLOAD_RE = re.compile(
+    r"offloaded\s+(\d+)\s*/\s*(\d+)\s+layers\s+to\s+(GPU|CUDA\d*)", re.IGNORECASE
+)
+CUDA_INIT_RE = re.compile(
+    r"ggml_cuda_init:?\s*found\s+(\d+)\s+CUDA\s+devices?", re.IGNORECASE
+)
+# Bukti bahwa backend CUDA gagal dimuat, sehingga llama.cpp memakai CPU.
+CPU_FALLBACK_MARKERS = (
+    "no usable gpu found",
+    "compiled without gpu support",
+    "failed to load backend",
+    "ggml_backend_load",
+)
+
+
+def parse_offload(text):
+    """Ambil (layer_ter-offload, total_layer, device) dari log llama-server.
+
+    Contoh: `load_tensors: offloaded 33/33 layers to GPU` atau `... to CUDA0`.
+    (0, 0, string kosong) bila baris tidak ada.
+    """
+    matches = OFFLOAD_RE.findall(text or "")
+    if not matches:
+        return 0, 0, ""
+    offloaded, total, device = matches[-1]
+    return int(offloaded), int(total), device
+
+
+def parse_cuda_device_count(text):
+    """Jumlah device CUDA yang diinisialisasi (ggml_cuda_init: found N CUDA devices)."""
+    matches = CUDA_INIT_RE.findall(text or "")
+    if not matches:
+        return 0
+    try:
+        return int(matches[-1])
+    except (TypeError, ValueError):
+        return 0
+
+
+def cuda_fallback_reason(text):
+    """Alasan bila log menunjukkan backend CUDA tidak terpakai (CPU fallback)."""
+    lowered = (text or "").lower()
+    for marker in CPU_FALLBACK_MARKERS:
+        if marker in lowered:
+            for line in (text or "").splitlines():
+                if marker in line.lower():
+                    return " ".join(line.split())[:200]
+            return marker
+    return ""
+
+
 class LocalLLM:
     """Kelola satu proses `llama-server` untuk satu task."""
 
@@ -116,6 +167,11 @@ class LocalLLM:
         self.info: str = ""
         self.devices: list[str] = []
         self.last_speed: str = ""
+        self.detect_output: str = ""
+        self.probe: Dict[str, Any] = {}
+        # Offset log saat server dijalankan: hanya segmen baru yang dinilai,
+        # supaya baris CUDA dari proses lama tidak membuat false positive.
+        self.log_mark: int = 0
 
     @classmethod
     def instance(cls) -> "LocalLLM":
@@ -165,6 +221,7 @@ class LocalLLM:
     def _detect_devices(self) -> list[str]:
         """Deteksi GPU lewat `--list-devices` (tanpa memuat model)."""
         output = self._run_quick([settings.LOCAL_LLM_SERVER_BIN, "--list-devices"])
+        self.detect_output = output
         self.devices = parse_cuda_devices(output)
         if not self.devices:
             logger.error(
@@ -180,6 +237,113 @@ class LocalLLM:
         except Exception:
             return ""
 
+    def _nvidia_smi(self) -> Dict[str, Any]:
+        """Baca nama GPU + total/terpakai VRAM (MB) lewat nvidia-smi."""
+        result: Dict[str, Any] = {}
+        try:
+            proc = subprocess.run(
+                [
+                    "nvidia-smi",
+                    "--query-gpu=name,memory.total,memory.used,driver_version",
+                    "--format=csv,noheader,nounits",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+            lines = (proc.stdout or "").strip().splitlines()
+            if not lines:
+                return result
+            parts = [part.strip() for part in lines[0].split(",")]
+            result["name"] = parts[0] if parts else ""
+            result["total_mb"] = int(float(parts[1])) if len(parts) > 1 and parts[1] else 0
+            result["used_mb"] = int(float(parts[2])) if len(parts) > 2 and parts[2] else 0
+            result["driver"] = parts[3] if len(parts) > 3 else ""
+        except Exception as exc:
+            logger.warning("nvidia-smi tidak tersedia: %s", exc)
+        return result
+
+    def _fresh_log(self) -> str:
+        """Segmen log sejak server terakhir dijalankan."""
+        return self._log_text()[self.log_mark:]
+
+    def _log_text(self) -> str:
+        try:
+            with open(self._log_path, "r", encoding="utf-8", errors="replace") as handle:
+                return handle.read()[-300_000:]
+        except Exception:
+            return ""
+
+    def _vram_used_mb(self) -> int:
+        return int(self._nvidia_smi().get("used_mb") or 0)
+
+    def gpu_probe(self, vram_before_mb: int = 0, wait_seconds: float = 30.0) -> Dict[str, Any]:
+        """Bukti berlapis bahwa inference benar-benar memakai GPU.
+
+        Urutan bukti: nvidia-smi -> device CUDA pada llama-server -> semua layer
+        ter-offload -> ggml_cuda_init -> tidak ada warning CPU -> VRAM naik.
+        """
+        probe: Dict[str, Any] = {
+            "gpu_name": "",
+            "vram_total_mb": 0,
+            "vram_before_mb": int(vram_before_mb or 0),
+            "vram_after_mb": 0,
+            "vram_delta_mb": 0,
+            "devices": list(self.devices),
+            "cuda_devices": 0,
+            "offloaded": 0,
+            "layers": 0,
+            "device": "",
+            "speed": "",
+            "ok": False,
+            "reason": "",
+        }
+        smi = self._nvidia_smi()
+        probe["gpu_name"] = str(smi.get("name") or "")
+        probe["vram_total_mb"] = int(smi.get("total_mb") or 0)
+
+        deadline = time.monotonic() + max(0.0, float(wait_seconds))
+        while True:
+            text = self._fresh_log()
+            offloaded, total, _ = parse_offload(text)
+            if offloaded and total:
+                break
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(2.0)
+
+        text = self._fresh_log()
+        offloaded, total, device = parse_offload(text)
+        probe["offloaded"] = offloaded
+        probe["layers"] = total
+        probe["device"] = device
+        probe["cuda_devices"] = parse_cuda_device_count(text)
+        after = self._vram_used_mb()
+        probe["vram_after_mb"] = after
+        if probe["vram_before_mb"]:
+            probe["vram_delta_mb"] = after - probe["vram_before_mb"]
+        probe["speed"] = parse_last_speed(text)
+
+        reason = cuda_fallback_reason(text)
+        if not probe["devices"]:
+            reason = reason or "tidak ada device CUDA pada llama-server"
+        elif total and offloaded < total:
+            reason = "hanya %d/%d layer ter-offload ke GPU" % (offloaded, total)
+        elif not total:
+            reason = reason or "log tidak menunjukkan layer ter-offload ke GPU"
+        if (
+            not reason
+            and probe["vram_before_mb"]
+            and probe["vram_delta_mb"] < int(settings.LOCAL_LLM_MIN_VRAM_DELTA_MB)
+        ):
+            reason = "VRAM tidak naik signifikan setelah model dimuat (%d MB)" % (
+                probe["vram_delta_mb"]
+            )
+        probe["ok"] = not reason
+        probe["reason"] = reason
+        self.probe = probe
+        return probe
+
     def start(self) -> bool:
         """Jalankan llama-server dan tunggu sampai siap. False bila gagal."""
         if not self.available:
@@ -190,6 +354,17 @@ class LocalLLM:
             return True
 
         devices = self._detect_devices()
+        if not devices and settings.LOCAL_LLM_REQUIRE_GPU:
+            self.last_error = (
+                "CUDA tidak terdeteksi oleh llama-server: "
+                + (" ".join((self.detect_output or "").split())[:200] or "tanpa output")
+            )
+            logger.error(
+                "LLM lokal TIDAK dijalankan (LOCAL_LLM_REQUIRE_GPU=true): %s",
+                self.last_error,
+            )
+            return False
+        vram_before = self._vram_used_mb()
         base_cmd = [
             settings.LOCAL_LLM_SERVER_BIN,
             "-m", self.model_path,
@@ -207,17 +382,27 @@ class LocalLLM:
         attempts: list[list[str]] = []
         if devices:
             attempts.append(base_cmd + ["--device", "CUDA0"])
-        attempts.append(list(base_cmd))
+        if not settings.LOCAL_LLM_REQUIRE_GPU:
+            attempts.append(list(base_cmd))
 
         for cmd in attempts:
-            if self._spawn_and_wait(cmd):
-                return True
-            self.stop()
+            if not self._spawn_and_wait(cmd):
+                self.stop()
+                continue
+            probe = self.gpu_probe(vram_before_mb=vram_before)
+            self.info = self._gpu_info()
+            if settings.LOCAL_LLM_REQUIRE_GPU and not probe.get("ok"):
+                self.last_error = "GPU tidak dipakai: %s" % probe.get("reason")
+                logger.error("LLM lokal dimatikan: %s", self.last_error)
+                self.stop()
+                continue
+            return True
         return False
 
     def _spawn_and_wait(self, cmd: list[str]) -> bool:
         """Jalankan satu perintah server dan tunggu /health 200."""
         logger.info("Menjalankan LLM lokal: %s", " ".join(cmd))
+        self.log_mark = len(self._log_text())
         try:
             log_file = open(self._log_path, "ab", buffering=0)
             self.process = subprocess.Popen(
@@ -297,11 +482,24 @@ class LocalLLM:
         return " | ".join(parts)[:400]
 
     def runtime_info(self) -> str:
-        """Info runtime terbaru (device + kecepatan decode) setelah inferensi."""
-        speed = parse_last_speed(self._log_tail_text(60))
+        """Info runtime terbaru: device, layer ter-offload, VRAM, dan kecepatan."""
+        probe = self.probe or {}
+        speed = parse_last_speed(self._fresh_log())
         if speed:
             self.last_speed = speed
-        device = self.devices[0][:90] if self.devices else "tidak terdeteksi"
+        else:
+            speed = self.last_speed
+        device = str(probe.get("device") or "") or (
+            self.devices[0][:60] if self.devices else "tidak terdeteksi"
+        )
+        layers = "%s/%s" % (probe.get("offloaded", 0), probe.get("layers", 0))
+        parts = [
+            "device=%s" % device,
+            "layers=%s" % layers,
+            "cuda_devices=%s" % probe.get("cuda_devices", 0),
+            "vram=%s->%sMB" % (probe.get("vram_before_mb", 0), probe.get("vram_after_mb", 0)),
+            "speed=%s" % (speed or "belum ada"),
+        ]
         note = ""
         try:
             value = float(speed.split()[0]) if speed else 0.0
@@ -309,7 +507,9 @@ class LocalLLM:
                 note = " | PERINGATAN: lambat, kemungkinan CPU fallback"
         except Exception:
             note = ""
-        return f"device={device} | speed={speed or 'belum ada'}{note}"[:300]
+        if probe.get("reason"):
+            note += " | %s" % probe["reason"]
+        return (" | ".join(parts) + note)[:400]
 
     def _tail_log(self, lines: int = 12) -> str:
         try:
@@ -326,8 +526,13 @@ class LocalLLM:
         user: str,
         max_tokens: int = 900,
         temperature: float = 0.2,
+        deadline: Optional[float] = None,
     ) -> Optional[str]:
-        """Satu panggilan chat completion. None bila server tidak siap/gagal."""
+        """Satu panggilan chat completion. None bila server tidak siap/gagal.
+
+        `deadline` (time.monotonic) membatasi TOTAL waktu termasuk retry, supaya
+        LLM lambat tidak pernah menggantung task.
+        """
         if not self.start():
             return None
         payload = {
@@ -340,19 +545,41 @@ class LocalLLM:
             "max_tokens": max_tokens,
             "stream": False,
         }
-        try:
-            response = httpx.post(
-                f"{self.base_url}/chat/completions",
-                json=payload,
-                timeout=settings.LOCAL_LLM_CHAT_TIMEOUT,
+        attempt = 0
+        while attempt < 2:  # retry maksimum 1, tetap di dalam deadline yang sama
+            attempt += 1
+            remaining = None if deadline is None else deadline - time.monotonic()
+            if remaining is not None and remaining <= 5:
+                logger.warning(
+                    "Anggaran waktu LLM habis (sisa %.1fs) sebelum panggilan",
+                    remaining,
+                )
+                return None
+            read_timeout = float(settings.LOCAL_LLM_REPLY_TIMEOUT)
+            if remaining is not None:
+                read_timeout = min(read_timeout, max(5.0, remaining))
+            timeout = httpx.Timeout(
+                connect=10.0, read=read_timeout, write=30.0, pool=10.0
             )
-            response.raise_for_status()
-            data = response.json()
-            self.last_speed = parse_last_speed(self._log_tail_text(60))
-            return str(data["choices"][0]["message"]["content"])
-        except Exception as exc:
-            logger.warning("LLM lokal gagal menjawab: %s", str(exc)[:300])
-            return None
+            try:
+                response = httpx.post(
+                    f"{self.base_url}/chat/completions",
+                    json=payload,
+                    timeout=timeout,
+                )
+                response.raise_for_status()
+                data = response.json()
+                self.last_speed = parse_last_speed(self._log_tail_text(60))
+                return str(data["choices"][0]["message"]["content"])
+            except Exception as exc:
+                logger.warning(
+                    "LLM lokal gagal menjawab (percobaan %d/2): %s",
+                    attempt,
+                    str(exc)[:300],
+                )
+                if remaining is not None and remaining <= 20:
+                    break
+        return None
 
     def chat_json_any(
         self,

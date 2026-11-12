@@ -22,8 +22,10 @@ from __future__ import annotations
 import logging
 import math
 import re
+import time
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from app.core.config import get_settings
 from app.services.speech_boundaries import (
     FILLERS,
     PAYOFF_WORDS,
@@ -311,12 +313,46 @@ RERANK_SYSTEM_PROMPT = (
 )
 
 
+def _llm_json(
+    llm: Any,
+    system: str,
+    user: str,
+    *,
+    max_tokens: int,
+    deadline: Optional[float] = None,
+) -> Any:
+    """Panggil LLM dengan `deadline` bila API-nya mendukung.
+
+    `local_llm.LocalLLM` menerima satu deadline monotonic untuk seluruh proses
+    (termasuk retry). LLM lain (mis. stub di test) dipanggil tanpa argumen itu.
+    """
+    kwargs: Dict[str, Any] = {"max_tokens": max_tokens, "temperature": 0.2}
+    if deadline is not None:
+        kwargs["deadline"] = deadline
+    chat_any = getattr(llm, "chat_json_any", None)
+    chat_obj = getattr(llm, "chat_json", None)
+    try:
+        if chat_any is not None:
+            return chat_any(system, user, **kwargs)
+        if chat_obj is not None:
+            return chat_obj(system, user, **kwargs)
+        return None
+    except TypeError:
+        kwargs.pop("deadline", None)
+        if chat_any is not None:
+            return chat_any(system, user, **kwargs)
+        if chat_obj is not None:
+            return chat_obj(system, user, **kwargs)
+        return None
+
+
 def rerank_with_llm(
     candidates: Sequence[Dict[str, Any]],
     llm: Any,
     target_min: float,
     target_max: float,
     limit: int = 8,
+    deadline: Optional[float] = None,
 ) -> List[Dict[str, Any]]:
     """Rerank kandidat dengan LLM lokal (Qwen3-4B).
 
@@ -340,14 +376,13 @@ def rerank_with_llm(
         "Kandidat:\n" + "\n".join(lines) + "\n\nBeri skor semua kandidat di atas."
     )
 
-    chat_any = getattr(llm, "chat_json_any", None)
     try:
-        payload = (
-            chat_any(RERANK_SYSTEM_PROMPT, user_prompt, max_tokens=300, temperature=0.2)
-            if chat_any is not None
-            else llm.chat_json(
-                RERANK_SYSTEM_PROMPT, user_prompt, max_tokens=300, temperature=0.2
-            )
+        payload = _llm_json(
+            llm,
+            RERANK_SYSTEM_PROMPT,
+            user_prompt,
+            max_tokens=300,
+            deadline=deadline,
         )
     except Exception as exc:
         logger.warning("Rerank LLM error: %s", str(exc)[:200])
@@ -450,6 +485,7 @@ def plan_clips(
     target_max: float = 90.0,
     quota: Optional[int] = None,
     llm: Any = None,
+    llm_deadline: Optional[float] = None,
 ) -> List[Dict[str, Any]]:
     """Rentang klip terbaik. Kosong bila transkrip tidak tersedia (fallback)."""
     words = extract_words(segments)
@@ -526,10 +562,21 @@ def plan_clips(
         return []
     if llm is not None:
         try:
+            # Satu deadline untuk seluruh proses rerank (bukan per panggilan).
+            deadline = llm_deadline
+            if deadline is None:
+                deadline = time.monotonic() + float(
+                    get_settings().LOCAL_LLM_RERANK_BUDGET
+                )
             pool = _preselect_for_rerank(candidates, quota, total_duration, min_gap)
             pool_ids = {id(item) for item in pool}
             reranked_pool = rerank_with_llm(
-                pool, llm, target_min, target_max, limit=max(12, len(pool))
+                pool,
+                llm,
+                target_min,
+                target_max,
+                limit=max(12, len(pool)),
+                deadline=deadline,
             )
             rest = [item for item in candidates if id(item) not in pool_ids]
             candidates = reranked_pool + rest

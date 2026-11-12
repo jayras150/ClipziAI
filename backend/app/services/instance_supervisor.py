@@ -67,6 +67,10 @@ class InstanceSupervisor:
         )
         self.exclude_machines: Set[int] = set()
         self.adopt_instance_id: Optional[int] = None
+        self.current_instance: Optional[int] = None
+        # True hanya saat supervisor sendiri memutuskan berhenti (selesai/gagal),
+        # sehingga destroy tidak pernah mematikan instance task lain.
+        self.allow_destroy_while_running = False
 
     # ---------------- database ----------------
     async def _record_create(
@@ -256,8 +260,57 @@ class InstanceSupervisor:
 
 
     # ---------------- lifecycle ----------------
+    async def _instance_owners(self, instance_id: int) -> set:
+        """Task lain yang masih memakai instance ini (selain baris destroyed)."""
+        from sqlalchemy import select
+
+        from app.db.session import AsyncSessionLocal
+        from app.models.worker_instance import WorkerInstance
+
+        async with AsyncSessionLocal() as db:
+            rows = (
+                (
+                    await db.execute(
+                        select(WorkerInstance).where(
+                            WorkerInstance.instance_id == int(instance_id)
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        return {
+            str(row.task_id)
+            for row in rows
+            if row.task_id and (row.state or "") != "destroyed"
+        }
+
+    async def _may_destroy(self, instance_id: int) -> tuple[bool, str]:
+        """Boleh hapus? Hanya instance milik task ini, bukan milik task lain."""
+        if self.current_instance is not None and int(self.current_instance) != int(instance_id):
+            return False, "instance bukan milik supervisor ini"
+        try:
+            owners = await self._instance_owners(instance_id)
+        except Exception as exc:  # DB bermasalah: jangan blokir cleanup GPU
+            logger.warning("Cek pemilik instance %s gagal: %s", instance_id, exc)
+            owners = set()
+        if owners and str(self.task_id) not in owners:
+            return False, "instance dipakai task lain: %s" % ", ".join(sorted(owners))[:80]
+        if self.allow_destroy_while_running:
+            return True, ""
+        status = await self._task_status()
+        if status in {"completed", "error", "cancelled", None}:
+            return True, ""
+        return False, "task masih %s" % status
+
     async def _destroy(self, instance_id: int, record_id: Any, reason: str) -> None:
         """Hapus instance lalu tunggu benar-benar hilang (biar tidak dobel tagih)."""
+        allowed, why = await self._may_destroy(instance_id)
+        if not allowed:
+            logger.warning("Instance %s TIDAK dihapus: %s", instance_id, why)
+            if record_id is not None:
+                await self._update_record(record_id, destroy_reason=("dibatalkan: " + why)[:120])
+            return
         loop = asyncio.get_event_loop()
         try:
             await loop.run_in_executor(None, self.client.destroy_instance, instance_id)
@@ -343,6 +396,7 @@ class InstanceSupervisor:
                     continue
 
                 active_instance = instance_id
+                self.current_instance = instance_id
                 record_id = await self._record_create(
                     instance_id, self.offer, attempt, float(self.offer.get("dph_total") or 0)
                 )
@@ -361,6 +415,7 @@ class InstanceSupervisor:
                     # Beri waktu singkat agar worker menyelesaikan unggahan log
                     # (qurl.sh) sebelum instance dimatikan.
                     await asyncio.sleep(10)
+                    self.allow_destroy_while_running = True
                     await self._destroy(instance_id, record_id, "task selesai")
                     active_instance = None
                     return {"ok": True, "instance_id": instance_id, "attempts": attempt}
@@ -376,6 +431,7 @@ class InstanceSupervisor:
                     status_msg=reason[:1000],
                     log_tail=log_tail or None,
                 )
+                self.allow_destroy_while_running = True
                 await self._destroy(
                     instance_id, record_id, f"attempt {attempt}: {reason}"
                 )
@@ -406,6 +462,7 @@ class InstanceSupervisor:
                         "Supervisor berhenti tak terduga; menghapus instance %s",
                         active_instance,
                     )
+                    self.allow_destroy_while_running = True
                     await self._destroy(active_instance, None, "supervisor berhenti")
                 except Exception:
                     logger.exception("Gagal menghapus instance %s", active_instance)

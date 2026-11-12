@@ -224,10 +224,14 @@ COPY --from=llama /usr/local/cuda/lib64/libcudart.so.12.8.90 /opt/llama/cuda/
 COPY --from=llama /usr/local/cuda/lib64/libcublas.so.12.8.4.1 /opt/llama/cuda/
 COPY --from=llama /usr/local/cuda/lib64/libcublasLt.so.12.8.4.1 /opt/llama/cuda/
 COPY --from=llama /usr/local/cuda/lib64/libcufft.so.11.3.3.83 /opt/llama/cuda/
+# `ln` membuat symlink di /opt/llama/cuda (milik root) dan file model dibaca
+# oleh user clipzi, jadi langkah ini harus berjalan sebagai root.
+USER root
 RUN ln -sf /opt/llama/cuda/libcudart.so.12.8.90 /opt/llama/cuda/libcudart.so.12 \
     && ln -sf /opt/llama/cuda/libcublas.so.12.8.4.1 /opt/llama/cuda/libcublas.so.12 \
     && ln -sf /opt/llama/cuda/libcublasLt.so.12.8.4.1 /opt/llama/cuda/libcublasLt.so.12 \
     && ln -sf /opt/llama/cuda/libcufft.so.11.3.3.83 /opt/llama/cuda/libcufft.so.11 \
+    && chown -R clipzi:clipzi /opt/llama/cuda \
     && ls -l /opt/llama/cuda
 ENV PATH="/opt/llama:${PATH}"
 # libggml*/libllama*.so ada di /opt/llama; tanpa entri ini llama-server gagal

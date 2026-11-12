@@ -88,6 +88,17 @@ class Settings(BaseSettings):
     # CPU fallback hanya ±2 token/detik, jadi beri ruang lebar; kalau GPU aktif
     # jawaban selesai jauh lebih cepat.
     LOCAL_LLM_CHAT_TIMEOUT: int = 600
+    # Batas waktu per balasan + anggaran total (monotonic deadline) supaya LLM
+    # yang lambat tidak pernah menggantung task berjam-jam.
+    LOCAL_LLM_REPLY_TIMEOUT: int = 90
+    LOCAL_LLM_RERANK_BUDGET: int = 360
+    LOCAL_LLM_METADATA_BUDGET: int = 240
+    LOCAL_LLM_METADATA_PER_CLIP: int = 90
+    # Worker GPU: tanpa CUDA yang benar-benar terpakai, LLM tidak dijalankan
+    # (tidak ada fallback CPU diam-diam). Set false hanya untuk dev tanpa GPU.
+    LOCAL_LLM_REQUIRE_GPU: bool = True
+    # Kenaikan VRAM minimum setelah model dimuat (bukan angka pasti 2,5 GB).
+    LOCAL_LLM_MIN_VRAM_DELTA_MB: int = 500
 
     # Model khusus tombol "Regenerate with AI" di popup klip (API/VPS).
     AI_REGENERATE_MODEL: Optional[str] = None

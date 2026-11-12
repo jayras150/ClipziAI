@@ -323,7 +323,10 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                             task.id,
                             "stage",
                             stage="llm_failed",
-                            message=local_llm._tail_log()[:400],
+                            message=(
+                                str(getattr(local_llm, "last_error", ""))
+                                or local_llm._tail_log()
+                            )[:400],
                         )
                     except Exception:
                         pass
@@ -342,6 +345,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                         pass
 
             # 4) Tentukan rentang klip — manual trim prioritas atas planner
+            await _set_progress(db, task, 36)
             total_duration = float(info.get("duration") or 0)
             if total_duration and total_duration < 60:
                 raise RuntimeError(
@@ -384,6 +388,8 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                         max_duration,
                         max_clips,
                         llm=local_llm if llm_ready else None,
+                        llm_deadline=time.monotonic()
+                        + float(settings.LOCAL_LLM_RERANK_BUDGET),
                     )
                 except Exception as exc:
                     logger.warning(
@@ -457,22 +463,42 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                         client=make_ai_client(local_llm.base_url),
                         model=local_llm.model_name,
                     )
-                    for meta_start, meta_duration in ranges:
+                    meta_deadline = time.monotonic() + float(
+                        settings.LOCAL_LLM_METADATA_BUDGET
+                    )
+                    total_ranges = max(1, len(ranges))
+                    for meta_index, (meta_start, meta_duration) in enumerate(ranges, 1):
                         transcript_text = " ".join(
                             str(seg.get("text") or "").strip()
                             for seg in _slice_segments(
                                 segments, meta_start, meta_start + meta_duration
                             )
                         ).strip()
+                        await _set_progress(
+                            db, task, 40 + int(12 * (meta_index - 1) / total_ranges)
+                        )
                         if len(transcript_text.split()) < 6:
                             continue
+                        remaining = meta_deadline - time.monotonic()
+                        if remaining <= 5:
+                            logger.warning(
+                                "Anggaran metadata habis; klip %.1fs memakai heuristik",
+                                meta_start,
+                            )
+                            continue
+                        per_clip_timeout = min(
+                            float(settings.LOCAL_LLM_METADATA_PER_CLIP), remaining
+                        )
                         try:
-                            clip_metadata[round(meta_start, 2)] = await generator.generate(
-                                transcript=transcript_text,
-                                source_title="",
-                                duration=float(meta_duration),
-                                start_time=_fmt_hms(meta_start),
-                                end_time=_fmt_hms(meta_start + meta_duration),
+                            clip_metadata[round(meta_start, 2)] = await asyncio.wait_for(
+                                generator.generate(
+                                    transcript=transcript_text,
+                                    source_title="",
+                                    duration=float(meta_duration),
+                                    start_time=_fmt_hms(meta_start),
+                                    end_time=_fmt_hms(meta_start + meta_duration),
+                                ),
+                                timeout=per_clip_timeout,
                             )
                         except Exception as exc:
                             logger.warning(
@@ -485,6 +511,27 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                     logger.warning(
                         "Metadata AI lokal dilewati untuk task %s: %s", task.id, exc
                     )
+
+            # Metadata TIDAK boleh kosong: LLM gagal/timeout -> heuristik transkrip.
+            from app.services.metadata_generator import build_heuristic_metadata
+
+            for meta_start, meta_duration in ranges:
+                key = round(meta_start, 2)
+                if clip_metadata.get(key):
+                    continue
+                clip_metadata[key] = build_heuristic_metadata(
+                    " ".join(
+                        str(seg.get("text") or "").strip()
+                        for seg in _slice_segments(
+                            segments or [], meta_start, meta_start + meta_duration
+                        )
+                    ).strip(),
+                    duration=float(meta_duration),
+                    start_time=_fmt_hms(meta_start),
+                    end_time=_fmt_hms(meta_start + meta_duration),
+                    source_title=str(getattr(task, "source_type", "") or ""),
+                )
+            await _set_progress(db, task, 55)
             _lap("metadata")
 
             # Kecepatan decode Qwen (bukti GPU vs CPU) — dikirim sebelum LLM mati.
@@ -816,7 +863,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                         "meta": clip_metadata.get(round(start, 2)),
                     }
                 )
-                await _set_progress(db, task, 35 + int(55 * index / max(1, total)))
+                await _set_progress(db, task, 55 + int(40 * index / max(1, total)))
 
             # 6) Simpan klip & tandai task selesai
             _lap("rendered")
