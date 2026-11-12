@@ -28,9 +28,11 @@ const workerColumns: Column[] = [
 ];
 
 export default async function AlertsPage() {
-  const tasks = await adminFetch<TaskRow[]>('/api/admin/tasks/');
-  const workers = await adminFetch<{ items: WorkerRow[] }>('/api/admin/workers/instances?limit=50');
-  const failedTasks = tasks.filter((task) => task.status === 'error').slice(0, 20);
+  const [tasks, workers] = await Promise.all([
+    adminFetch<{ items: TaskRow[] }>('/api/admin/tasks/?status=error&page_size=20'),
+    adminFetch<{ items: WorkerRow[] }>('/api/admin/workers/instances?limit=50')
+  ]);
+  const failedTasks = (tasks.items || []).slice(0, 20);
   const failedWorkers = (workers.items || []).filter((row) => row.state === 'failed');
 
   return (

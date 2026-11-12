@@ -2,12 +2,14 @@
 Pricing schemas - Plans, subscriptions
 """
 from typing import Optional, List
+from uuid import UUID
+
 from pydantic import BaseModel
 from datetime import datetime
 
 
 class PricingPlanResponse(BaseModel):
-    id: str
+    id: UUID
     name: str
     display_name: dict
     description: dict

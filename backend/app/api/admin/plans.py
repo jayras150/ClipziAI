@@ -3,6 +3,8 @@ Admin pricing plan management: list, create, update, delete.
 """
 from typing import List
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -67,7 +69,7 @@ async def create_plan(plan_data: PlanIn, db: AsyncSession = Depends(get_db_sessi
 
 @router.put("/{plan_id}", response_model=PricingPlanResponse)
 async def update_plan(
-    plan_id: str,
+    plan_id: UUID,
     plan_data: PlanIn,
     db: AsyncSession = Depends(get_db_session),
 ):
@@ -86,7 +88,7 @@ async def update_plan(
 
 
 @router.delete("/{plan_id}", status_code=204)
-async def delete_plan(plan_id: str, db: AsyncSession = Depends(get_db_session)):
+async def delete_plan(plan_id: UUID, db: AsyncSession = Depends(get_db_session)):
     plan = (await db.execute(select(PricingPlan).where(PricingPlan.id == plan_id))).scalar_one_or_none()
     if not plan:
         raise HTTPException(status_code=404, detail="Plan tidak ditemukan")
