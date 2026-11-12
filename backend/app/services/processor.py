@@ -1345,15 +1345,20 @@ class VideoProcessor:
         duration = float(data.get("format", {}).get("duration", 0))
         width = 0
         height = 0
+        has_audio = False
         for stream in data.get("streams", []):
-            if stream.get("codec_type") == "video":
+            if stream.get("codec_type") == "audio":
+                has_audio = True
+            if stream.get("codec_type") == "video" and not width:
                 width = stream.get("width", 0)
                 height = stream.get("height", 0)
-                break
-        
+
         return {
             "duration": duration,
             "width": width,
             "height": height,
             "resolution": f"{width}x{height}",
+            # Unduhan fallback `b*` bisa menghasilkan video tanpa audio; pipeline
+            # memakai flag ini supaya tidak gagal membingungkan di transkripsi.
+            "has_audio": has_audio,
         }

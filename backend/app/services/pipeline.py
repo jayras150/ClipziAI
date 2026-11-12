@@ -25,7 +25,7 @@ from app.models.task import Task, TaskStatus
 from app.services import cookie_store
 from app.services.clip_planner import plan_clip_quota, plan_clips
 from app.services.credit_service import CreditService
-from app.services.downloader import VideoDownloader
+from app.services.downloader import VideoDownloader, ytdlp_version
 from app.services.processor import VideoProcessor, get_caption_style
 from app.services.speech_boundaries import detect_silences
 from app.services.storage import R2Storage
@@ -36,6 +36,21 @@ from app.services.platform_watermark import apply_platform_watermark
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
+
+
+def _download_height(task: Task) -> str:
+    """
+    Tinggi target unduhan dari `task.output_resolution` (contoh "1080x1920" -> 1920).
+
+    Untuk video vertikal, "tinggi" adalah sisi panjang (1920); memakai angka ini
+    membuat kita tidak memotong resolusi ke 720 secara default.
+    """
+    raw = (getattr(task, "output_resolution", "") or "").lower().replace(" ", "")
+    if "x" in raw:
+        _, _, second = raw.partition("x")
+        if second.isdigit():
+            return str(max(144, min(int(second), 2160)))
+    return "720"
 
 
 def _now() -> datetime:
@@ -247,9 +262,19 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
             await _set_progress(db, task, 5)
             acquired = await cookie_store.acquire(db)
             cookie, cookiefile = acquired if acquired else (None, None)
+            download_height = _download_height(task)
+            logger.info(
+                "unduh sumber: quality=%s cookies=%s yt-dlp=%s",
+                download_height,
+                "yes" if cookiefile else "no",
+                ytdlp_version(),
+            )
             try:
                 video_path = await downloader.download_video(
-                    task.source_url, "source", cookies_path=cookiefile
+                    task.source_url,
+                    "source",
+                    cookies_path=cookiefile,
+                    quality=download_height,
                 )
                 if cookie is not None:
                     await cookie_store.report_success(db, cookie)
@@ -264,6 +289,26 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
 
             # 2) Probe metadata
             info = await processor.get_video_info(video_path)
+            if not info.get("has_audio", True):
+                # Fallback `b*` bisa menghasilkan video tanpa audio. Tanpa audio,
+                # transkripsi tidak mungkin, jadi unduh ulang dengan format yang
+                # mewajibkan stream audio sebelum menyerah.
+                logger.warning("unduhan tanpa stream audio; mencoba ulang dengan format audio wajib")
+                video_path = await downloader.download_video(
+                    task.source_url,
+                    "source",
+                    cookies_path=cookiefile,
+                    quality=download_height,
+                    require_audio=True,
+                )
+                info = await processor.get_video_info(video_path)
+                if not info.get("has_audio", True):
+                    raise RuntimeError(
+                        "video hasil unduhan tidak memiliki stream audio sehingga transkripsi "
+                        "tidak mungkin dilakukan. YouTube kemungkinan membatasi format untuk "
+                        "IP server ini - unggah cookies YouTube di Settings > YouTube Cookies "
+                        "lalu ulangi task."
+                    )
             task.original_duration = info.get("duration")
             await db.commit()
             await _set_progress(db, task, 15)

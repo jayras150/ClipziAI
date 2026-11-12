@@ -36,6 +36,55 @@ SUPPORTED_DOMAINS = (
 )
 
 
+def format_ladder(height: int) -> list[str]:
+    """
+    Urutan selector format yang dicoba sampai berhasil.
+
+    Kenapa berlapis: selector lama `bestvideo[height<=720]+bestaudio/best` gagal
+    dengan pesan "Requested format is not available" ketika YouTube (sering pada
+    IP datacenter) hanya menyediakan *video-only*, hanya *combined*, atau hanya
+    format DASH tertentu. `bv*` menerima format gabungan juga, dan anak tangga
+    terakhir `b`/`b*` memastikan selalu ada fallback.
+    """
+    try:
+        limit = int(height)
+    except (TypeError, ValueError):
+        limit = 720
+    limit = max(144, min(limit, 2160))
+    return [
+        f"bv*[height<={limit}]+ba/b[height<={limit}]/b",
+        "bv*+ba/b",
+        "b",
+        "b*",
+    ]
+
+
+# Variasi player client YouTube. Satu client bisa mengembalikan daftar format
+# yang sangat terbatas (contoh: hanya storyboard / hanya SABR) tergantung IP dan
+# status cookies; mencoba beberapa client membuat unduhan jauh lebih tahan.
+CLIENT_LADDER: list[Optional[list[str]]] = [
+    None,  # default yt-dlp
+    ["web"],
+    ["android", "ios"],
+    ["tv_embedded", "web"],
+]
+
+
+def _ytdlp_version() -> str:
+    try:
+        import yt_dlp
+
+        return str(getattr(getattr(yt_dlp, "version", None), "__version__", "unknown"))
+    except Exception:  # pragma: no cover - yt-dlp selalu terpasang di worker
+        return "unknown"
+
+
+def ytdlp_version() -> str:
+    """Versi yt-dlp (dipakai pipeline untuk log diagnostik)."""
+    return _ytdlp_version()
+
+
+
 def _decode_cookies_base64(raw: str) -> str:
     """Decode base64 -> teks cookies.txt (format Netscape) dengan validasi."""
     cleaned = "".join(raw.split())
@@ -201,54 +250,173 @@ class VideoDownloader:
         output_filename: str,
         cookies_path: Optional[str] = None,
         quality: str = "720",
+        require_audio: bool = False,
     ) -> str:
-        """Download video and return local file path."""
-        output_path = str(self.download_dir / output_filename)
+        """
+        Unduh video dengan beberapa lapis fallback.
 
-        ydl_opts = self._base_ydl_opts(cookies_path)
-        ydl_opts.update(
-            {
-                "format": f"bestvideo[height<={quality}]+bestaudio/best",
-                "merge_output_format": "mp4",
-                # WAJIB pakai %(ext)s: untuk URL file langsung (mis. .mp4 di R2/CDN)
-                # yt-dlp menyimpan dengan nama apa adanya TANPA ekstensi, sehingga
-                # pencarian `source.mp4` gagal dan langkah ffprobe berikutnya error.
-                "outtmpl": f"{output_path}.%(ext)s",
-                "retries": 3,
-                "fragment_retries": 3,
-            }
-        )
+        Lapisan yang dicoba (berhenti di percobaan pertama yang menghasilkan file):
+          1. format ladder  : bv*[height<=H]+ba / b[height<=H] / b / b*
+          2. client ladder  : default -> web -> android,ios -> tv_embedded,web
+          3. tanpa cookies  : percobaan terakhir bila cookies diduga bermasalah
+
+        Bila semuanya gagal, daftar format yang tersedia ditulis ke log (ikut
+        terunggah ke bundle log worker) dan ringkasannya dimasukkan ke pesan
+        error supaya admin bisa langsung tahu penyebabnya.
+        """
+        output_path = str(self.download_dir / output_filename)
+        base_opts = self._base_ydl_opts(cookies_path)
+        height = int(str(quality).strip()) if str(quality).strip().isdigit() else 720
+
+        attempts: list[tuple[Optional[list[str]], str, bool]] = []
+        if require_audio:
+            # Dipakai saat unduhan sebelumnya ternyata tanpa stream audio
+            # (fallback `b*` bisa memilih video-only). Hanya format yang
+            # menjamin audio: video + audio-only.
+            audio_formats = [
+                f"bv*[height<={height}]+ba",
+                "bv*+ba",
+                "ba+bv*",
+            ]
+            for clients in CLIENT_LADDER:
+                for fmt in audio_formats:
+                    attempts.append((clients, fmt, True))
+            attempts.append((None, "bv*+ba", False))
+        else:
+            for clients in CLIENT_LADDER:
+                for fmt in format_ladder(height):
+                    attempts.append((clients, fmt, True))
+            # Last resort: tanpa cookies + format paling sederhana.
+            attempts.append((None, "b", False))
 
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self._download, url, ydl_opts)
+        errors: list[str] = []
 
-        # Cari file hasil unduhan: nama dengan ekstensi, atau nama tanpa ekstensi
-        # (kasus URL file langsung).
-        candidates = [f"{self.download_dir / output_filename}.{ext}" for ext in ("mp4", "mkv", "webm")]
-        candidates.append(str(self.download_dir / output_filename))
-        for path in candidates:
-            if os.path.exists(path) and os.path.getsize(path) > 0:
-                if not Path(path).suffix:
-                    # Beri ekstensi .mp4 agar konsisten untuk langkah berikutnya.
-                    renamed = f"{path}.mp4"
-                    try:
-                        os.replace(path, renamed)
-                        return renamed
-                    except OSError:
-                        return path
-                return path
-        # Jangan kembalikan path yang belum tentu ada: kegagalan unduh harus
-        # terlihat jelas di sini, bukan muncul sebagai error ffprobe di langkah
-        # berikutnya.
-        try:
-            files = sorted(os.listdir(self.download_dir))[:10]
-        except OSError:
-            files = []
+        for clients, fmt, use_cookies in attempts:
+            ydl_opts: Dict[str, Any] = dict(base_opts)
+            if not use_cookies:
+                ydl_opts.pop("cookiefile", None)
+
+            ydl_opts.update(
+                {
+                    "format": fmt,
+                    "merge_output_format": "mp4",
+                    "format_sort": [
+                        "ext:mp4:m4a",
+                        "vcodec:h264",
+                        "acodec:aac",
+                        f"res:{height}",
+                    ],
+                    # WAJIB %(ext)s: URL file langsung (R2/CDN) disimpan tanpa
+                    # ekstensi sehingga ffprobe berikutnya gagal.
+                    "outtmpl": f"{output_path}.%(ext)s",
+                    "retries": 2,
+                    "fragment_retries": 2,
+                }
+            )
+
+            extractor_args = {
+                key: dict(value) for key, value in (base_opts.get("extractor_args") or {}).items()
+            }
+            if clients:
+                youtube_args = extractor_args.setdefault("youtube", {})
+                youtube_args["player_client"] = list(clients)
+            if extractor_args:
+                ydl_opts["extractor_args"] = extractor_args
+
+            has_cookie = bool(ydl_opts.get("cookiefile"))
+            label = (
+                f"format={fmt} clients={','.join(clients) if clients else 'default'} "
+                f"cookies={'yes' if has_cookie else 'no'}"
+            )
+
+            try:
+                await loop.run_in_executor(None, self._download, url, ydl_opts)
+            except Exception as exc:  # yt_dlp.utils.DownloadError atau jaringan
+                first_line = (str(exc).splitlines() or [""])[0][:180]
+                errors.append(f"{label} -> {type(exc).__name__}: {first_line}")
+                logger.warning("unduhan gagal [%s]: %s", label, first_line)
+                self._cleanup_partial(output_path)
+                continue
+
+            found = self._locate_download(output_path)
+            if found:
+                logger.info("unduhan berhasil [%s] -> %s", label, found)
+                return found
+
+            errors.append(f"{label} -> tidak ada file hasil unduhan")
+            self._cleanup_partial(output_path)
+
+        formats = self._describe_formats(url, base_opts)
         raise RuntimeError(
-            "unduhan tidak menghasilkan file video "
-            f"(url={url}, folder={self.download_dir}, isi={files})"
+            "yt-dlp gagal mengunduh setelah semua format/client dicoba | "
+            f"yt-dlp={_ytdlp_version()} | formats_tersedia={formats} || "
+            + " || ".join(errors[-6:])
         )
 
+    def _cleanup_partial(self, output_path: str) -> None:
+        """Hapus sisa unduhan gagal agar percobaan berikutnya tidak bercampur."""
+        folder = Path(output_path).parent
+        stem = Path(output_path).name
+        try:
+            for entry in folder.glob(f"{stem}*"):
+                try:
+                    entry.unlink()
+                except OSError:
+                    continue
+        except OSError:
+            return
+
+    def _locate_download(self, output_path: str) -> Optional[str]:
+        """Cari file hasil unduhan (dengan ekstensi, atau tanpa ekstensi)."""
+        folder = Path(output_path).parent
+        stem = Path(output_path).name
+        candidates = [Path(f"{output_path}.{ext}") for ext in ("mp4", "mkv", "webm")]
+        candidates.append(Path(output_path))
+        # yt-dlp juga bisa menyimpan gabungan dengan nama <stem>.f137.mp4
+        candidates.extend(sorted(folder.glob(f"{stem}.f*.mp4")))
+
+        for path in candidates:
+            if not path.exists() or path.stat().st_size <= 0:
+                continue
+            if not path.suffix:
+                renamed = Path(f"{path}.mp4")
+                try:
+                    os.replace(path, renamed)
+                    return str(renamed)
+                except OSError:
+                    return str(path)
+            return str(path)
+        return None
+
+    def _describe_formats(self, url: str, ydl_opts: dict) -> str:
+        """Ringkas daftar format yang tersedia (untuk pesan error + log)."""
+        import yt_dlp
+
+        opts = {key: value for key, value in ydl_opts.items() if key != "cookiefile"}
+        opts = dict(opts)
+        opts.update({"quiet": True, "no_warnings": True, "skip_download": True})
+        opts.pop("format", None)
+        try:
+            with yt_dlp.YoutubeDL(cast(Any, opts)) as ydl:
+                info = ydl.extract_info(url, download=False) or {}
+        except Exception as exc:
+            logger.warning("gagal membaca daftar format: %s", str(exc)[:200])
+            return f"tidak bisa dibaca ({type(exc).__name__})"
+
+        formats = info.get("formats") or []
+        if not formats:
+            return "kosong (0 format)"
+
+        rows = []
+        for fmt in formats:
+            rows.append(
+                f"{fmt.get('format_id')} ext={fmt.get('ext')} h={fmt.get('height')} "
+                f"v={fmt.get('vcodec')} a={fmt.get('acodec')}"
+            )
+        logger.warning("format tersedia (%s): %s", len(rows), " | ".join(rows[:40]))
+        ids = ",".join(str(fmt.get("format_id")) for fmt in formats[:12])
+        return f"{len(rows)} format [ids: {ids}]"
     def _extract_info(self, url: str, ydl_opts: dict) -> Dict[str, Any]:
         import yt_dlp
 
