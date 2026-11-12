@@ -13,6 +13,9 @@ type TaskRow = {
 
 type WorkerRow = { instance_id: number; state: string; status_msg: string | null; task_id: string };
 
+// Catatan: endpoint /api/admin/tasks dan /api/admin/workers/instances mengembalikan
+// `{ items: [...] }` (bukan array langsung), jadi selalu baca `.items`.
+
 const taskColumns: Column[] = [
   { key: 'id', label: 'Task', render: (row) => String(row.id).slice(0, 8) },
   { key: 'status', label: 'Status' },
