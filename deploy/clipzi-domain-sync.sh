@@ -24,7 +24,9 @@ set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/clipzi/app}"
 COMPOSE_FILE="${COMPOSE_FILE:-$APP_DIR/docker-compose.vps.yml}"
-ENV_FILE="${ENV_FILE:-$APP_DIR/.env}"
+# Token & FRONTEND_URL ada di backend/.env; domain publik dibaca Caddy dari
+# compose (environment: DOMAIN/ADMIN_DOMAIN) dan frontend dari NEXT_PUBLIC_API_URL.
+ENV_FILE="${ENV_FILE:-$APP_DIR/backend/.env}"
 BACKEND_URL="${BACKEND_URL:-http://127.0.0.1:8000}"
 STATE_DIR="${STATE_DIR:-/var/lib/clipzi-domain-sync}"
 
@@ -60,7 +62,9 @@ log "Menerapkan domain: $DOMAIN (admin: ${ADMIN_DOMAIN:-'-'})"
 
 backup="$STATE_DIR/env.$(date -u +%Y%m%d-%H%M%S).bak"
 cp "$ENV_FILE" "$backup"
-log "Backup .env -> $backup"
+COMPOSE_BACKUP="$STATE_DIR/compose.$(date -u +%Y%m%d-%H%M%S).bak"
+cp "$COMPOSE_FILE" "$COMPOSE_BACKUP"
+log "Backup .env -> $backup, compose -> $COMPOSE_BACKUP"
 
 set_env() {
   python3 - "$ENV_FILE" "$1" "$2" <<'PY'
@@ -81,8 +85,28 @@ io.open(path, 'w', encoding='utf-8', newline='\n').write("\n".join(out) + "\n")
 PY
 }
 
-set_env DOMAIN "$DOMAIN"
-[[ -n "$ADMIN_DOMAIN" ]] && set_env ADMIN_DOMAIN "$ADMIN_DOMAIN"
+set_env FRONTEND_URL "https://$DOMAIN"
+
+# Tulis domain ke compose (Caddy membaca DOMAIN/ADMIN_DOMAIN, frontend membaca
+# NEXT_PUBLIC_API_URL). Nilainya berupa URL lengkap https://<domain>.
+python3 - "$COMPOSE_FILE" "$DOMAIN" "$ADMIN_DOMAIN" <<'PY'
+import io, re, sys
+path, domain, admin = sys.argv[1], sys.argv[2], sys.argv[3]
+text = io.open(path, encoding='utf-8').read()
+
+def set_key(text, key, value):
+    pattern = re.compile(rf"(?m)^(\s*){key}:\s*.*$")
+    if pattern.search(text):
+        return pattern.sub(lambda m: f"{m.group(1)}{key}: {value}", text, count=1)
+    return text
+
+text = set_key(text, "DOMAIN", f"https://{domain}")
+text = set_key(text, "NEXT_PUBLIC_API_URL", f"https://{domain}")
+if admin:
+    text = set_key(text, "ADMIN_DOMAIN", f"https://{admin}")
+io.open(path, 'w', encoding='utf-8', newline='\n').write(text)
+PY
+log "Compose diperbarui (DOMAIN/NEXT_PUBLIC_API_URL${ADMIN_DOMAIN:+/ADMIN_DOMAIN})."
 
 DNS_RESULT="skipped"
 if [[ -n "${CLOUDFLARE_API_TOKEN:-}" && -n "${CLOUDFLARE_ZONE_ID:-}" ]]; then
@@ -117,13 +141,15 @@ fi
 
 RESULT_OK=true
 RESULT_ERR=""
-if ! docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d caddy >/dev/null 2>&1; then
-  log "GAGAL compose caddy - .env dikembalikan."
+if ! docker compose -f "$COMPOSE_FILE" up -d caddy frontend >/dev/null 2>&1; then
+  log "GAGAL compose caddy/frontend - .env & compose dikembalikan."
   cp "$backup" "$ENV_FILE"
+  cp "$COMPOSE_BACKUP" "$COMPOSE_FILE"
+  docker compose -f "$COMPOSE_FILE" up -d caddy frontend >/dev/null 2>&1 || true
   RESULT_OK=false
-  RESULT_ERR="docker compose up -d caddy gagal; .env dikembalikan"
+  RESULT_ERR="docker compose up -d caddy frontend gagal; konfigurasi dikembalikan"
 else
-  log "Caddy di-reload dengan domain baru."
+  log "Caddy & frontend di-reload dengan domain baru."
 fi
 
 if [[ -n "$ADMIN_DOMAIN" ]]; then
