@@ -205,8 +205,6 @@ class LocalLLM:
         extra = ["/opt/llama", "/opt/llama/cuda"]
         current = env.get("LD_LIBRARY_PATH", "")
         env["LD_LIBRARY_PATH"] = ":".join(extra + ([current] if current else []))
-        # Backend ggml dimuat dari direktori ini (bukan hanya dari PATH).
-        env.setdefault("GGML_BACKEND_PATH", "/opt/llama")
         return env
 
     def _run_quick(self, args: list[str], timeout: int = 25) -> str:
