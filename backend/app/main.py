@@ -65,11 +65,18 @@ async def lifespan(app: FastAPI):
     await engine.dispose()
 
 
+# Dokumentasi API hanya aktif saat DEBUG: di produksi /docs, /redoc, dan
+# /openapi.json dimatikan supaya peta endpoint tidak bisa dipanen publik.
+_DOCS_ENABLED = bool(getattr(settings, "DEBUG", False))
+
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     description="Clipzi AI - Turn Long Videos into Viral Shorts",
     lifespan=lifespan,
+    docs_url="/docs" if _DOCS_ENABLED else None,
+    redoc_url="/redoc" if _DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if _DOCS_ENABLED else None,
 )
 
 # CORS
