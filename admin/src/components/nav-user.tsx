@@ -1,5 +1,8 @@
 'use client';
 
+import Link from 'next/link';
+
+import { signOut, signOutEverywhere } from '@/app/auth/actions';
 import { Icons } from '@/components/icons';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -75,31 +78,37 @@ export function NavUser({
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem>
-                <Icons.sparkles className='mr-2 h-4 w-4' />
-                Upgrade to Pro
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuItem>
                 <Icons.circleCheck className='mr-2 h-4 w-4' />
-                Account
+                <Link href='/dashboard/settings/platform'>Pengaturan Platform</Link>
               </DropdownMenuItem>
               <DropdownMenuItem>
-                <Icons.creditCard className='mr-2 h-4 w-4' />
-                Billing
+                <Icons.sparkles className='mr-2 h-4 w-4' />
+                <Link href='/dashboard/settings/ai'>Pengaturan AI</Link>
               </DropdownMenuItem>
               <DropdownMenuItem>
                 <Icons.notification className='mr-2 h-4 w-4' />
-                Notifications
+                <Link href='/dashboard/notifications'>Alerts</Link>
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem>
-                <Icons.logout className='mr-2 h-4 w-4' />
-                Log out
-              </DropdownMenuItem>
+              {/* Logout harus benar-benar bekerja: server action menghapus
+                  kedua cookie sesi + mencatat audit, lalu redirect ke login. */}
+              <form action={signOut}>
+                <DropdownMenuItem
+                  render={<button type='submit' className='w-full' />}
+                  className='text-destructive'
+                >
+                  <Icons.logout className='mr-2 h-4 w-4' />
+                  Log out
+                </DropdownMenuItem>
+              </form>
+              <form action={signOutEverywhere}>
+                <DropdownMenuItem render={<button type='submit' className='w-full' />}>
+                  <Icons.logout className='mr-2 h-4 w-4' />
+                  Log out dari semua perangkat
+                </DropdownMenuItem>
+              </form>
             </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>

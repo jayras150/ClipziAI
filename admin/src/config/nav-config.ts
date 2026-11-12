@@ -101,6 +101,22 @@ export const navGroups: NavGroup[] = [
         items: []
       },
       {
+        title: 'Platform',
+        url: '/dashboard/settings/platform',
+        icon: 'settings',
+        shortcut: ['p', 'l'],
+        isActive: false,
+        items: []
+      },
+      {
+        title: 'YouTube Cookies',
+        url: '/dashboard/settings/youtube',
+        icon: 'account',
+        shortcut: ['y', 'c'],
+        isActive: false,
+        items: []
+      },
+      {
         title: 'Branding',
         url: '/dashboard/settings/branding',
         icon: 'palette',

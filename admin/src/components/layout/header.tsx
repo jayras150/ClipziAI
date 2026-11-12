@@ -1,11 +1,14 @@
 import React from 'react';
 import { SidebarTrigger } from '../ui/sidebar';
 import { Separator } from '../ui/separator';
+import { Button } from '../ui/button';
+import { Icons } from '../icons';
 import { Breadcrumbs } from '../breadcrumbs';
 import SearchInput from '../search-input';
 import { ThemeSelector } from '../themes/theme-selector';
 import { ThemeModeToggle } from '../themes/theme-mode-toggle';
 import CtaGithub from './cta-github';
+import { signOut } from '@/app/auth/actions';
 import { NotificationCenter } from '@/features/notifications/components/notification-center';
 
 export default function Header() {
@@ -27,6 +30,13 @@ export default function Header() {
           <ThemeSelector />
         </div>
         <NotificationCenter />
+        {/* Tombol logout selalu terlihat (termasuk di mobile) supaya admin
+            tidak pernah "terjebak" di sesi yang tidak bisa diakhiri. */}
+        <form action={signOut}>
+          <Button type='submit' variant='ghost' size='icon' title='Log out' aria-label='Log out'>
+            <Icons.logout className='size-4' />
+          </Button>
+        </form>
       </div>
     </header>
   );
