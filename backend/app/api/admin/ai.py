@@ -108,27 +108,38 @@ async def test_ai(
         response = await client.chat.completions.create(
             model=cfg["model_metadata"],
             messages=[
-                {"role": "system", "content": "Balas hanya satu objek JSON."},
+                {"role": "system", "content": "Balas satu kata: pong."},
                 {"role": "user", "content": "ping"},
             ],
-            max_tokens=16,
+            max_tokens=64,
             temperature=0,
         )
-        answer = (response.choices[0].message.content or "").strip()
+        choice = response.choices[0]
+        answer = (choice.message.content or "").strip()
+        finish = getattr(choice, "finish_reason", None)
+        usage = getattr(response, "usage", None)
+        usage_data = (
+            usage.model_dump()
+            if usage is not None and hasattr(usage, "model_dump")
+            else None
+        )
     except Exception as exc:
         return {
             "ok": False,
             "provider": cfg["provider"],
             "model": cfg["model_metadata"],
             "base_url": effective_base_url(cfg),
+            "latency_ms": int((time.monotonic() - started) * 1000),
             "error": (type(exc).__name__ + ": " + str(exc))[:300],
         }
     latency_ms = int((time.monotonic() - started) * 1000)
     return {
-        "ok": bool(answer),
+        "ok": True,
         "provider": cfg["provider"],
         "model": cfg["model_metadata"],
         "base_url": effective_base_url(cfg),
         "latency_ms": latency_ms,
         "sample": answer[:120],
+        "finish_reason": finish,
+        "usage": usage_data,
     }

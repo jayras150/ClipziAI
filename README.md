@@ -77,7 +77,7 @@ Hanya variabel yang tidak bisa diatur dari dashboard yang WAJIB di .env.
 | Storage | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT_URL`, `R2_BUCKET_NAME`, `R2_PUBLIC_DOMAIN` | hasil klip & aset branding |
 | YouTube | `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, `YOUTUBE_REDIRECT_URI`, `YOUTUBE_API_KEY` | upload klip |
 | Vast | `VAST_API_KEY`, `VAST_WORKER_IMAGE`, `VAST_GPU_FILTER`, `VAST_MAX_ATTEMPTS`, `VAST_BOOT_TIMEOUT`, `VAST_ONESHOT_TIMEOUT` | `VAST_BOOT_TIMEOUT` minimal 900 detik untuk pull image |
-| Internal | `INTERNAL_CALLBACK_SECRET` | HMAC callback worker |
+| Internal | `CLIPZI_WORKER_TOKEN` | HMAC callback worker |
 
 **Diatur dari dashboard admin (bukan .env):** provider AI, base URL, API key AI, model
 metadata/rerank/regenerate, temperature, max tokens, timeout, budget, toggle fitur AI,
@@ -162,7 +162,7 @@ fallback CPU diam-diam untuk LLM (LLM lokal sudah tidak dipakai).
 2. Di domain publik, `/api/admin/*` dibalas **404** oleh Caddy (bukan 401) supaya
    keberadaan endpoint tidak terkonfirmasi.
 3. Dokumentasi FastAPI dimatikan di produksi (`docs_url`, `redoc_url`, `openapi_url`).
-4. Callback worker wajib HMAC (`INTERNAL_CALLBACK_SECRET`), tidak didaftarkan di router publik.
+4. Callback worker wajib HMAC (`CLIPZI_WORKER_TOKEN`), tidak didaftarkan di router publik.
 5. Login admin: lockout 5 gagal, cookie HttpOnly + SameSite=Strict, dukungan TOTP.
 
 ## Backup & Restore (satu perintah, satu file)
