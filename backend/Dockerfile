@@ -217,6 +217,18 @@ ENV TRANSCRIPTION_PROVIDER="gpu" \
 # instance ini — tidak ada audio/teks yang dikirim ke provider luar.
 # ---------------------------------------------------------------------------
 COPY --from=llama /app /opt/llama
+# CUDA runtime milik image llama.cpp (12.8). Tanpa ini libggml-cuda.so gagal
+# dimuat (pip hanya menyediakan 12.4) → llama-server jatuh ke CPU tanpa pesan
+# yang terlihat. Disalin seperlunya saja (cublas/cublasLt/cufft/cudart).
+COPY --from=llama /usr/local/cuda/lib64/libcudart.so.12.8.90 /opt/llama/cuda/
+COPY --from=llama /usr/local/cuda/lib64/libcublas.so.12.8.4.1 /opt/llama/cuda/
+COPY --from=llama /usr/local/cuda/lib64/libcublasLt.so.12.8.4.1 /opt/llama/cuda/
+COPY --from=llama /usr/local/cuda/lib64/libcufft.so.11.3.3.83 /opt/llama/cuda/
+RUN ln -sf /opt/llama/cuda/libcudart.so.12.8.90 /opt/llama/cuda/libcudart.so.12 \
+    && ln -sf /opt/llama/cuda/libcublas.so.12.8.4.1 /opt/llama/cuda/libcublas.so.12 \
+    && ln -sf /opt/llama/cuda/libcublasLt.so.12.8.4.1 /opt/llama/cuda/libcublasLt.so.12 \
+    && ln -sf /opt/llama/cuda/libcufft.so.11.3.3.83 /opt/llama/cuda/libcufft.so.11 \
+    && ls -l /opt/llama/cuda
 ENV PATH="/opt/llama:${PATH}"
 # libggml*/libllama*.so ada di /opt/llama; tanpa entri ini llama-server gagal
 # start dengan "error while loading shared libraries".

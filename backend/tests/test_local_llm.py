@@ -122,6 +122,20 @@ def test_runtime_info_tanpa_gpu():
     assert "tidak terdeteksi" in info
 
 
+def test_runtime_info_menandai_kecepatan_rendah(tmp_path):
+    from app.services.local_llm import LocalLLM
+
+    log = tmp_path / "llama.log"
+    log.write_text("slot print_timing: id 0 | n_gen = 120, tg = 2.20 t/s\n", encoding="utf-8")
+
+    llm = LocalLLM()
+    llm.devices = ["CUDA0: NVIDIA GeForce RTX 3060 (12288 MiB, 11388 MiB free)"]
+    llm._log_path = str(log)  # type: ignore[attr-defined]
+    info = llm.runtime_info()
+    assert "2.20 t/s" in info
+    assert "PERINGATAN" in info
+
+
 def test_parse_json_object_membersihkan_code_fence():
     assert parse_json_object('```json\n{"a": 1}\n```') == {"a": 1}
     assert parse_json_object("jawaban: {\"b\": 2} selesai") == {"b": 2}

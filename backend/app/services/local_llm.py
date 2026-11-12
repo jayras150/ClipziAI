@@ -143,10 +143,20 @@ class LocalLLM:
             return False
 
 
+    def _server_env(self) -> dict:
+        """Environment untuk llama-server: utamakan CUDA milik image llama.cpp."""
+        env = dict(os.environ)
+        extra = ["/opt/llama", "/opt/llama/cuda"]
+        current = env.get("LD_LIBRARY_PATH", "")
+        env["LD_LIBRARY_PATH"] = ":".join(extra + ([current] if current else []))
+        return env
+
     def _run_quick(self, args: list[str], timeout: int = 25) -> str:
         """Jalankan perintah singkat (mis. --list-devices) dan ambil outputnya."""
         try:
-            proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+            proc = subprocess.run(
+                args, capture_output=True, text=True, timeout=timeout, env=self._server_env()
+            )
             return (proc.stdout or "") + (proc.stderr or "")
         except Exception as exc:
             logger.warning("Perintah %s gagal: %s", args[0], exc)
@@ -211,7 +221,11 @@ class LocalLLM:
         try:
             log_file = open(self._log_path, "ab", buffering=0)
             self.process = subprocess.Popen(
-                cmd, stdout=log_file, stderr=subprocess.STDOUT, start_new_session=True
+                cmd,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                env=self._server_env(),
             )
         except Exception as exc:
             logger.error("Gagal menjalankan llama-server: %s", exc)
@@ -288,7 +302,14 @@ class LocalLLM:
         if speed:
             self.last_speed = speed
         device = self.devices[0][:90] if self.devices else "tidak terdeteksi"
-        return f"device={device} | speed={speed or 'belum ada'}"[:300]
+        note = ""
+        try:
+            value = float(speed.split()[0]) if speed else 0.0
+            if value and value < 8.0:
+                note = " | PERINGATAN: lambat, kemungkinan CPU fallback"
+        except Exception:
+            note = ""
+        return f"device={device} | speed={speed or 'belum ada'}{note}"[:300]
 
     def _tail_log(self, lines: int = 12) -> str:
         try:
