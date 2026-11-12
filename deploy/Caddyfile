@@ -63,11 +63,6 @@
 {$ADMIN_DOMAIN} {
 	encode zstd gzip
 
-	# Proteksi lapis pertama (cadangan sebelum Cloudflare Access aktif).
-	basic_auth {
-		clipzy {$ADMIN_BASIC_AUTH}
-	}
-
 	# API dipakai admin app untuk login & data (lewat Caddy -> backend).
 	handle /api/* {
 		reverse_proxy backend:8000
