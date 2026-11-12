@@ -77,6 +77,29 @@ def parse_json_object(raw: str) -> Optional[Dict[str, Any]]:
     return payload if isinstance(payload, dict) else None
 
 
+def parse_cuda_devices(text: str) -> list[str]:
+    """Ambil daftar device CUDA dari keluaran `llama-server --list-devices`.
+
+    Contoh keluaran:
+        Available devices:
+          CUDA0: NVIDIA GeForce RTX 3060 (12288 MiB, 11388 MiB free)
+    """
+    devices: list[str] = []
+    for line in (text or "").splitlines():
+        stripped = line.strip()
+        if stripped.upper().startswith("CUDA"):
+            devices.append(stripped[:120])
+    return devices
+
+
+def parse_last_speed(text: str) -> str:
+    """Ambil kecepatan decode terakhir dari log llama-server (mis. `tg = 31.4 t/s`)."""
+    matches = re.findall(r"tg\s*=\s*([\d.]+)\s*t/s", text or "")
+    if not matches:
+        return ""
+    return f"{matches[-1]} t/s"
+
+
 class LocalLLM:
     """Kelola satu proses `llama-server` untuk satu task."""
 
@@ -91,6 +114,8 @@ class LocalLLM:
         self._log_path = "/tmp/llama-server.log"
         self.last_error: str = ""
         self.info: str = ""
+        self.devices: list[str] = []
+        self.last_speed: str = ""
 
     @classmethod
     def instance(cls) -> "LocalLLM":
@@ -118,6 +143,33 @@ class LocalLLM:
             return False
 
 
+    def _run_quick(self, args: list[str], timeout: int = 25) -> str:
+        """Jalankan perintah singkat (mis. --list-devices) dan ambil outputnya."""
+        try:
+            proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+            return (proc.stdout or "") + (proc.stderr or "")
+        except Exception as exc:
+            logger.warning("Perintah %s gagal: %s", args[0], exc)
+            return ""
+
+    def _detect_devices(self) -> list[str]:
+        """Deteksi GPU lewat `--list-devices` (tanpa memuat model)."""
+        output = self._run_quick([settings.LOCAL_LLM_SERVER_BIN, "--list-devices"])
+        self.devices = parse_cuda_devices(output)
+        if not self.devices:
+            logger.error(
+                "llama-server tidak melihat GPU CUDA (output: %s) — LLM akan jalan di CPU",
+                " ".join(output.split())[:300],
+            )
+        return self.devices
+
+    def _log_tail_text(self, lines: int = 400) -> str:
+        try:
+            with open(self._log_path, "r", encoding="utf-8", errors="replace") as handle:
+                return "\n".join(handle.read().splitlines()[-lines:])
+        except Exception:
+            return ""
+
     def start(self) -> bool:
         """Jalankan llama-server dan tunggu sampai siap. False bila gagal."""
         if not self.available:
@@ -127,7 +179,8 @@ class LocalLLM:
         if self._healthy():  # server sudah jalan (mis. dari proses lain)
             return True
 
-        cmd = [
+        devices = self._detect_devices()
+        base_cmd = [
             settings.LOCAL_LLM_SERVER_BIN,
             "-m", self.model_path,
             "--host", "127.0.0.1",
@@ -138,6 +191,22 @@ class LocalLLM:
             "--no-webui",
             "--jinja",
         ]
+
+        # Coba GPU lebih dulu (pilih device eksplisit), lalu fallback tanpa
+        # `--device` bila backend CUDA gagal dimuat — jangan sampai task mati.
+        attempts: list[list[str]] = []
+        if devices:
+            attempts.append(base_cmd + ["--device", "CUDA0"])
+        attempts.append(list(base_cmd))
+
+        for cmd in attempts:
+            if self._spawn_and_wait(cmd):
+                return True
+            self.stop()
+        return False
+
+    def _spawn_and_wait(self, cmd: list[str]) -> bool:
+        """Jalankan satu perintah server dan tunggu /health 200."""
         logger.info("Menjalankan LLM lokal: %s", " ".join(cmd))
         try:
             log_file = open(self._log_path, "ab", buffering=0)
@@ -150,10 +219,10 @@ class LocalLLM:
 
         deadline = time.monotonic() + settings.LOCAL_LLM_START_TIMEOUT
         while time.monotonic() < deadline:
-            if self.process.poll() is not None:
+            if self.process is None or self.process.poll() is not None:
                 logger.error(
                     "llama-server berhenti saat start (exit %s). Log: %s",
-                    self.process.returncode,
+                    getattr(self.process, "returncode", "?"),
                     self._tail_log(),
                 )
                 return False
@@ -175,7 +244,6 @@ class LocalLLM:
             settings.LOCAL_LLM_START_TIMEOUT,
             self._tail_log(),
         )
-        self.stop()
         return False
 
     def stop(self) -> None:
@@ -195,22 +263,32 @@ class LocalLLM:
         logger.info("LLM lokal dihentikan; VRAM dibebaskan untuk render")
 
     def _gpu_info(self, lines: int = 400) -> str:
-        """Ringkas baris log llama-server soal device/CUDA (untuk diagnosa)."""
-        try:
-            with open(self._log_path, "r", encoding="utf-8", errors="replace") as handle:
-                text = handle.read().splitlines()[-lines:]
-        except Exception:
-            return ""
-        picked = []
-        for line in text:
+        """Ringkas status GPU/CUDA + kecepatan decode terakhir (untuk diagnosa)."""
+        text = self._log_tail_text(lines)
+        cuda_line = ""
+        for line in text.splitlines():
             low = line.lower()
-            if any(key in low for key in ("cuda", "offload", "device", "ggml_cuda")):
-                cleaned = " ".join(line.split())
-                if cleaned and cleaned not in picked:
-                    picked.append(cleaned[:160])
-        if not picked:
-            return "tidak ada baris CUDA di log (kemungkinan fallback CPU)"
-        return " | ".join(picked[:3])
+            if "ggml_cuda_init" in low or "cuda0" in low or "using device" in low:
+                cuda_line = " ".join(line.split())[:140]
+                break
+        parts: list[str] = []
+        parts.append(
+            f"GPU: {self.devices[0][:90]}" if self.devices else "GPU: tidak terdeteksi"
+        )
+        if cuda_line:
+            parts.append(f"log: {cuda_line}")
+        speed = parse_last_speed(text)
+        if speed:
+            parts.append(f"speed: {speed}")
+        return " | ".join(parts)[:400]
+
+    def runtime_info(self) -> str:
+        """Info runtime terbaru (device + kecepatan decode) setelah inferensi."""
+        speed = parse_last_speed(self._log_tail_text(60))
+        if speed:
+            self.last_speed = speed
+        device = self.devices[0][:90] if self.devices else "tidak terdeteksi"
+        return f"device={device} | speed={speed or 'belum ada'}"[:300]
 
     def _tail_log(self, lines: int = 12) -> str:
         try:
@@ -249,6 +327,7 @@ class LocalLLM:
             )
             response.raise_for_status()
             data = response.json()
+            self.last_speed = parse_last_speed(self._log_tail_text(60))
             return str(data["choices"][0]["message"]["content"])
         except Exception as exc:
             logger.warning("LLM lokal gagal menjawab: %s", str(exc)[:300])

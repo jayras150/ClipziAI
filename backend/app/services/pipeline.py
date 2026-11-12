@@ -487,6 +487,20 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                     )
             _lap("metadata")
 
+            # Kecepatan decode Qwen (bukti GPU vs CPU) — dikirim sebelum LLM mati.
+            if llm_ready:
+                try:
+                    from app.services.worker_callback import report_worker_event
+
+                    await report_worker_event(
+                        task.id,
+                        "stage",
+                        stage="llm_perf",
+                        message=local_llm.runtime_info(),
+                    )
+                except Exception:
+                    pass
+
             # VRAM harus bebas sebelum render ffmpeg.
             if llm_ready:
                 try:
@@ -899,7 +913,9 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                     local_llm.stop()
             except Exception:
                 pass
-            # Unggah log ke qurl.sh sebelum work_dir dihapus & instance dimatikan.
+            # Unggah log ke qurl.sh SEKALI, lalu laporkan hasilnya. Kegagalan di
+            # sini tidak boleh menggagalkan task maupun mengirim callback ganda.
+            log_reported = False
             try:
                 from app.services.log_bundle import upload_log_bundle
                 from app.services.worker_callback import report_worker_event
@@ -913,8 +929,22 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                     await report_worker_event(
                         task.id, "stage", stage="logs_failed", message=log_error[:400]
                     )
+                log_reported = True
             except Exception as exc:
-                logger.warning("Unggah log worker dilewati: %s", exc)
+                # traceback lengkap masuk worker.log (ikut terkirim bila memungkinkan)
+                logger.exception("Unggah/lapor log worker gagal: %s", exc)
+                if not log_reported:
+                    try:
+                        from app.services.worker_callback import report_worker_event
+
+                        await report_worker_event(
+                            task.id,
+                            "stage",
+                            stage="logs_failed",
+                            message=f"{type(exc).__name__}: {exc}"[:400],
+                        )
+                    except Exception:
+                        logger.exception("Gagal mengirim logs_failed ke API")
             shutil.rmtree(work_dir, ignore_errors=True)
 
 

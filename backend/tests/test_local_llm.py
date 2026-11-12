@@ -96,6 +96,32 @@ def test_rerank_mencatat_error_saat_id_tidak_cocok():
     assert "id tidak cocok" in llm.last_error
 
 
+def test_parse_cuda_devices_dan_speed():
+    from app.services.local_llm import parse_cuda_devices, parse_last_speed
+
+    text = (
+        "Available devices:\n"
+        "  CUDA0: NVIDIA GeForce RTX 3060 (12288 MiB, 11388 MiB free)\n"
+    )
+    assert parse_cuda_devices(text) == [
+        "CUDA0: NVIDIA GeForce RTX 3060 (12288 MiB, 11388 MiB free)"
+    ]
+    assert parse_cuda_devices("Available devices:\n  (none)\n") == []
+
+    log = "slot print_timing: id 0 | n_gen = 335, tg = 31.42 t/s, tg_3s = 30.1 t/s"
+    assert parse_last_speed(log) == "31.42 t/s"
+    assert parse_last_speed("") == ""
+
+
+def test_runtime_info_tanpa_gpu():
+    from app.services.local_llm import LocalLLM
+
+    llm = LocalLLM()
+    llm.devices = []
+    info = llm.runtime_info()
+    assert "tidak terdeteksi" in info
+
+
 def test_parse_json_object_membersihkan_code_fence():
     assert parse_json_object('```json\n{"a": 1}\n```') == {"a": 1}
     assert parse_json_object("jawaban: {\"b\": 2} selesai") == {"b": 2}

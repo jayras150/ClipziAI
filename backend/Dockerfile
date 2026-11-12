@@ -228,8 +228,10 @@ ENV AI_PROVIDER="custom" \
 USER root
 COPY --from=gguf /models /app/models
 RUN test "$(stat -c%s /app/models/Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf)" -gt 2000000000 \
+    && test -f /opt/llama/libggml-cuda.so \
+    && ls /opt/llama/libggml-cuda.so \
     && chown -R clipzi:clipzi /app/models \
-    && /opt/llama/llama-server --version || true
+    && /opt/llama/llama-server --version
 USER clipzi
 
 
