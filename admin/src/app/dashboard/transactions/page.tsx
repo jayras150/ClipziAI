@@ -76,7 +76,7 @@ export default async function TransactionsPage({
                 defaultValue={params.status || ''}
                 className='border-input bg-background h-9 rounded-md border px-3 text-sm'
               >
-                {['', 'pending', 'paid', 'failed', 'expired', 'cancelled'].map((status) => (
+                {['', 'pending', 'success', 'failed', 'expired'].map((status) => (
                   <option key={status} value={status}>
                     {status || 'semua status'}
                   </option>
@@ -119,7 +119,7 @@ export default async function TransactionsPage({
                       </TableCell>
                       <TableCell className='tabular-nums'>{fmtIdr(row.amount)}</TableCell>
                       <TableCell>
-                        <Badge variant={row.status === 'paid' ? 'secondary' : 'outline'}>
+                        <Badge variant={row.status === 'success' ? 'secondary' : 'outline'}>
                           {row.status}
                         </Badge>
                       </TableCell>

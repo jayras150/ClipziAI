@@ -4,13 +4,13 @@ Admin transactions: daftar dengan filter + total pendapatan.
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.admin.deps import get_current_admin
 from app.api.deps import get_db_session
-from app.models.transaction import Transaction
+from app.models.transaction import Transaction, TransactionStatus
 from app.models.user import User
 
 router = APIRouter(dependencies=[Depends(get_current_admin)])
@@ -26,8 +26,14 @@ async def list_transactions(
     page_size: int = Query(default=25, ge=1, le=200),
     db: AsyncSession = Depends(get_db_session),
 ):
-    query = select(Transaction, User.email).join(User, Transaction.user_id == User.id, isouter=True)
+    query = select(Transaction, User.email).join(User, User.id == Transaction.user_id, isouter=True)
     if status_filter:
+        allowed = {item.value for item in TransactionStatus}
+        if status_filter not in allowed:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Status tidak dikenal. Pilihan: {', '.join(sorted(allowed))}",
+            )
         query = query.where(Transaction.status == status_filter)
     if date_from:
         query = query.where(Transaction.created_at >= date_from)
@@ -94,5 +100,5 @@ async def transactions_summary(db: AsyncSession = Depends(get_db_session)):
         getattr(status, "value", str(status)): {"count": int(count), "amount": float(amount)}
         for status, count, amount in rows
     }
-    paid = by_status.get("paid", {"count": 0, "amount": 0.0})
+    paid = by_status.get("success", {"count": 0, "amount": 0.0})
     return {"by_status": by_status, "paid_count": paid["count"], "paid_amount": paid["amount"]}

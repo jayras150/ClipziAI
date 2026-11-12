@@ -36,13 +36,17 @@ log() { echo "[$(date -u +%FT%TZ)] $*"; }
 
 [[ -f "$ENV_FILE" ]] || { log "ENV file tidak ada: $ENV_FILE"; exit 1; }
 
-set -a
-# shellcheck disable=SC1090
-. "$ENV_FILE"
-set +a
+# JANGAN `source` file .env: beberapa nilai berisi spasi/kutip sehingga bisa
+# dieksekusi sebagai perintah. Ambil hanya key yang dibutuhkan.
+get_env() {
+  { grep -E "^$1=" "$ENV_FILE" | head -1 | cut -d= -f2- \
+    | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"; } || true
+}
 
-TOKEN="${CLIPZI_WORKER_TOKEN:-}"
-[[ -n "$TOKEN" ]] || { log "CLIPZI_WORKER_TOKEN kosong."; exit 1; }
+TOKEN="$(get_env CLIPZI_WORKER_TOKEN)"
+CLOUDFLARE_API_TOKEN="$(get_env CLOUDFLARE_API_TOKEN)"
+CLOUDFLARE_ZONE_ID="$(get_env CLOUDFLARE_ZONE_ID)"
+[[ -n "$TOKEN" ]] || { log "CLIPZI_WORKER_TOKEN kosong di $ENV_FILE."; exit 1; }
 
 TASK_JSON="$(curl -fsS --max-time 20 -H "X-Clipzi-Token: $TOKEN" "$BACKEND_URL/api/internal/domain-task" || true)"
 [[ -n "$TASK_JSON" ]] || { log "Backend tidak merespons domain-task (lewati)."; exit 0; }

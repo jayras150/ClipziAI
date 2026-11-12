@@ -23,7 +23,7 @@ from app.models.audit_log import ActorType, AuditLog
 from app.models.clip import Clip
 from app.models.credit_transaction import CreditTransaction, CreditTransactionType
 from app.models.task import Task
-from app.models.transaction import Transaction
+from app.models.transaction import Transaction, TransactionStatus
 from app.models.user import User
 from app.models.user_profile import PlanType, UserProfile
 from app.services.auth_session import revoke_sessions
@@ -197,7 +197,8 @@ async def get_user_detail(user_id: UUID, db: AsyncSession = Depends(get_db_sessi
     revenue = (
         await db.execute(
             select(func.coalesce(func.sum(Transaction.amount), 0)).where(
-                Transaction.user_id == user_id, Transaction.status == "paid"
+                Transaction.user_id == user_id,
+                Transaction.status == TransactionStatus.SUCCESS.value,
             )
         )
     ).scalar() or 0

@@ -22,7 +22,7 @@ from app.api.deps import get_db_session
 from app.models.clip import Clip
 from app.models.pricing_plan import PricingPlan
 from app.models.task import Task, TaskStatus
-from app.models.transaction import Transaction
+from app.models.transaction import Transaction, TransactionStatus
 from app.models.user import User
 from app.models.worker_instance import WorkerInstance
 
@@ -71,7 +71,7 @@ async def system_stats(db: AsyncSession = Depends(get_db_session)):
     revenue_paid = (
         await db.execute(
             select(func.coalesce(func.sum(Transaction.amount), 0)).where(
-                Transaction.status == "paid"
+                Transaction.status == TransactionStatus.SUCCESS.value
             )
         )
     ).scalar() or 0
@@ -173,7 +173,7 @@ async def system_metrics(
                 func.date_trunc("day", Transaction.created_at).label("day"),
                 func.coalesce(func.sum(Transaction.amount), 0),
             )
-            .where(Transaction.created_at >= start, Transaction.status == "paid")
+            .where(Transaction.created_at >= start, Transaction.status == TransactionStatus.SUCCESS.value)
             .group_by("day")
         )
     ).all()
