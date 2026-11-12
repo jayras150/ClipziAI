@@ -1,6 +1,7 @@
 """
 Clipzi AI - FastAPI Application Entry Point
 """
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -39,9 +40,11 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # Startup
     await init_db()
-    # Bersihkan instance GPU yatim (mode `oneshot`) yang tertinggal karena
-    # restart/crash: reaper di memori hilang, tapi instance tetap ditagih.
-    try:
+    # Pemeliharaan instance Vast (hapus yatim + lanjutkan pemantauan) dilakukan
+    # di BACKGROUND dengan batas waktu. Panggilan jaringan ke Vast tidak boleh
+    # menahan startup API: kalau console.vast.ai lambat, dulu seluruh API ikut
+    # menggantung (healthcheck 502) sampai panggilan itu selesai.
+    async def _vast_maintenance() -> None:
         from app.services.vast_worker import cleanup_orphan_instances, resume_supervisors
 
         removed = await cleanup_orphan_instances()
@@ -50,8 +53,14 @@ async def lifespan(app: FastAPI):
         resumed = await resume_supervisors()
         if resumed:
             logger.warning("%s instance Vast.ai dilanjutkan pemantauannya", resumed)
-    except Exception as exc:  # jangan gagalkan startup karena Vast
-        logger.warning("Pemeriksaan instance yatim gagal: %s", exc)
+
+    async def _run_vast_maintenance() -> None:
+        try:
+            await asyncio.wait_for(_vast_maintenance(), timeout=120)
+        except Exception as exc:  # jangan gagalkan startup karena Vast
+            logger.warning("Pemeliharaan instance Vast gagal/dilewati: %s", exc)
+
+    asyncio.create_task(_run_vast_maintenance())
     # Setelan AI tersimpan di DB -> inject ke env/settings saat startup supaya
     # kredensial dari dashboard langsung dipakai tanpa menunggu request admin.
     try:
