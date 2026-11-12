@@ -1,18 +1,100 @@
-"use client";
+'use client';
 
-import { useState, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 
-import { saveAi, testAi, type TestResult } from '@/app/dashboard/settings/actions';
+import { loadAiModels, saveAi, testAi, type ModelsResult, type TestResult } from '@/app/dashboard/settings/actions';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import type { AiConfig } from '@/lib/clipzi';
+import type { AiConfig, AiProviderMeta } from '@/lib/clipzi';
 
-type Props = { config: AiConfig };
+type Props = { config: AiConfig; providers: AiProviderMeta[] };
 
-export default function AiForm({ config }: Props) {
+/**
+ * Dropdown sederhana bergaya template (input + daftar tersaring) supaya bisa
+ * dipakai tanpa ketergantungan komponen tambahan.
+ */
+function ComboField({
+  label,
+  value,
+  onChange,
+  options,
+  placeholder,
+  searchPlaceholder
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string; hint?: string }[];
+  placeholder?: string;
+  searchPlaceholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return options.slice(0, 300);
+    return options
+      .filter(
+        (option) =>
+          option.value.toLowerCase().includes(needle) ||
+          option.label.toLowerCase().includes(needle)
+      )
+      .slice(0, 300);
+  }, [options, query]);
+
+  return (
+    <div className='relative space-y-2'>
+      <Label>{label}</Label>
+      <Input
+        value={open ? query : value}
+        placeholder={open ? searchPlaceholder || 'cari...' : placeholder}
+        onFocus={() => {
+          setOpen(true);
+          setQuery('');
+        }}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          setOpen(true);
+        }}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+      />
+      {open ? (
+        <div className='bg-popover absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-md border shadow-md'>
+          {filtered.length ? (
+            filtered.map((option) => (
+              <button
+                key={option.value}
+                type='button'
+                className='hover:bg-accent flex w-full flex-col items-start px-3 py-2 text-left text-sm'
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  onChange(option.value);
+                  setOpen(false);
+                  setQuery('');
+                }}
+              >
+                <span className='font-medium'>{option.value}</span>
+                {option.label !== option.value || option.hint ? (
+                  <span className='text-muted-foreground text-xs'>
+                    {[option.label, option.hint].filter(Boolean).join(' · ')}
+                  </span>
+                ) : null}
+              </button>
+            ))
+          ) : (
+            <p className='text-muted-foreground px-3 py-2 text-sm'>Tidak ada hasil.</p>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export default function AiForm({ config, providers }: Props) {
   const [form, setForm] = useState({
     enabled: config.enabled,
     provider: config.provider,
@@ -33,10 +115,13 @@ export default function AiForm({ config }: Props) {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [test, setTest] = useState<TestResult | null>(null);
+  const [models, setModels] = useState<ModelsResult | null>(null);
   const [pending, startTransition] = useTransition();
 
   const set = (key: keyof typeof form, value: unknown) =>
     setForm((prev) => ({ ...prev, [key]: value }));
+
+  const activeProvider = providers.find((item) => item.id === form.provider);
 
   const onSubmit = () => {
     setMessage('');
@@ -44,13 +129,24 @@ export default function AiForm({ config }: Props) {
     startTransition(async () => {
       const result = await saveAi({ ...form, api_key: form.api_key || undefined });
       if (result.ok) {
-        setMessage(
-          'Tersimpan. Env di-inject: ' + (result.injected || []).join(', ')
-        );
+        setMessage('Tersimpan. Env di-inject: ' + (result.injected || []).join(', '));
         setForm((prev) => ({ ...prev, api_key: '' }));
+        // Setelah kredensial tersimpan, langsung muat daftar model nyata.
+        const loaded = await loadAiModels({ provider: form.provider, base_url: form.base_url });
+        setModels(loaded);
       } else {
         setError(result.error || 'Gagal menyimpan.');
       }
+    });
+  };
+
+  const onLoadModels = () => {
+    setModels(null);
+    setError('');
+    startTransition(async () => {
+      const loaded = await loadAiModels({ provider: form.provider, base_url: form.base_url });
+      setModels(loaded);
+      if (!loaded.ok) setError(loaded.error || 'Gagal memuat daftar model.');
     });
   };
 
@@ -64,6 +160,12 @@ export default function AiForm({ config }: Props) {
     });
   };
 
+  const modelOptions = (models?.models || []).map((item) => ({
+    value: item.id,
+    label: item.id,
+    hint: item.owned_by || undefined
+  }));
+
   return (
     <div className='space-y-4'>
       <Card>
@@ -71,42 +173,56 @@ export default function AiForm({ config }: Props) {
           <CardTitle>Provider</CardTitle>
         </CardHeader>
         <CardContent className='grid gap-4 md:grid-cols-2'>
+          <ComboField
+            label='Provider'
+            value={form.provider}
+            placeholder='pilih provider'
+            searchPlaceholder='cari provider (openrouter, groq, ...)'
+            onChange={(value) => {
+              set('provider', value);
+              const meta = providers.find((item) => item.id === value);
+              if (meta?.base_url) set('base_url', '');
+              if (meta?.default_model && !form.model_metadata) set('model_metadata', meta.default_model);
+              setModels(null);
+            }}
+            options={providers.map((item) => ({
+              value: item.id,
+              label: item.label,
+              hint: item.base_url || 'butuh base URL manual'
+            }))}
+          />
           <div className='space-y-2'>
-            <Label htmlFor='provider'>Provider</Label>
-            <select
-              id='provider'
-              className='border-input bg-background h-9 w-full rounded-md border px-3 text-sm'
-              value={form.provider}
-              onChange={(event) => set('provider', event.target.value)}
-            >
-              {config.providers.map((provider) => (
-                <option key={provider} value={provider}>
-                  {provider}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className='space-y-2'>
-            <Label htmlFor='base_url'>Base URL (opsional)</Label>
+            <Label htmlFor='base_url'>Base URL</Label>
             <Input
               id='base_url'
-              placeholder={config.effective_base_url || 'default provider'}
+              placeholder={activeProvider?.base_url || 'https://...'}
               value={form.base_url}
               onChange={(event) => set('base_url', event.target.value)}
             />
+            <p className='text-muted-foreground text-xs'>
+              Kosongkan untuk memakai default provider
+              {activeProvider?.base_url ? `: ${activeProvider.base_url}` : ''}.
+            </p>
           </div>
-          <div className='space-y-2 md:col-span-2'>
-            <Label htmlFor='api_key'>API Key</Label>
+          <div className='space-y-2'>
+            <Label htmlFor='api_key'>API key {config.api_key_set ? `(tersimpan: ${config.api_key_masked})` : ''}</Label>
             <Input
               id='api_key'
               type='password'
-              placeholder={config.api_key_set ? 'Tersimpan: ' + config.api_key_masked : 'Belum ada'}
+              placeholder={config.api_key_set ? 'biarkan kosong bila tidak diubah' : 'sk-...'}
               value={form.api_key}
               onChange={(event) => set('api_key', event.target.value)}
             />
-            <p className='text-muted-foreground text-xs'>
-              Kosongkan bila tidak ingin mengganti key. Disimpan terenkripsi di database.
-            </p>
+          </div>
+          <div className='flex items-end gap-2'>
+            <Button type='button' variant='outline' onClick={onLoadModels} disabled={pending}>
+              {pending ? 'Memuat...' : 'Muat daftar model'}
+            </Button>
+            {models?.ok ? (
+              <Badge variant='secondary'>
+                {models.count} model{models.cached ? ' (cache)' : ''}
+              </Badge>
+            ) : null}
           </div>
         </CardContent>
       </Card>
@@ -116,30 +232,33 @@ export default function AiForm({ config }: Props) {
           <CardTitle>Model</CardTitle>
         </CardHeader>
         <CardContent className='grid gap-4 md:grid-cols-3'>
-          <div className='space-y-2'>
-            <Label htmlFor='model_metadata'>Metadata</Label>
-            <Input
-              id='model_metadata'
-              value={form.model_metadata}
-              onChange={(event) => set('model_metadata', event.target.value)}
-            />
-          </div>
-          <div className='space-y-2'>
-            <Label htmlFor='model_rerank'>Rerank</Label>
-            <Input
-              id='model_rerank'
-              value={form.model_rerank}
-              onChange={(event) => set('model_rerank', event.target.value)}
-            />
-          </div>
-          <div className='space-y-2'>
-            <Label htmlFor='model_regenerate'>Regenerate</Label>
-            <Input
-              id='model_regenerate'
-              value={form.model_regenerate}
-              onChange={(event) => set('model_regenerate', event.target.value)}
-            />
-          </div>
+          <ComboField
+            label='Model metadata'
+            value={form.model_metadata}
+            placeholder='pilih / ketik model'
+            searchPlaceholder='cari nama atau id model'
+            onChange={(value) => set('model_metadata', value)}
+            options={modelOptions}
+          />
+          <ComboField
+            label='Model rerank'
+            value={form.model_rerank}
+            searchPlaceholder='cari nama atau id model'
+            onChange={(value) => set('model_rerank', value)}
+            options={modelOptions}
+          />
+          <ComboField
+            label='Model regenerate'
+            value={form.model_regenerate}
+            searchPlaceholder='cari nama atau id model'
+            onChange={(value) => set('model_regenerate', value)}
+            options={modelOptions}
+          />
+          <p className='text-muted-foreground text-xs md:col-span-3'>
+            {modelOptions.length
+              ? `${modelOptions.length} model tersedia. Klik “Muat daftar model” setelah menyimpan API key untuk memperbarui daftar.`
+              : 'Daftar model belum dimuat — isi API key lalu simpan, atau klik “Muat daftar model”. Nama model juga bisa diketik manual.'}
+          </p>
         </CardContent>
       </Card>
 
@@ -229,3 +348,4 @@ export default function AiForm({ config }: Props) {
     </div>
   );
 }
+

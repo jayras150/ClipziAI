@@ -1,0 +1,9 @@
+[Unit]
+Description=ClipzyAI domain sync (terapkan permintaan ganti domain dari dashboard)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/clipzi-domain-sync.sh
+Nice=10

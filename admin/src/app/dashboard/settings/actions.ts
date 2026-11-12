@@ -29,6 +29,35 @@ export type TestResult = {
   error?: string;
 };
 
+export type ModelsResult = {
+  ok: boolean;
+  error?: string;
+  provider?: string;
+  base_url?: string;
+  count?: number;
+  cached?: boolean;
+  models?: { id: string; owned_by: string | null; context_length: number | null }[];
+};
+
+/**
+ * Ambil daftar model langsung dari provider (GET {base_url}/models).
+ * Dipakai dropdown model dengan pencarian di halaman Settings > AI.
+ */
+export async function loadAiModels(payload: {
+  provider: string;
+  base_url?: string;
+}): Promise<ModelsResult> {
+  try {
+    const data = await adminFetch<ModelsResult>('/api/admin/settings/ai/models', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    return { ...data, ok: true };
+  } catch (error) {
+    return { ok: false, error: (error as Error).message };
+  }
+}
+
 export async function testAi(): Promise<TestResult> {
   try {
     return await adminFetch<TestResult>('/api/admin/settings/ai/test', { method: 'POST' });

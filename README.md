@@ -2,9 +2,41 @@
 
 Platform pemotong video panjang menjadi klip pendek siap publikasi (9:16, subtitle karaoke,
 watermark, metadata AI). Repo ini berisi backend API, worker GPU di Vast.ai, frontend publik,
-dan (menyusul) aplikasi admin terpisah.
+dan aplikasi admin terpisah.
+
+## Peta cepat (mau ubah apa, buka bagian mana)
+
+| Aku mau… | Bagian |
+|---|---|
+| Ganti domain / pindah hostname (1 klik) | [Setelan ekosistem & ganti domain](#setelan-ekosistem--ganti-domain-1-klik) |
+| Ganti provider AI / muat daftar model | [AI provider & daftar model](#ai-provider--daftar-model) |
+| Update cookies YouTube (base64 / Netscape) | [Cookies YouTube](#cookies-youtube-base64--netscape) |
+| Ban user, ubah plan, lihat log user | [Dashboard admin](#dashboard-admin) › Users |
+| Lihat biaya GPU & log worker | [Dashboard admin](#dashboard-admin) › Workers |
+| Masalah login admin / "Something went wrong" | [Sesi & logout](#sesi--logout) + [Troubleshooting](#troubleshooting) |
+| API mati, AI test gagal, Vast hang | [Troubleshooting](#troubleshooting) |
+| Pindah VPS / setup dari nol | [Pindah VPS / setup dari nol](#pindah-vps--setup-dari-nol-runbook-lengkap) |
+| Backup & restore | [Backup & Restore](#backup--restore-satu-perintah-satu-file) |
+
+## Changelog penting
+
+Setiap perubahan besar dicatat di sini (tanggal · area · ringkasan · cara verifikasi).
+
+| Tanggal | Area | Perubahan | Verifikasi |
+|---|---|---|---|
+| 12 Nov 2026 | Firewall | `DOCKER-USER` kini hanya membatasi trafik **masuk** (`-i $WAN`). Sebelumnya ikut memblokir **outbound HTTPS container** → AI test `HTTP 000`, startup Vast hang, API 502. | `/usr/local/sbin/clipzi-cf-firewall.sh --check` → `example.com 200`, `openrouter 200` |
+| 12 Nov 2026 | Sesi admin | Refresh token 30 hari + sliding refresh di middleware; cookie access 12 jam. Tidak ada lagi 401 tiap 60 menit. | Buka dashboard > 1 jam tetap tampil |
+| 12 Nov 2026 | Logout | Tombol logout di sidebar, header, dan command palette + `logout-all` (cabut semua sesi via tabel `auth_revocations`). | `POST /api/admin/auth/logout` lalu akses endpoint → 401 |
+| 12 Nov 2026 | Overview | Template demo dihapus; 100% data nyata (KPI, grafik task/klip/signup, status task, top user, health). | Angka cocok dengan `GET /api/admin/system/stats` |
+| 12 Nov 2026 | Users | Daftar + filter/pagination, halaman detail (plan, kredit, tasks, transaksi, log), ban/suspend/aktifkan, adjust kredit, set plan, reset password, paksa logout. Body JSON (fix 422). | `/dashboard/users` → klik nama |
+| 12 Nov 2026 | Tasks/Transaksi/Audit | Filter + pagination + detail task + cancel/retry; ringkasan pendapatan; audit bisa difilter. | `/dashboard/tasks`, `/dashboard/transactions`, `/dashboard/audit` |
+| 12 Nov 2026 | AI | Provider bertambah (18, semua punya base URL bawaan) + `GET /api/admin/settings/ai/providers` + `POST /api/admin/settings/ai/models`; dropdown provider & model dengan kolom pencarian. | Settings › AI › "Muat daftar model" |
+| 12 Nov 2026 | Domain | Setelan `platform` di DB, tombol **Terapkan domain** 1 klik, agent `clipzi-domain-sync` (systemd timer 30 s) menulis `.env` + reload Caddy + opsional DNS Cloudflare. | Settings › Platform › Terapkan domain |
+| 12 Nov 2026 | Cookies YouTube | Simpan cookies dari **base64** atau Netscape, validasi, uji (probe), aktif/nonaktif, hapus, ekspor base64. Tetap terenkripsi AES-256-GCM. | Settings › YouTube Cookies |
+| 12 Nov 2026 | Landing | Menu FEATURES/HOW IT WORKS/DEMO benar-benar center (grid `1fr auto 1fr`). | Buka `https://domain` di desktop |
 
 ## Arsitektur
+
 
 ```
 Internet
@@ -109,30 +141,209 @@ membuat callback hilang).
 
 ## Dashboard admin
 
-Semua pengaturan platform ada di `admin.proxyai.live` (dilindungi Cloudflare Access):
+Semua pengaturan platform ada di `admin.<domain>` (dilindungi Cloudflare Access).
 
-- **Overview** - revenue, user baru, task sukses/gagal, kredit, biaya Vast.
-- **Tasks** - daftar/filter task, detail klip, `log_tail`, `LOG_URL`, retry/cancel.
-- **Users** - cari user, ubah plan, adjust kredit, ban/unban, export.
-- **Workers** - instance Vast.ai aktif + riwayat percobaan, biaya, destroy manual.
-- **Transactions** - riwayat pembayaran, refund, export.
-- **Audit** - semua aksi admin (before/after).
-- **Settings > AI** - provider, base URL, API key, 3 model, temperature, max tokens,
-  timeout, budget, toggle rerank/metadata, tombol **Test Connection**.
+- **Overview** - KPI nyata: user, task (selesai/gagal/error rate), klip, pendapatan paid,
+  kredit hari ini/7 hari, rata-rata durasi task, worker aktif, status AI + latensi DB;
+  grafik task & klip per hari (30 hari), pendaftar baru, distribusi status, top user.
+- **Tasks** - filter status/pencarian, pagination, halaman detail task (klip, error,
+  opsi editing), tombol **Batalkan** dan **Ulangi**.
+- **Users** - pencarian + filter status/plan, pagination, dan halaman detail per user
+  (klik nama): ringkasan plan/kredit/task/klip/belanja, **edit nama & email**,
+  **set plan**, **adjust kredit**, **blokir/buka blokir/tangguhkan/aktifkan**,
+  **reset password** (password sementara tampil sekali), **paksa logout**,
+  daftar task, riwayat kredit, transaksi pembayaran, dan **log aktivitas**.
+- **Workers** - instance Vast.ai aktif + riwayat percobaan, biaya, `LOG_URL`, destroy.
+- **Transactions** - total pembayaran sukses, filter status/pencarian, pagination.
+- **Audit** - filter pelaku/aksi/pencarian, pagination.
+- **Alerts** - task gagal + instance gagal yang perlu perhatian.
+- **Settings > AI** - dropdown provider (18 provider, semua punya base URL bawaan),
+  API key, **daftar model otomatis dengan kolom pencarian**, 3 slot model, temperature,
+  max tokens, timeout, budget, toggle rerank/metadata, **Test Connection**.
+- **Settings > Platform** - domain publik/admin, email dukungan, timezone, Google Client ID,
+  pendaftaran, mode maintenance, dan **ganti domain 1 klik**.
+- **Settings > YouTube Cookies** - simpan cookies dari base64 atau Netscape, validasi,
+  uji (probe), aktif/nonaktif, hapus, ekspor base64.
 - **Settings > Branding** - nama aplikasi, tagline, logo, favicon, og image, warna aksen.
-- **Settings > Watermark** - teks/logo watermark per plan (sudah ada).
 
-Endpoint admin:
+Endpoint admin (semua butuh JWT + email di `ADMIN_EMAILS`):
 
 ```
+GET      /api/admin/auth/me | /session
+POST     /api/admin/auth/logout | /logout-all
+
+GET      /api/admin/users/?q&status&plan&page&page_size
+GET      /api/admin/users/{id}                  detail + profil + statistik
+PATCH    /api/admin/users/{id}                  nama/email/aktif/verified
+POST     /api/admin/users/{id}/ban | /unban | /suspend | /activate
+POST     /api/admin/users/{id}/credits/adjust   body {amount, description}
+POST     /api/admin/users/{id}/plan             body {plan, expires_at?, reset_credits?}
+POST     /api/admin/users/{id}/reset-password | /force-logout
+GET      /api/admin/users/{id}/tasks | /credit-transactions | /transactions | /timeline
+
+GET      /api/admin/tasks/?status&q&page    GET /api/admin/tasks/{id}
+POST     /api/admin/tasks/{id}/cancel | /retry
+GET      /api/admin/transactions/?status&q&page   GET /api/admin/transactions/summary
+GET      /api/admin/audit/?actor_type&action&q&page   GET /api/admin/audit/detail/{id}
+
 GET/PUT  /api/admin/settings/ai            setelan AI (key selalu termask)
+GET      /api/admin/settings/ai/providers  metadata provider + base URL bawaan
+POST     /api/admin/settings/ai/models     daftar model dari provider (cache 5 menit)
 POST     /api/admin/settings/ai/test       uji kredensial provider + latency
-GET/PUT  /api/admin/settings/branding      branding platform
-POST     /api/admin/settings/branding/upload?kind=logo|favicon|og
+
+GET/PUT  /api/admin/settings/platform      setelan ekosistem (domain, dukungan, maintenance)
+POST     /api/admin/settings/platform/apply-domain   permintaan ganti domain (1 klik)
+GET      /api/admin/settings/platform/domain-status  progres pending/applied/failed
+POST     /api/admin/settings/platform/domain-cancel   batalkan permintaan
+
+GET/POST /api/admin/ytdlp-cookies          daftar/tambah cookies (Netscape atau base64)
+POST     /api/admin/ytdlp-cookies/validate | /import-base64 | /probe-all
+GET      /api/admin/ytdlp-cookies/settings | PUT (mode db/base64 + simpan base64)
+GET      /api/admin/ytdlp-cookies/{id}/base64   ekspor untuk env worker
+POST     /api/admin/ytdlp-cookies/{id}/probe | /reactivate | /disable   DELETE /{id}
+
+GET      /api/admin/system/stats | /metrics?days=30 | /health
+
+GET/PUT  /api/admin/settings/branding      POST /branding/upload?kind=logo|favicon|og
 GET      /api/branding                     (publik) dipakai layout & navbar
+GET      /api/pricing/*                    plan publik
 ```
+
+## Sesi & logout
+
+- Login admin memakai endpoint user biasa (`POST /api/auth/login`) lalu aplikasi admin
+  menyimpan **dua cookie httpOnly**: `clipzi_admin_token` (12 jam) dan
+  `clipzi_admin_refresh` (30 hari).
+- Access token backend hanya berlaku **60 menit** (`ACCESS_TOKEN_MINUTES`). Middleware
+  admin (`admin/src/proxy.ts`) membaca `exp`; bila sisa < 2 menit ia memanggil
+  `/api/auth/refresh` dan menulis cookie baru → sesi terasa "tidak pernah habis"
+  selama admin aktif.
+- **Logout** ada di tiga tempat: dropdown user (sidebar), ikon di header, dan command
+  palette. Aksi ini memanggil `POST /api/admin/auth/logout` (audit), menghapus kedua
+  cookie, lalu redirect ke login.
+- **Logout semua perangkat** (`/api/admin/auth/logout-all`) mencabut semua token lewat
+  tabel `auth_revocations` (kolom `revoked_before`): token dengan `iat` lebih lama
+  ditolak sampai user login lagi. Tabel dibuat otomatis saat startup.
+- Paksa logout user dari dashboard memakai mekanisme yang sama:
+  `POST /api/admin/users/{id}/force-logout`.
+
+## AI provider & daftar model
+
+Semua provider memakai API chat-completions yang kompatibel OpenAI, jadi satu klien
+menangani semuanya. Base URL bawaan otomatis dipakai bila kolom Base URL dikosongkan:
+
+| Provider | Base URL bawaan | Model default |
+|---|---|---|
+| openai | `https://api.openai.com/v1` | `gpt-4o-mini` |
+| openrouter | `https://openrouter.ai/api/v1` | `openai/gpt-4o-mini` |
+| groq | `https://api.groq.com/openai/v1` | `llama-3.1-8b-instant` |
+| together | `https://api.together.xyz/v1` | `meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo` |
+| deepseek | `https://api.deepseek.com/v1` | `deepseek-chat` |
+| mistral | `https://api.mistral.ai/v1` | `mistral-small-latest` |
+| xai | `https://api.x.ai/v1` | `grok-2-latest` |
+| fireworks | `https://api.fireworks.ai/inference/v1` | `llama-v3p1-8b-instruct` |
+| cerebras | `https://api.cerebras.ai/v1` | `llama3.1-8b` |
+| sambanova | `https://api.sambanova.ai/v1` | `Meta-Llama-3.1-8B-Instruct` |
+| perplexity | `https://api.perplexity.ai` | `sonar` |
+| gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `gemini-1.5-flash` |
+| moonshot | `https://api.moonshot.ai/v1` | `moonshot-v1-8k` |
+| zhipu | `https://open.bigmodel.cn/api/paas/v4` | `glm-4-flash` |
+| ollama | `http://localhost:11434/v1` | `llama3.1` |
+| vllm | `http://localhost:8000/v1` | (isi manual) |
+| azure | `https://<resource>.openai.azure.com/openai/v1/?api-version=...` | (nama deployment) |
+| custom | (wajib diisi) | (isi manual) |
+
+Cara pakai: Settings › AI → pilih provider → isi API key → **Simpan** → daftar model
+otomatis dimuat → pilih model lewat dropdown (ada kolom pencarian). Tombol
+**Muat daftar model** memanggil `GET {base_url}/models` di sisi server (timeout 20 s,
+cache 5 menit) sehingga API key tidak pernah dikirim ke browser.
+
+Bila provider tidak punya `/models`, nama model tetap bisa diketik manual. **Test
+Connection** memanggil `chat/completions` mini dan menampilkan latensi, sample, serta
+pesan error apa adanya (status + body) supaya mudah didiagnosis.
+
+Perubahan provider tidak butuh rebuild: nilai disimpan di `platform_settings` key `ai`,
+API key dienkripsi Fernet, lalu di-inject ke environment + `settings` yang hidup.
+Worker memuatnya di awal setiap task (`load_and_apply_ai_config`).
+
+## Cookies YouTube (base64 / Netscape)
+
+yt-dlp butuh cookies untuk video yang meminta login/usia. Dua mode yang didukung:
+
+1. **Rotasi DB (disarankan)** - cookies disimpan per baris di `ytdlp_cookies`
+   (AES-256-GCM). `cookie_store.acquire()` memilih cookie aktif yang paling lama tidak
+   dipakai, dan `sync_back()` menyimpan token hasil refresh yt-dlp kembali ke DB.
+   Cooker yang gagal 3× otomatis ditandai `expired`.
+2. **Base64 env** - base64 dari `cookies.txt`, disimpan terenkripsi di
+   `platform_settings` key `youtube` dan di-inject ke `YTDLP_COOKIES_BASE64`
+   (dipakai `downloader.py`). Cocok bila worker hanya membaca env.
+
+Di dashboard: Settings › YouTube Cookies → tempel **base64** (boleh dengan prefix
+`data:text/plain;base64,`) atau isi `cookies.txt`, isi label, pilih mode, lalu **Simpan
+cookies**. Backend otomatis: decode → validasi format Netscape (harus ada domain
+youtube.com) → simpan. Tabel menampilkan status, jumlah sukses/gagal, error terakhir,
+tombol **Uji**, **Aktifkan/Nonaktifkan**, **Hapus**.
+
+Membuat base64 dari file:
+
+```bash
+base64 -w0 cookies.txt > cookies.b64      # Linux
+certutil -encode cookies.txt cookies.b64  # Windows (buang header/footer)
+```
+
+Ekspor base64 cookies yang sudah tersimpan (untuk ditempel ke env worker):
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" \
+  https://admin.<domain>/api/admin/ytdlp-cookies/<id>/base64 | jq -r .base64
+```
+
+## Setelan ekosistem & ganti domain (1 klik)
+
+Semua nilai disimpan di `platform_settings` key `platform`:
+`site_url`, `admin_url`, `support_email`, `timezone`, `maintenance_mode`,
+`signup_enabled`, `google_client_id`, plus status domain
+(`pending_domain`, `applied_domain`, `domain_status`).
+
+Alur (opsi A - agent di host):
+
+```
+admin  -> POST /api/admin/settings/platform/apply-domain {domain, admin_domain}
+       -> DB: domain_status = pending
+agent  -> GET  /api/internal/domain-task          (header X-Clipzi-Token)
+       -> backup .env -> set DOMAIN/ADMIN_DOMAIN
+       -> docker compose up -d caddy
+       -> opsional: Cloudflare DNS A record (proxied)
+       -> POST /api/internal/domain-applied {ok, error}
+       -> DB: domain_status = applied (atau failed + pesan error)
+```
+
+Pasang agent di VPS (sekali saja):
+
+```bash
+install -m 755 deploy/clipzi-domain-sync.sh /usr/local/sbin/clipzi-domain-sync.sh
+install -m 644 deploy/clipzi-domain-sync.service /etc/systemd/system/
+install -m 644 deploy/clipzi-domain-sync.timer   /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now clipzi-domain-sync.timer
+systemctl list-timers | grep clipzi-domain-sync
+journalctl -u clipzi-domain-sync.service -n 30 --no-pager   # log penerapan
+```
+
+Variabel opsional di `.env` untuk update DNS otomatis:
+`CLOUDFLARE_API_TOKEN` (izin Zone.DNS Edit) dan `CLOUDFLARE_ZONE_ID`.
+
+Yang ikut berubah otomatis ketika `site_url` disimpan: `FRONTEND_URL` (link email &
+redirect YouTube), origin CORS tambahan, dan `runtime-env` frontend. **Belum otomatis**
+(kerjakan manual setelah tombol ditekan): redirect URI OAuth Google/YouTube di Google
+Cloud Console, policy Cloudflare Access untuk subdomain admin, dan webhook Duitku.
+
+Rollback cepat: Settings › Platform → isi domain lama → **Terapkan domain**, atau
+kembalikan file backup `.env` di `/var/lib/clipzi-domain-sync/` lalu
+`docker compose up -d caddy`.
 
 ## Alur task
+
 
 1. User membuat task di dashboard -> `POST /api/tasks`.
 2. `InstanceSupervisor` memilih offer Vast.ai (GPU >= 12 GB, disk >= 40 GB, network
@@ -211,11 +422,19 @@ clone source dari `repo.bundle` bila repo belum ada -> `pg_restore --clean --if-
 
 | Gejala | Penyebab & solusi |
 |---|---|
+| **Semua menu admin "Something went wrong"** | Access token 60 menit kedaluwarsa. Pastikan cookie `clipzi_admin_refresh` ada; cek `docker logs clipzi-admin \| grep 401`. Login sekali lagi setelah update. |
+| **AI Test HTTP 000 / timeout, Vast hang, API startup 502** | Outbound HTTPS container diblokir firewall. Diagnosa: `curl -s -o /dev/null -w '%{http_code}' https://example.com` (dari host, harus 200) vs `docker exec clipzi-api curl ...` (harus 200). Perbaiki: `deploy/clipzi-cf-firewall.sh` lalu `/usr/local/sbin/clipzi-cf-firewall.sh --check`. |
+| **`clipzi-web` unhealthy / home 502** | `API_INTERNAL_URL` kosong atau host salah. Compose frontend harus punya `API_INTERNAL_URL: http://backend:8000`. |
 | `[ai_failed] AI belum aktif` | Isi provider + API key di Settings > AI, tekan Test Connection |
 | `ai_failed: 401` | API key salah/kadaluarsa, atau base URL bukan endpoint OpenAI-compatible |
+| `ai_failed: 404 model` | Nama model tidak ada di provider — klik **Muat daftar model** lalu pilih dari daftar |
+| `POST /ai/models` gagal 400 | Provider butuh Base URL (mis. `custom`) atau API key belum disimpan |
+| Tombol Ban / adjust kredit error 422 | Versi lama mengirim query param; sekarang body JSON. Update admin app (`docker compose pull admin`). |
 | Task lambat tanpa alasan | Cek `log_tail`; bila rerank dilewati, provider timeout - naikkan `timeout_seconds` |
 | Instance gagal boot | `registry-1.docker.io` timeout: naikkan `VAST_BOOT_TIMEOUT` (900+), ulangi task |
-| `Sign in to confirm you're not a bot` | YouTube minta cookies: unggah cookies di admin (ytdlp cookies) |
+| `Sign in to confirm you're not a bot` | YouTube minta cookies: unggah di Settings > YouTube Cookies (base64 atau Netscape) |
+| Cookies selalu `expired` | Ekspor ulang cookies dari browser (mode incognito, login YouTube), unggah lagi, lalu **Uji** |
+| Domain baru belum aktif setelah "Terapkan domain" | Cek `systemctl status clipzi-domain-sync.timer`, `journalctl -u clipzi-domain-sync.service -n 50`, dan status di Settings › Platform (harus `applied`) |
 | Disk VPS penuh | `docker builder prune -af && docker image prune -af` |
 | Instance tertinggal | `GET /api/admin/workers/instances`, destroy manual, atau tunggu supervisor |
 
