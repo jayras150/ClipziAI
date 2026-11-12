@@ -28,7 +28,15 @@ services:
     depends_on:
       - backend
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/auth/sign-in"]
+      # Image node:*-slim tidak punya wget; cek health lewat node http.
+      # Image node:*-slim tidak punya wget; cek health lewat node http.
+      test:
+        - CMD
+        - node
+        - -e
+        - |
+          require("http").get("http://127.0.0.1:3000/auth/sign-in", r => process.exit(r.statusCode < 400 ? 0 : 1)).on("error", () => process.exit(1))
+
       interval: 30s
       timeout: 5s
       retries: 3
