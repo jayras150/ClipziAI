@@ -77,15 +77,48 @@ def test_probe_gagal_saat_vram_tidak_naik_signifikan(tmp_path):
     assert "VRAM" in probe["reason"]
 
 
-def test_start_tidak_menjalankan_cpu_saat_gpu_wajib(tmp_path, monkeypatch):
+def _siapkan_start(tmp_path, monkeypatch, probe_ok):
     llm = LocalLLM()
-    monkeypatch.setattr(LocalLLM, "available", property(lambda self: True))
     llm._log_path = str(tmp_path / "llama.log")
-    monkeypatch.setattr(llm, "_detect_devices", lambda: [])
+    monkeypatch.setattr(LocalLLM, "available", property(lambda self: True))
     monkeypatch.setattr(llm, "_healthy", lambda: False)
+    monkeypatch.setattr(llm, "_detect_devices", lambda: ["CUDA0: RTX 3060"])
+    monkeypatch.setattr(llm, "_vram_used_mb", lambda: 100)
+    calls = {"spawn": 0, "stop": 0}
+
+    def fake_spawn(cmd):
+        calls["spawn"] += 1
+        return True
+
+    def fake_probe(vram_before_mb=0, wait_seconds=0):
+        if probe_ok:
+            return {"ok": True, "reason": "", "offloaded": 33, "layers": 33}
+        return {
+            "ok": False,
+            "reason": "log tidak menunjukkan layer ter-offload ke GPU",
+            "offloaded": 0,
+            "layers": 0,
+        }
+
+    monkeypatch.setattr(llm, "_spawn_and_wait", fake_spawn)
+    monkeypatch.setattr(llm, "gpu_probe", fake_probe)
+    monkeypatch.setattr(llm, "stop", lambda: calls.__setitem__("stop", calls["stop"] + 1))
+    return llm, calls
+
+
+def test_start_menolak_dan_mematikan_server_saat_probe_gagal(tmp_path, monkeypatch):
+    llm, calls = _siapkan_start(tmp_path, monkeypatch, probe_ok=False)
     assert llm.start() is False
-    assert "CUDA" in llm.last_error
-    assert llm.process is None
+    assert "GPU tidak dipakai" in llm.last_error
+    assert calls["spawn"] >= 1
+    assert calls["stop"] >= 1
+
+
+def test_start_lulus_saat_probe_gpu_ok(tmp_path, monkeypatch):
+    llm, calls = _siapkan_start(tmp_path, monkeypatch, probe_ok=True)
+    assert llm.start() is True
+    assert calls["spawn"] == 1
+    assert calls["stop"] == 0
 
 
 def test_chat_tidak_memanggil_server_saat_deadline_habis(monkeypatch):

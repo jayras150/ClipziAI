@@ -37,5 +37,6 @@
     "frontend/node_modules": true,
     "backend/.venv": true
   },
-  "python.terminal.useEnvFile": true
+  "python.terminal.useEnvFile": true,
+  "chat.byokUtilityModelDefault": "none"
 }

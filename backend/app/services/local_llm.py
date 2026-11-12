@@ -205,6 +205,8 @@ class LocalLLM:
         extra = ["/opt/llama", "/opt/llama/cuda"]
         current = env.get("LD_LIBRARY_PATH", "")
         env["LD_LIBRARY_PATH"] = ":".join(extra + ([current] if current else []))
+        # Backend ggml dimuat dari direktori ini (bukan hanya dari PATH).
+        env.setdefault("GGML_BACKEND_PATH", "/opt/llama")
         return env
 
     def _run_quick(self, args: list[str], timeout: int = 25) -> str:
@@ -225,8 +227,8 @@ class LocalLLM:
         self.devices = parse_cuda_devices(output)
         if not self.devices:
             logger.error(
-                "llama-server tidak melihat GPU CUDA (output: %s) — LLM akan jalan di CPU",
-                " ".join(output.split())[:300],
+                "llama-server tidak melihat GPU CUDA ; output lengkap: %s — LLM akan jalan di CPU",
+                " ".join(output.split())[:1500],
             )
         return self.devices
 
@@ -354,16 +356,6 @@ class LocalLLM:
             return True
 
         devices = self._detect_devices()
-        if not devices and settings.LOCAL_LLM_REQUIRE_GPU:
-            self.last_error = (
-                "CUDA tidak terdeteksi oleh llama-server: "
-                + (" ".join((self.detect_output or "").split())[:200] or "tanpa output")
-            )
-            logger.error(
-                "LLM lokal TIDAK dijalankan (LOCAL_LLM_REQUIRE_GPU=true): %s",
-                self.last_error,
-            )
-            return False
         vram_before = self._vram_used_mb()
         base_cmd = [
             settings.LOCAL_LLM_SERVER_BIN,
@@ -377,13 +369,14 @@ class LocalLLM:
             "--jinja",
         ]
 
-        # Coba GPU lebih dulu (pilih device eksplisit), lalu fallback tanpa
-        # `--device` bila backend CUDA gagal dimuat — jangan sampai task mati.
+        # Coba GPU lebih dulu (device eksplisit). Percobaan kedua tetap dijalankan
+        # walau `--list-devices` kosong: tanpa itu log backend CUDA (dlopen) tidak
+        # pernah terekam. Probe tetap menentukan lulus/tidak, jadi tidak ada
+        # fallback CPU diam-diam.
         attempts: list[list[str]] = []
         if devices:
             attempts.append(base_cmd + ["--device", "CUDA0"])
-        if not settings.LOCAL_LLM_REQUIRE_GPU:
-            attempts.append(list(base_cmd))
+        attempts.append(list(base_cmd))
 
         for cmd in attempts:
             if not self._spawn_and_wait(cmd):
@@ -392,7 +385,10 @@ class LocalLLM:
             probe = self.gpu_probe(vram_before_mb=vram_before)
             self.info = self._gpu_info()
             if settings.LOCAL_LLM_REQUIRE_GPU and not probe.get("ok"):
-                self.last_error = "GPU tidak dipakai: %s" % probe.get("reason")
+                self.last_error = (
+                    "GPU tidak dipakai: %s | log: %s"
+                    % (probe.get("reason"), self._tail_log(8))
+                )[:900]
                 logger.error("LLM lokal dimatikan: %s", self.last_error)
                 self.stop()
                 continue

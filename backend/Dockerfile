@@ -224,6 +224,10 @@ COPY --from=llama /usr/local/cuda/lib64/libcudart.so.12.8.90 /opt/llama/cuda/
 COPY --from=llama /usr/local/cuda/lib64/libcublas.so.12.8.4.1 /opt/llama/cuda/
 COPY --from=llama /usr/local/cuda/lib64/libcublasLt.so.12.8.4.1 /opt/llama/cuda/
 COPY --from=llama /usr/local/cuda/lib64/libcufft.so.11.3.3.83 /opt/llama/cuda/
+# libstdc++/libgcc milik image llama.cpp (GCC 14). Base python:slim hanya
+# punya GCC 12 -> libggml-cuda.so gagal dimuat tanpa pesan yang jelas.
+COPY --from=llama /lib/x86_64-linux-gnu/libstdc++.so.6 /opt/llama/cuda/
+COPY --from=llama /lib/x86_64-linux-gnu/libgcc_s.so.1 /opt/llama/cuda/
 # `ln` membuat symlink di /opt/llama/cuda (milik root) dan file model dibaca
 # oleh user clipzi, jadi langkah ini harus berjalan sebagai root.
 USER root
