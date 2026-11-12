@@ -41,3 +41,12 @@ def test_ytdlp_version_terbaca():
     version = ytdlp_version()
     assert isinstance(version, str) and version
     assert version != ""
+
+
+def test_deteksi_bot_check():
+    from app.services.downloader import looks_like_bot_check
+
+    assert looks_like_bot_check("ERROR: Sign in to confirm you are not a bot")
+    assert looks_like_bot_check("please sign in to confirm you are not a bot")
+    assert not looks_like_bot_check("Requested format is not available")
+    assert not looks_like_bot_check("")

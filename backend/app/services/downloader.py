@@ -79,6 +79,21 @@ def _ytdlp_version() -> str:
         return "unknown"
 
 
+BOT_CHECK_MARKERS = (
+    "sign in to confirm",
+    "not a bot",
+    "confirm you’re not a bot",
+    "confirm you're not a bot",
+    "cookies",
+)
+
+
+def looks_like_bot_check(message: str) -> bool:
+    """True bila YouTube minta verifikasi login (bukan masalah format)."""
+    lowered = (message or "").lower()
+    return any(marker in lowered for marker in BOT_CHECK_MARKERS)
+
+
 def ytdlp_version() -> str:
     """Versi yt-dlp (dipakai pipeline untuk log diagnostik)."""
     return _ytdlp_version()
@@ -348,10 +363,20 @@ class VideoDownloader:
             self._cleanup_partial(output_path)
 
         formats = self._describe_formats(url, base_opts)
+        attempts_text = " || ".join(errors[-6:])
+        hint = ""
+        if looks_like_bot_check(attempts_text):
+            # Kasus paling umum di Vast/VPS: IP datacenter diminta login.
+            hint = (
+                " | HINT: YouTube meminta verifikasi login (bot check). "
+                "Unggah cookies YouTube di Settings > YouTube Cookies, lalu ulangi task. "
+            )
         raise RuntimeError(
             "yt-dlp gagal mengunduh setelah semua format/client dicoba | "
-            f"yt-dlp={_ytdlp_version()} | formats_tersedia={formats} || "
-            + " || ".join(errors[-6:])
+            f"yt-dlp={_ytdlp_version()} | formats_tersedia={formats}"
+            + hint
+            + " || "
+            + attempts_text
         )
 
     def _cleanup_partial(self, output_path: str) -> None:
