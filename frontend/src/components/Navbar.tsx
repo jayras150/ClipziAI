@@ -5,11 +5,15 @@ import Link from "next/link"
 
 import UserMenu from "@/components/UserMenu"
 import { AUTH_EVENT, hasSession } from "@/lib/auth"
+import { getApiBaseUrl } from "@/lib/env"
+
+type Branding = { app_name?: string; logo_url?: string | null }
 
 export default function Navbar() {
   // Status login dibaca di useEffect, BUKAN saat render: localStorage tidak ada
   // di server sehingga membacanya langsung akan memicu hydration mismatch.
   const [signedIn, setSignedIn] = useState(false)
+  const [branding, setBranding] = useState<Branding | null>(null)
 
   useEffect(() => {
     const sync = () => setSignedIn(hasSession())
@@ -23,13 +27,32 @@ export default function Navbar() {
     }
   }, [])
 
+  // Branding (nama + logo) diatur admin; diambil sekali saat mount.
+  useEffect(() => {
+    let cancelled = false
+    fetch(getApiBaseUrl() + "/api/branding")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled && data) setBranding(data as Branding)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const appName = branding?.app_name || "Clipzy AI"
+
   return (
     <header className="ui-container ui-nav">
       <Link className="ui-brand" href="/">
-        <span className="ui-brand-mark">▶</span>
-        <span>
-          clipzy<em>AI</em>
-        </span>
+        {branding?.logo_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img className="ui-brand-logo" src={branding.logo_url} alt={appName} />
+        ) : (
+          <span className="ui-brand-mark">▶</span>
+        )}
+        <span>{appName}</span>
       </Link>
       <nav className="ui-nav-links">
         <Link href="/dashboard">Dashboard</Link>

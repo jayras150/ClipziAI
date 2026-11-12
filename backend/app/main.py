@@ -22,6 +22,8 @@ from app.api.admin import security as admin_security
 from app.api.admin import ytdlp_cookies as admin_ytdlp_cookies
 from app.api.admin import settings as admin_settings
 from app.api.admin import ai as admin_ai
+from app.api.admin import branding as admin_branding
+from app.api import branding as public_branding
 from app.api.admin import youtube as admin_youtube
 from app.api.admin import workers as admin_workers
 from app.api import multi_platform, clip_templates, bulk_jobs, analytics
@@ -113,6 +115,10 @@ app.include_router(admin_system.router, prefix="/api/admin/system", tags=["Admin
 app.include_router(admin_security.router, prefix="/api/admin/security", tags=["Admin Security"])
 app.include_router(admin_settings.router, prefix="/api/admin/settings", tags=["Admin Settings"])
 app.include_router(admin_ai.router, prefix="/api/admin/settings", tags=["Admin AI Settings"])
+app.include_router(
+    admin_branding.router, prefix="/api/admin/settings", tags=["Admin Branding"]
+)
+app.include_router(public_branding.router, prefix="/api", tags=["Branding"])
 app.include_router(admin_youtube.router, prefix="/api/admin/youtube", tags=["Admin YouTube"])
 app.include_router(admin_workers.router, prefix="/api/admin/workers", tags=["Admin Workers"])
 app.include_router(

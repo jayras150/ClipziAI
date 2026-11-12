@@ -15,11 +15,44 @@ import "./landing.css"
 const GOOGLE_FONTS_HREF =
   "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap"
 
-export const metadata: Metadata = {
-  title: "Clipzy AI — Create More. Edit Less.",
-  description:
-    "Clipzy AI turns long videos into short, ready-to-publish clips with AI highlight detection, subtitles, and vertical reframing.",
+type BrandingData = {
+  app_name?: string
+  tagline?: string | null
+  favicon_url?: string | null
 }
+
+// Branding diambil dari API (diatur admin). Server-side fetch supaya favicon dan
+// judul halaman ikut berubah tanpa rebuild frontend.
+async function loadBranding(): Promise<BrandingData | null> {
+  const base =
+    process.env.API_INTERNAL_URL ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    "http://clipzi-api:8000"
+  try {
+    const response = await fetch(base.replace(/\/$/, "") + "/api/branding", {
+      cache: "no-store",
+    })
+    if (!response.ok) return null
+    return (await response.json()) as BrandingData
+  } catch {
+    return null
+  }
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const branding = await loadBranding()
+  const name = branding?.app_name || "Clipzy AI"
+  const description =
+    branding?.tagline ||
+    "Clipzy AI turns long videos into short, ready-to-publish clips with AI highlight detection, subtitles, and vertical reframing."
+  const icon = branding?.favicon_url || undefined
+  return {
+    title: name + " - Create More. Edit Less.",
+    description,
+    icons: icon ? { icon, shortcut: icon, apple: icon } : undefined,
+  }
+}
+
 
 export default function RootLayout({
   children,

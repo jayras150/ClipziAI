@@ -163,6 +163,15 @@ button, input, select, textarea { font: inherit; color: inherit; }
   background: linear-gradient(180deg, rgba(8, 10, 15, 0.92), rgba(8, 10, 15, 0.7));
   border-bottom: 1px solid var(--ui-line);
 }
+.ui-brand-logo {
+  height: 26px;
+  width: auto;
+  max-width: 120px;
+  object-fit: contain;
+  border-radius: 6px;
+  display: block;
+}
+
 .ui-nav > .ui-brand {
   justify-self: start;
   min-width: 0;
