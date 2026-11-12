@@ -231,3 +231,22 @@ Test penting: `test_ai_config.py` (enkripsi + injeksi env), `test_provider_llm.p
 (deadline/JSON/error provider), `test_branding.py`, `test_clip_planner.py`,
 `test_caption_ass.py`, `test_instance_supervisor.py`, `test_supervisor_guard.py`,
 `test_log_bundle*.py`.
+
+## Admin subdomain & Cloudflare Access
+
+`admin.proxyai.live` dilayani Caddy (`deploy/Caddyfile`) dan dilindungi dua lapis:
+
+1. **basic_auth** (cadangan) - user `clipzy`, hash di env `ADMIN_BASIC_AUTH`
+   pada service `caddy` di `docker-compose.vps.yml`. Ganti dengan:
+   ```bash
+   docker run --rm caddy:2-alpine caddy hash-password --plaintext 'PASSWORD-BARU'
+   ```
+   lalu update `ADMIN_BASIC_AUTH` (escape `$` menjadi `$$` di compose) dan
+   `docker compose up -d caddy`.
+2. **Cloudflare Access (Zero Trust)** - buat aplikasi self-hosted untuk
+   `admin.proxyai.live` dengan policy `allow` hanya email:
+   `sujinwo555@gmail.com` dan `admin@proxyai.live`, session 6 jam. Setelah aktif,
+   basic_auth boleh dihapus dari Caddy.
+
+Di domain publik, `/api/admin/*` dibalas **404** (bukan 401) supaya endpoint tidak
+terkonfirmasi. Dokumentasi API juga dibalas 404.

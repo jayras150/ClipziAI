@@ -18,6 +18,10 @@
 	# Admin API boleh diakses dari frontend (token + cek email di server).
 	# Blokir hanya dokumentasi API yang memudahkan pemetaan endpoint.
 	handle /api/* {
+		# Admin API tidak boleh diakses dari domain publik: 404 supaya keberadaan
+		# endpoint tidak terkonfirmasi (akses hanya lewat subdomain admin).
+		@admin_api path /api/admin/*
+		respond @admin_api 404
 		reverse_proxy backend:8000
 	}
 
@@ -47,6 +51,38 @@
 		# memblokir window.closed/postMessage sehingga alur "Connect YouTube"
 		# dan "Continue with Google" bisa gagal tanpa pesan yang jelas.
 		Cross-Origin-Opener-Policy "same-origin-allow-popups"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
+
+{$ADMIN_DOMAIN} {
+	encode zstd gzip
+
+	# Proteksi lapis pertama (cadangan sebelum Cloudflare Access aktif).
+	basic_auth {
+		clipzy {$ADMIN_BASIC_AUTH}
+	}
+
+	# API dipakai admin app untuk login & data (lewat Caddy -> backend).
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+
+	# Halaman admin (Next.js standalone).
+	handle {
+		reverse_proxy admin:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
 		-Server
 	}
 
