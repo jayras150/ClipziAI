@@ -45,6 +45,21 @@ def _verify_agent_token(request: Request) -> None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 
+class HostMetricsIn(BaseModel):
+    """Snapshot metrik host dari agent (bebas bentuk, divalidasi di service)."""
+
+    ts: float | None = None
+    hostname: str | None = None
+    cpu: dict | None = None
+    memory: dict | None = None
+    disk: dict | None = None
+    load: dict | None = None
+    uptime_seconds: float | None = None
+    network: dict | None = None
+    containers: list | None = None
+    docker: dict | None = None
+
+
 class DomainAppliedIn(BaseModel):
     domain: str
     admin_domain: str | None = None
@@ -216,3 +231,21 @@ async def worker_events(
         await db.commit()
 
     return {"ok": True}
+
+@router.post("/host-metrics")
+async def host_metrics(
+    payload: HostMetricsIn,
+    request: Request,
+):
+    """
+    Terima snapshot metrik VPS dari agent host (timer 5 detik).
+
+    Disimpan di memori proses API; dipakai dashboard System untuk tampilan
+    realtime tanpa memberi container akses ke docker socket atau /proc host.
+    """
+    from app.services import host_metrics as store
+
+    _verify_agent_token(request)
+    sample = store.record(payload.model_dump(exclude_none=True))
+    return {"ok": True, "ts": sample["ts"]}
+

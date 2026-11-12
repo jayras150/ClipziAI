@@ -1,5 +1,6 @@
 import PageContainer from '@/components/layout/page-container';
 import { StatCard } from '@/features/admin/table-shell';
+import { HostLive } from '@/features/system/host-live';
 import { adminFetch } from '@/lib/clipzi';
 
 export const metadata = { title: 'Admin: System' };
@@ -18,13 +19,23 @@ const PRUNE_CMD = `docker builder prune -af && docker image prune -af`;
 export default async function SystemPage() {
   const health = await adminFetch<Health>('/api/admin/system/health');
   return (
-    <PageContainer pageTitle='System' pageDescription='Status layanan & operasional'>
+    <PageContainer pageTitle='System' pageDescription='Status layanan, metrik VPS realtime & operasional'>
       <div className='space-y-6'>
         <div className='grid gap-4 sm:grid-cols-3'>
           <StatCard label='API' value={health.status} />
           <StatCard label='Database' value={health.database} />
           <StatCard label='Versi' value={health.version} />
         </div>
+
+        <section className='space-y-3'>
+          <div>
+            <h3 className='text-sm font-medium'>VPS realtime</h3>
+            <p className='text-muted-foreground text-xs'>
+              CPU, RAM, disk, jaringan, dan container — diperbarui tiap 3 detik dari agent host.
+            </p>
+          </div>
+          <HostLive />
+        </section>
 
         <section className='space-y-3 rounded-lg border p-4 text-sm'>
           <p className='font-medium'>Backup sekarang (jalankan di VPS)</p>

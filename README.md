@@ -35,6 +35,9 @@ Setiap perubahan besar dicatat di sini (tanggal · area · ringkasan · cara ver
 | 12 Nov 2026 | Cookies YouTube | Simpan cookies dari **base64** atau Netscape, validasi, uji (probe), aktif/nonaktif, hapus, ekspor base64. Tetap terenkripsi AES-256-GCM. | Settings › YouTube Cookies |
 | 12 Nov 2026 | Landing | Menu FEATURES/HOW IT WORKS/DEMO benar-benar center (grid `1fr auto 1fr`). | Buka `https://domain` di desktop |
 | 13 Nov 2026 | Indikator proses | Spinner animasi Clipzy (`orbit`/`ring`/`dots`) dipakai admin & frontend. Tombol submit otomatis spinner (`useFormStatus`), `loading.tsx` per rute, banner shimmer saat task queued/processing. | Klik aksi apa pun di admin → spinner; buka `/dashboard` saat memuat |
+| 13 Nov 2026 | Worker yt-dlp | Format ladder `bv*…/bv*+ba/b/b*` + client ladder (default→web→android/ios→tv_embedded) + retry tanpa cookies + dump format saat gagal + cek `has_audio` (retry audio wajib). `yt-dlp>=2026.10.26`. | Task YouTube dari dashboard selesai; log worker memuat daftar format bila gagal |
+| 13 Nov 2026 | Branding | `BrandingProvider` + `BrandLogo`: logo/nama/favicon berlaku di **semua** halaman (landing, login, register, dashboard, footer, navbar), accent color live, favicon/OG cache-bust, kartu pratinjau logo/favicon/OG dengan dimensi & ukuran. | Ganti logo di admin → semua halaman + tab browser berubah |
+| 13 Nov 2026 | Monitoring VPS | Agent host `clipzi-host-metrics` (systemd, 5 s) → `POST /api/internal/host-metrics`; endpoint `GET /api/admin/system/host`; System tab menampilkan CPU/RAM/disk/jaringan/container realtime tiap 3 s + grafik 10 menit. | System → kartu live bergerak, badge `live` |
 
 ## Arsitektur
 
@@ -262,6 +265,58 @@ Settings AI/Platform/YouTube Cookies, logout (header + dropdown), dan halaman lo
 - Paksa logout user dari dashboard memakai mekanisme yang sama:
   `POST /api/admin/users/{id}/force-logout`.
 
+## Branding (logo, favicon, nama)
+
+Branding disimpan di `platform_settings` key `branding` dan **satu sumber** untuk
+seluruh aplikasi:
+
+- `frontend/src/components/BrandingProvider.tsx` — context + `<BrandLogo />`,
+  `<BrandMark />`, `<BrandName />`. Dipakai di landing, login, register, dashboard,
+  profile, footer, dan navbar (tidak ada lagi `▶ Clipzy AI` hardcode).
+- `GET /api/branding` mengembalikan `version` (hash) + `Cache-Control: no-store`,
+  sehingga logo/favicon baru langsung terpakai dan ikon tab tidak nyangkut cache.
+- Accent color disuntik ke CSS variable `--ui-gold` (berubah tanpa reload).
+- Upload di admin (`Settings › Branding`):
+  - kartu **Logo / Favicon / OG** dengan pratinjau nyata (logo di atas latar gelap
+    & terang, favicon di mockup tab browser, OG di kartu sosial),
+  - info **dimensi & ukuran file**, drag & drop, preview instan sebelum upload selesai,
+  - URL form langsung diperbarui setelah upload (tidak perlu reload),
+  - file disimpan unik (`branding/<kind>/<uuid>.<ext>`) + `Cache-Control: immutable`.
+
+## Monitoring VPS (realtime)
+
+Tab **System** menampilkan kondisi VPS yang diperbarui tiap 3 detik.
+
+```
+host (systemd, loop 5 s)                        API (container)              admin (browser)
+deploy/clipzi-host-metrics.py  --POST-->  /api/internal/host-metrics  -->  GET /api/admin/system/host
+  /proc/stat, /proc/meminfo                 ring buffer 240 sampel         polling 3 s (route handler
+  /proc/loadavg, statvfs /                  + rate jaringan                 /api/system/host)
+  /proc/net/dev
+  docker ps + docker stats
+```
+
+Kenapa agent: container API tidak punya akses ke CPU/RAM/disk host maupun docker
+socket, jadi agent membaca host lalu mengirim JSON (hanya membaca, tanpa eskalasi izin).
+
+Data yang ditampilkan: CPU % (+load 1/5/15), RAM & swap, disk `/`, rate jaringan
+masuk/keluar, uptime, daftar container (state, CPU, RAM), antrean task
+(`queued`/`processing`), dan jumlah worker Vast aktif. Badge **live/stale** menunjukkan
+apakah agent masih mengirim data (>20 s tanpa data = stale).
+
+Pasang di VPS (sekali):
+
+```bash
+install -m 755 deploy/clipzi-host-metrics.py /usr/local/sbin/clipzi-host-metrics.py
+install -m 644 deploy/clipzi-host-metrics.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now clipzi-host-metrics
+journalctl -u clipzi-host-metrics -n 20 --no-pager
+```
+
+Agent membaca `CLIPZI_WORKER_TOKEN` dari `backend/.env` dan mengirim ke
+`http://127.0.0.1:8000` (port backend dipublish ke loopback di compose VPS).
+
 ## AI provider & daftar model
 
 Semua provider memakai API chat-completions yang kompatibel OpenAI, jadi satu klien
@@ -469,6 +524,8 @@ clone source dari `repo.bundle` bila repo belum ada -> `pg_restore --clean --if-
 | Instance gagal boot | `registry-1.docker.io` timeout: naikkan `VAST_BOOT_TIMEOUT` (900+), ulangi task |
 | `Sign in to confirm you're not a bot` | YouTube minta cookies: unggah di Settings > YouTube Cookies (base64 atau Netscape) |
 | Cookies selalu `expired` | Ekspor ulang cookies dari browser (mode incognito, login YouTube), unggah lagi, lalu **Uji** |
+| **`Requested format is not available`** | Selector lama `bestvideo+bestaudio/best` gagal saat YouTube hanya memberi video-only/combined tertentu. Sejak 13 Nov 2026 worker memakai ladder `bv*…/bv*+ba/b/b*` + beberapa player client + retry tanpa cookies, dan menulis daftar format ke `worker.log` bila gagal. Bila masih gagal: unggah cookies (Settings › YouTube Cookies), cek versi yt-dlp di log worker, lalu lihat `formats_tersedia` di pesan error task. |
+| Unduhan sukses tapi transkripsi kosong | Video terunduh tanpa stream audio (fallback `b*`). Worker otomatis mengulang dengan format audio wajib; kalau tetap gagal → pesan task menyarankan unggah cookies. |
 | Domain baru belum aktif setelah "Terapkan domain" | Cek `systemctl status clipzi-domain-sync.timer`, `journalctl -u clipzi-domain-sync.service -n 50`, dan status di Settings › Platform (harus `applied`) |
 | Admin tampak "tidak berubah" setelah deploy | Compose admin memakai tag **`:admin`**, bukan `:latest`. Jalankan `docker pull sujinwo555/clipzi-admin:admin` lalu `docker compose -f docker-compose.admin.yml up -d --force-recreate admin`. |
 | Disk VPS penuh | `docker builder prune -af && docker image prune -af` |

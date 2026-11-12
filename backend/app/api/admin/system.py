@@ -264,3 +264,34 @@ async def system_metrics(
             "model": settings.AI_MODEL,
         },
     }
+
+@router.get("/host")
+async def system_host(db: AsyncSession = Depends(get_db_session)):
+    """
+    Metrik VPS realtime (CPU, RAM, disk, load, jaringan, container).
+
+    Sumber: agent host mengirim snapshot ke `/api/internal/host-metrics` tiap
+    5 detik; endpoint ini mengembalikan snapshot terbaru + histori ringkas
+    untuk grafik, plus antrean task agar admin tahu beban saat itu.
+    """
+    from app.services import host_metrics as store
+
+    data = store.snapshot()
+    queued = (
+        await db.execute(select(func.count(Task.id)).where(Task.status == TaskStatus.QUEUED))
+    ).scalar() or 0
+    processing = (
+        await db.execute(select(func.count(Task.id)).where(Task.status == TaskStatus.PROCESSING))
+    ).scalar() or 0
+    workers_active = (
+        await db.execute(
+            select(func.count(WorkerInstance.id)).where(WorkerInstance.destroyed_at.is_(None))
+        )
+    ).scalar() or 0
+
+    return {
+        **data,
+        "queue": {"queued": int(queued), "processing": int(processing)},
+        "workers_active": int(workers_active),
+    }
+
