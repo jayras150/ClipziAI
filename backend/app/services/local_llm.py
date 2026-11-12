@@ -205,6 +205,12 @@ class LocalLLM:
         extra = ["/opt/llama", "/opt/llama/cuda"]
         current = env.get("LD_LIBRARY_PATH", "")
         env["LD_LIBRARY_PATH"] = ":".join(extra + ([current] if current else []))
+        # llama.cpp build ini TIDAK memuat backend dari direktori exe.
+        # GGML_BACKEND_PATH berisi path FILE .so (kalau diisi direktori, ia
+        # gagal dengan "cannot read file data: Is a directory").
+        cuda_backend = "/opt/llama/libggml-cuda.so"
+        if os.path.exists(cuda_backend):
+            env["GGML_BACKEND_PATH"] = cuda_backend
         return env
 
     def _run_quick(self, args: list[str], timeout: int = 25) -> str:

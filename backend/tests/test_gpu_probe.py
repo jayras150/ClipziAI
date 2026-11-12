@@ -168,3 +168,21 @@ def test_log_lama_tidak_membuat_probe_lulus(tmp_path):
     probe = llm.gpu_probe(vram_before_mb=116, wait_seconds=0)
     assert probe["ok"] is False
     assert "no usable GPU found" in probe["reason"]
+
+
+def test_server_env_memakai_file_so_bukan_direktori(monkeypatch):
+    llm = LocalLLM()
+    monkeypatch.setattr(
+        "app.services.local_llm.os.path.exists", lambda _p: True
+    )
+    env = llm._server_env()
+    assert env["GGML_BACKEND_PATH"] == "/opt/llama/libggml-cuda.so"
+    assert env["LD_LIBRARY_PATH"].startswith("/opt/llama:/opt/llama/cuda")
+
+
+def test_server_env_tanpa_backend_cuda(monkeypatch):
+    llm = LocalLLM()
+    monkeypatch.setattr(
+        "app.services.local_llm.os.path.exists", lambda _p: False
+    )
+    assert "GGML_BACKEND_PATH" not in llm._server_env()
