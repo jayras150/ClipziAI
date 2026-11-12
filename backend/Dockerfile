@@ -157,33 +157,6 @@ FROM runtime AS api
 
 COPY --from=builder-api-whisper /opt/venv /opt/venv
 
-# =============================================================================
-# Model GGUF (Qwen3-4B-Instruct-2507) — stage terpisah TANPA ketergantungan kode.
-#
-# Kenapa dipisah: kalau unduhan 2,55 GB ada di stage `worker` (setelah `COPY . .`),
-# setiap perubahan kode membatalkan cache layer tersebut sehingga build ulang
-# mengunduh model lagi (build 7-19 menit). Stage ini cache-nya stabil.
-# =============================================================================
-FROM python:3.11-slim AS gguf
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
-    && mkdir -p /models \
-    && curl -fsSL -o /models/Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf \
-       https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf \
-    && test "$(stat -c%s /models/Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf)" -gt 2000000000 \
-    && rm -rf /var/lib/apt/lists/*
-
-# =============================================================================
-# Image resmi llama.cpp (CUDA) — hanya diambil binernya untuk LLM lokal.
-# =============================================================================
-FROM ghcr.io/ggml-org/llama.cpp:server-cuda AS llama
-
-# =============================================================================
-# TARGET "worker" — untuk Vast.ai serverless (GPU).
-#
-# Menambah Whisper (CTranslate2 large-v3) + lib CUDA. Tag inilah yang dipakai
-# VAST_WORKER_IMAGE. Model Whisper diunduh saat runtime ke cache HF milik user
-# container (HOME=/home/clipzi), jadi tidak perlu dibaking ke image.
-# =============================================================================
 FROM runtime AS worker
 
 # Vast.ai menaruh launcher-nya sendiri di `/.launch` di dalam instance. Pada
@@ -210,49 +183,5 @@ COPY --from=builder-worker /opt/venv /opt/venv
 ENV TRANSCRIPTION_PROVIDER="gpu" \
     GPU_WHISPER_MODEL="large-v3" \
     TRANSCRIPTION_ALLOW_REMOTE="false"
-
-# ---------------------------------------------------------------------------
-# LLM lokal: llama.cpp server (CUDA) + Qwen3-4B-Instruct-2507 (GGUF Q4_K_XL).
-# Semua analisis AI (rerank momen viral, skor, judul/deskripsi/tag) berjalan di
-# instance ini — tidak ada audio/teks yang dikirim ke provider luar.
-# ---------------------------------------------------------------------------
-COPY --from=llama /app /opt/llama
-# CUDA runtime milik image llama.cpp (12.8). Tanpa ini libggml-cuda.so gagal
-# dimuat (pip hanya menyediakan 12.4) → llama-server jatuh ke CPU tanpa pesan
-# yang terlihat. Disalin seperlunya saja (cublas/cublasLt/cufft/cudart).
-COPY --from=llama /usr/local/cuda/lib64/libcudart.so.12.8.90 /opt/llama/cuda/
-COPY --from=llama /usr/local/cuda/lib64/libcublas.so.12.8.4.1 /opt/llama/cuda/
-COPY --from=llama /usr/local/cuda/lib64/libcublasLt.so.12.8.4.1 /opt/llama/cuda/
-COPY --from=llama /usr/local/cuda/lib64/libcufft.so.11.3.3.83 /opt/llama/cuda/
-# libstdc++/libgcc milik image llama.cpp (GCC 14). Base python:slim hanya
-# punya GCC 12 -> libggml-cuda.so gagal dimuat tanpa pesan yang jelas.
-COPY --from=llama /lib/x86_64-linux-gnu/libstdc++.so.6 /opt/llama/cuda/
-COPY --from=llama /lib/x86_64-linux-gnu/libgcc_s.so.1 /opt/llama/cuda/
-# `ln` membuat symlink di /opt/llama/cuda (milik root) dan file model dibaca
-# oleh user clipzi, jadi langkah ini harus berjalan sebagai root.
-USER root
-RUN ln -sf /opt/llama/cuda/libcudart.so.12.8.90 /opt/llama/cuda/libcudart.so.12 \
-    && ln -sf /opt/llama/cuda/libcublas.so.12.8.4.1 /opt/llama/cuda/libcublas.so.12 \
-    && ln -sf /opt/llama/cuda/libcublasLt.so.12.8.4.1 /opt/llama/cuda/libcublasLt.so.12 \
-    && ln -sf /opt/llama/cuda/libcufft.so.11.3.3.83 /opt/llama/cuda/libcufft.so.11 \
-    && chown -R clipzi:clipzi /opt/llama/cuda \
-    && ls -l /opt/llama/cuda
-ENV PATH="/opt/llama:${PATH}"
-# libggml*/libllama*.so ada di /opt/llama; tanpa entri ini llama-server gagal
-# start dengan "error while loading shared libraries".
-ENV LD_LIBRARY_PATH="/opt/llama:/opt/venv/lib/python3.11/site-packages/nvidia/cublas/lib:/opt/venv/lib/python3.11/site-packages/nvidia/cudnn/lib:/opt/venv/lib/python3.11/site-packages/nvidia/cuda_runtime/lib:${LD_LIBRARY_PATH}"
-ENV AI_PROVIDER="custom" \
-    AI_BASE_URL="http://127.0.0.1:8080/v1" \
-    AI_MODEL="Qwen3-4B-Instruct-2507"
-
-USER root
-COPY --from=gguf /models /app/models
-RUN test "$(stat -c%s /app/models/Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf)" -gt 2000000000 \
-    && test -f /opt/llama/libggml-cuda.so \
-    && ls /opt/llama/libggml-cuda.so \
-    && chown -R clipzi:clipzi /app/models \
-    && /opt/llama/llama-server --version
-USER clipzi
-
 
 ENV LD_LIBRARY_PATH="/opt/venv/lib/python3.11/site-packages/nvidia/cublas/lib:/opt/venv/lib/python3.11/site-packages/nvidia/cudnn/lib:${LD_LIBRARY_PATH}"

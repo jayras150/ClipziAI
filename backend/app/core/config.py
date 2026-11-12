@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     AI_MODEL: Optional[str] = None            # optional; provider default model used when omitted
     AI_TEMPERATURE: float = 0.7
     AI_MAX_TOKENS: int = 2048
+    # Model khusus rerank momen viral (diisi admin lewat dashboard).
+    AI_RERANK_MODEL: Optional[str] = None
+    # Kunci enkripsi untuk API key AI yang disimpan di database.
+    # Kosong = turunkan dari SECRET_KEY.
+    AI_SETTINGS_SECRET: Optional[str] = None
 
     # Audio transcription provider
     # Provider: local | gpu | openai | groq | together | custom
@@ -76,7 +81,9 @@ class Settings(BaseSettings):
     # ---------- LLM lokal (llama.cpp server) di worker GPU Vast.ai ----------
     # Dipakai untuk rerank momen viral + metadata judul/deskripsi/tag, supaya
     # analisis AI tidak keluar dari instance (tanpa biaya API).
-    LOCAL_LLM_ENABLED: bool = True
+    # LLM lokal (llama.cpp) tidak dipakai lagi: analisis AI lewat provider
+    # yang diatur admin. Set true hanya bila ingin fallback lokal.
+    LOCAL_LLM_ENABLED: bool = False
     LOCAL_LLM_SERVER_BIN: str = "llama-server"
     LOCAL_LLM_MODEL_PATH: str = "/app/models/Qwen3-4B-Instruct-2507-UD-Q4_K_XL.gguf"
     LOCAL_LLM_MODEL_NAME: str = "Qwen3-4B-Instruct-2507"

@@ -21,6 +21,7 @@ from app.api.admin import system as admin_system
 from app.api.admin import security as admin_security
 from app.api.admin import ytdlp_cookies as admin_ytdlp_cookies
 from app.api.admin import settings as admin_settings
+from app.api.admin import ai as admin_ai
 from app.api.admin import youtube as admin_youtube
 from app.api.admin import workers as admin_workers
 from app.api import multi_platform, clip_templates, bulk_jobs, analytics
@@ -49,6 +50,14 @@ async def lifespan(app: FastAPI):
             logger.warning("%s instance Vast.ai dilanjutkan pemantauannya", resumed)
     except Exception as exc:  # jangan gagalkan startup karena Vast
         logger.warning("Pemeriksaan instance yatim gagal: %s", exc)
+    # Setelan AI tersimpan di DB -> inject ke env/settings saat startup supaya
+    # kredensial dari dashboard langsung dipakai tanpa menunggu request admin.
+    try:
+        from app.services.ai_config import load_and_apply_ai_config
+
+        await load_and_apply_ai_config()
+    except Exception as exc:
+        logger.warning("Gagal memuat setelan AI dari database: %s", exc)
     yield
     # Shutdown
     await engine.dispose()
@@ -103,6 +112,7 @@ app.include_router(admin_audit.router, prefix="/api/admin/audit", tags=["Admin A
 app.include_router(admin_system.router, prefix="/api/admin/system", tags=["Admin System"])
 app.include_router(admin_security.router, prefix="/api/admin/security", tags=["Admin Security"])
 app.include_router(admin_settings.router, prefix="/api/admin/settings", tags=["Admin Settings"])
+app.include_router(admin_ai.router, prefix="/api/admin/settings", tags=["Admin AI Settings"])
 app.include_router(admin_youtube.router, prefix="/api/admin/youtube", tags=["Admin YouTube"])
 app.include_router(admin_workers.router, prefix="/api/admin/workers", tags=["Admin Workers"])
 app.include_router(

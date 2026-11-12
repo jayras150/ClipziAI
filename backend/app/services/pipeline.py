@@ -26,7 +26,6 @@ from app.services import cookie_store
 from app.services.clip_planner import plan_clip_quota, plan_clips
 from app.services.credit_service import CreditService
 from app.services.downloader import VideoDownloader
-from app.services.local_llm import get_local_llm
 from app.services.processor import VideoProcessor, get_caption_style
 from app.services.speech_boundaries import detect_silences
 from app.services.storage import R2Storage
@@ -306,43 +305,52 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
 
             # LLM lokal (Qwen3-4B-Instruct-2507 via llama.cpp) untuk rerank momen
             # viral + metadata. Kalau gagal start, planner tetap jalan heuristik.
-            local_llm = get_local_llm()
-            llm_ready = False
-            if settings.LOCAL_LLM_ENABLED:
-                llm_ready = await asyncio.get_event_loop().run_in_executor(
-                    None, local_llm.start
-                )
-                if not llm_ready:
-                    logger.warning(
-                        "LLM lokal tidak siap — planner memakai skor heuristik saja"
+            # AI lewat provider (diatur admin di dashboard). Kredensial disimpan
+            # di DB lalu di-inject ke env proses sebelum dipakai task ini.
+            from app.services.ai_config import (
+                ai_is_configured,
+                load_and_apply_ai_config,
+            )
+            from app.services.provider_llm import ProviderJSONClient
+
+            ai_cfg = await load_and_apply_ai_config()
+            ai_ready = bool(ai_is_configured(ai_cfg))
+            rerank_client = (
+                ProviderJSONClient(ai_cfg, ai_cfg["model_rerank"])
+                if ai_ready and ai_cfg.get("rerank_enabled")
+                else None
+            )
+            _lap("ai_ready")
+            try:
+                from app.services.worker_callback import report_worker_event
+
+                if ai_ready:
+                    await report_worker_event(
+                        task.id,
+                        "stage",
+                        stage="ai_info",
+                        message=(
+                            "provider=%s | model_metadata=%s | model_rerank=%s | base_url=%s"
+                            % (
+                                ai_cfg["provider"],
+                                ai_cfg["model_metadata"],
+                                ai_cfg["model_rerank"],
+                                ai_cfg.get("base_url") or "(default)",
+                            )
+                        )[:400],
                     )
-                    try:
-                        from app.services.worker_callback import report_worker_event
-
-                        await report_worker_event(
-                            task.id,
-                            "stage",
-                            stage="llm_failed",
-                            message=(
-                                str(getattr(local_llm, "last_error", ""))
-                                or local_llm._tail_log()
-                            )[:400],
-                        )
-                    except Exception:
-                        pass
-                _lap("llm_ready")
-                if llm_ready:
-                    try:
-                        from app.services.worker_callback import report_worker_event
-
-                        await report_worker_event(
-                            task.id,
-                            "stage",
-                            stage="llm_info",
-                            message=str(getattr(local_llm, "info", ""))[:400],
-                        )
-                    except Exception:
-                        pass
+                else:
+                    await report_worker_event(
+                        task.id,
+                        "stage",
+                        stage="ai_failed",
+                        message=(
+                            "AI belum aktif. Atur provider + API key di "
+                            "Admin Dashboard > Settings > AI."
+                        ),
+                    )
+            except Exception:
+                pass
 
             # 4) Tentukan rentang klip — manual trim prioritas atas planner
             await _set_progress(db, task, 36)
@@ -387,9 +395,9 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                         min_duration,
                         max_duration,
                         max_clips,
-                        llm=local_llm if llm_ready else None,
+                        llm=rerank_client,
                         llm_deadline=time.monotonic()
-                        + float(settings.LOCAL_LLM_RERANK_BUDGET),
+                        + float(ai_cfg["rerank_budget_seconds"]),
                     )
                 except Exception as exc:
                     logger.warning(
@@ -415,14 +423,14 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                         (item.get("factors") or {}).get("reranked_by") for item in planned
                     )
                     rerank_error = "" if rerank_applied else str(
-                        getattr(local_llm, "last_error", "")
+                        getattr(rerank_client, "last_error", "")
                     )[:300]
                     for item in planned:
                         factors = item.setdefault("factors", {})
                         factors["rerank_applied"] = rerank_applied
                         if rerank_error:
                             factors["rerank_error"] = rerank_error
-                    if llm_ready and not rerank_applied:
+                    if rerank_client is not None and not rerank_applied:
                         # LLM hidup tapi rerank tidak terpakai — kirim alasannya ke
                         # admin (worker log tidak bisa dibaca dari VPS).
                         try:
@@ -454,17 +462,13 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
             # Dibuat SEBELUM render supaya LLM bisa dimatikan dan VRAM-nya dipakai
             # ffmpeg. Hasil disimpan ke Clip.ai_suggested_* saat menyimpan klip.
             clip_metadata: Dict[float, Dict[str, Any]] = {}
-            if llm_ready and ranges and segments:
+            if ai_ready and ai_cfg.get("metadata_enabled") and ranges and segments:
                 try:
-                    from app.services.ai_client import make_ai_client
                     from app.services.metadata_generator import MetadataGenerator
 
-                    generator = MetadataGenerator(
-                        client=make_ai_client(local_llm.base_url),
-                        model=local_llm.model_name,
-                    )
+                    generator = MetadataGenerator(model=ai_cfg["model_metadata"])
                     meta_deadline = time.monotonic() + float(
-                        settings.LOCAL_LLM_METADATA_BUDGET
+                        ai_cfg["metadata_budget_seconds"]
                     )
                     total_ranges = max(1, len(ranges))
                     for meta_index, (meta_start, meta_duration) in enumerate(ranges, 1):
@@ -487,7 +491,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                             )
                             continue
                         per_clip_timeout = min(
-                            float(settings.LOCAL_LLM_METADATA_PER_CLIP), remaining
+                            float(ai_cfg["timeout_seconds"]), remaining
                         )
                         try:
                             clip_metadata[round(meta_start, 2)] = await asyncio.wait_for(
@@ -534,27 +538,26 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
             await _set_progress(db, task, 55)
             _lap("metadata")
 
-            # Kecepatan decode Qwen (bukti GPU vs CPU) — dikirim sebelum LLM mati.
-            if llm_ready:
+            if ai_ready:
                 try:
                     from app.services.worker_callback import report_worker_event
 
                     await report_worker_event(
                         task.id,
                         "stage",
-                        stage="llm_perf",
-                        message=local_llm.runtime_info(),
+                        stage="ai_perf",
+                        message=(
+                            "rerank_enabled=%s | rerank_error=%s"
+                            % (
+                                ai_cfg.get("rerank_enabled"),
+                                getattr(rerank_client, "last_error", "")[:160]
+                                if rerank_client is not None
+                                else "-",
+                            )
+                        )[:400],
                     )
                 except Exception:
                     pass
-
-            # VRAM harus bebas sebelum render ffmpeg.
-            if llm_ready:
-                try:
-                    local_llm.stop()
-                except Exception:
-                    pass
-
 
             # 5) Render tiap klip
             rendered: List[Dict[str, Any]] = []
@@ -955,11 +958,6 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
             return {"ok": False, "clips": 0, "error": str(exc)}
 
         finally:
-            try:
-                if local_llm is not None:
-                    local_llm.stop()
-            except Exception:
-                pass
             # Unggah log ke qurl.sh SEKALI, lalu laporkan hasilnya. Kegagalan di
             # sini tidak boleh menggagalkan task maupun mengirim callback ganda.
             log_reported = False
