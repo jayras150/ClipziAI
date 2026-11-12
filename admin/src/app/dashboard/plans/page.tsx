@@ -1,6 +1,7 @@
 import PageContainer from '@/components/layout/page-container';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -123,9 +124,9 @@ export default async function PlansPage() {
                   </div>
                   <PlanFields plan={plan} />
                   <div className='md:col-span-2'>
-                    <Button size='sm' type='submit'>
+                    <SubmitButton size='sm'>
                       Simpan
-                    </Button>
+                    </SubmitButton>
                   </div>
                 </form>
               ))
@@ -148,9 +149,9 @@ export default async function PlansPage() {
             <form action={createPlan} className='grid gap-2 md:grid-cols-2'>
               <PlanFields />
               <div className='md:col-span-2'>
-                <Button size='sm' type='submit'>
+                <SubmitButton size='sm'>
                   Simpan plan
-                </Button>
+                </SubmitButton>
               </div>
             </form>
           </CardContent>
@@ -182,9 +183,9 @@ export default async function PlansPage() {
                     <TableCell className='text-right'>
                       <form action={deletePlan}>
                         <input type='hidden' name='id' value={plan.id} />
-                        <Button size='sm' type='submit' variant='destructive'>
+                        <SubmitButton size='sm' variant='destructive'>
                           Hapus
-                        </Button>
+                        </SubmitButton>
                       </form>
                     </TableCell>
                   </TableRow>

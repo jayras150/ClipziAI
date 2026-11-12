@@ -1,5 +1,7 @@
 "use client"
 
+import { ClipzySpinner } from "@/components/ClipzySpinner"
+
 import { useState } from "react"
 import Link from "next/link"
 import { Mail, Lock } from "lucide-react"
@@ -128,7 +130,13 @@ export default function LoginPage() {
 
             {error && <div className="ui-alert ui-alert-error">{error}</div>}
 
-            <button type="submit" disabled={loading} className="ui-btn ui-btn-gold ui-btn-block">
+            <button
+              type="submit"
+              disabled={loading}
+              className="ui-btn ui-btn-gold ui-btn-block"
+              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+            >
+              {loading ? <ClipzySpinner size="xs" /> : null}
               {loading ? "Signing in..." : "Sign in"}
             </button>
           </form>

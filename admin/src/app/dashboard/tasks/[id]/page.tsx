@@ -3,6 +3,7 @@ import Link from 'next/link';
 import PageContainer from '@/components/layout/page-container';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { adminFetch } from '@/lib/clipzi';
@@ -58,16 +59,16 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
           {['error', 'cancelled'].includes(task.status) ? (
             <form action={retryTask}>
               <input type='hidden' name='tid' value={task.id} />
-              <Button size='sm' type='submit' variant='secondary'>
+              <SubmitButton size='sm' variant='secondary'>
                 Ulangi task
-              </Button>
+              </SubmitButton>
             </form>
           ) : (
             <form action={cancelTask}>
               <input type='hidden' name='tid' value={task.id} />
-              <Button size='sm' type='submit' variant='destructive'>
+              <SubmitButton size='sm' variant='destructive'>
                 Batalkan task
-              </Button>
+              </SubmitButton>
             </form>
           )}
         </div>

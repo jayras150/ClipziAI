@@ -5,6 +5,7 @@ import { useMemo, useState, useTransition } from 'react';
 import { loadAiModels, saveAi, testAi, type ModelsResult, type TestResult } from '@/app/dashboard/settings/actions';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ClipzySpinner } from '@/components/ui/clipzy-spinner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -215,8 +216,15 @@ export default function AiForm({ config, providers }: Props) {
             />
           </div>
           <div className='flex items-end gap-2'>
-            <Button type='button' variant='outline' onClick={onLoadModels} disabled={pending}>
-              {pending ? 'Memuat...' : 'Muat daftar model'}
+            <Button
+              type='button'
+              variant='outline'
+              className='gap-2'
+              onClick={onLoadModels}
+              disabled={pending}
+            >
+              {pending ? <ClipzySpinner size='xs' variant='ring' /> : null}
+              {pending ? 'Memuat…' : 'Muat daftar model'}
             </Button>
             {models?.ok ? (
               <Badge variant='secondary'>
@@ -338,10 +346,12 @@ export default function AiForm({ config, providers }: Props) {
       ) : null}
 
       <div className='flex gap-2'>
-        <Button onClick={onSubmit} disabled={pending}>
-          {pending ? 'Menyimpan...' : 'Simpan'}
+        <Button className='gap-2' onClick={onSubmit} disabled={pending}>
+          {pending ? <ClipzySpinner size='xs' variant='ring' /> : null}
+          {pending ? 'Menyimpan…' : 'Simpan'}
         </Button>
-        <Button variant='outline' onClick={onTest} disabled={pending}>
+        <Button variant='outline' className='gap-2' onClick={onTest} disabled={pending}>
+          {pending ? <ClipzySpinner size='xs' variant='ring' /> : null}
           Test Connection
         </Button>
       </div>

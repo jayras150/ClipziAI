@@ -14,6 +14,7 @@ import {
   TableRow
 } from '@/components/ui/table';
 import { adminFetch, type Paged } from '@/lib/clipzi';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { banUser, unbanUser } from './actions';
 
 export const metadata = { title: 'Admin: Users' };
@@ -189,13 +190,13 @@ export default async function UsersPage({
                         <div className='flex justify-end gap-1'>
                           <form action={user.is_banned ? unbanUser : banUser}>
                             <input type='hidden' name='uid' value={user.id} />
-                            <Button
+                            <SubmitButton
                               size='sm'
-                              type='submit'
+                              pendingLabel='Proses…'
                               variant={user.is_banned ? 'outline' : 'destructive'}
                             >
                               {user.is_banned ? 'Buka blokir' : 'Blokir'}
-                            </Button>
+                            </SubmitButton>
                           </form>
                           <Button
                             size='sm'

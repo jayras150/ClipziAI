@@ -3,6 +3,7 @@ import Link from 'next/link';
 import PageContainer from '@/components/layout/page-container';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import {
@@ -224,9 +225,9 @@ export default async function UserDetailPage({
                   <label className='text-muted-foreground mb-1 block text-xs'>Email</label>
                   <Input name='email' defaultValue={user.email || ''} className='h-9' />
                 </div>
-                <Button size='sm' type='submit'>
+                <SubmitButton size='sm'>
                   Simpan
-                </Button>
+                </SubmitButton>
               </form>
             </CardContent>
           </Card>
@@ -270,9 +271,9 @@ export default async function UserDetailPage({
                     className='h-9 w-28'
                   />
                 </div>
-                <Button size='sm' type='submit' variant='secondary'>
+                <SubmitButton size='sm' variant='secondary'>
                   Terapkan plan
-                </Button>
+                </SubmitButton>
               </form>
 
               <form action={adjustCredits} className='flex flex-wrap items-end gap-2 border-t pt-3'>
@@ -285,9 +286,9 @@ export default async function UserDetailPage({
                   <label className='text-muted-foreground mb-1 block text-xs'>Keterangan</label>
                   <Input name='description' placeholder='alasan penyesuaian' className='h-9' />
                 </div>
-                <Button size='sm' type='submit'>
+                <SubmitButton size='sm'>
                   Sesuaikan kredit
-                </Button>
+                </SubmitButton>
               </form>
             </CardContent>
           </Card>
@@ -306,39 +307,39 @@ export default async function UserDetailPage({
                   <label className='text-muted-foreground mb-1 block text-xs'>Alasan blokir</label>
                   <Input name='reason' placeholder='alasan' className='h-9 w-52' />
                 </div>
-                <Button size='sm' type='submit' variant='destructive'>
+                <SubmitButton size='sm' variant='destructive'>
                   Blokir
-                </Button>
+                </SubmitButton>
               </form>
               <form action={unbanUser}>
                 <input type='hidden' name='uid' value={user.id} />
-                <Button size='sm' type='submit' variant='outline'>
+                <SubmitButton size='sm' variant='outline'>
                   Buka blokir
-                </Button>
+                </SubmitButton>
               </form>
               <form action={suspendUser}>
                 <input type='hidden' name='uid' value={user.id} />
-                <Button size='sm' type='submit' variant='outline'>
+                <SubmitButton size='sm' variant='outline'>
                   Tangguhkan
-                </Button>
+                </SubmitButton>
               </form>
               <form action={activateUser}>
                 <input type='hidden' name='uid' value={user.id} />
-                <Button size='sm' type='submit' variant='secondary'>
+                <SubmitButton size='sm' variant='secondary'>
                   Aktifkan
-                </Button>
+                </SubmitButton>
               </form>
               <form action={forceLogoutUser}>
                 <input type='hidden' name='uid' value={user.id} />
-                <Button size='sm' type='submit' variant='outline'>
+                <SubmitButton size='sm' variant='outline'>
                   Paksa logout
-                </Button>
+                </SubmitButton>
               </form>
               <form action={resetUserPassword}>
                 <input type='hidden' name='uid' value={user.id} />
-                <Button size='sm' type='submit' variant='outline'>
+                <SubmitButton size='sm' variant='outline'>
                   Reset password
-                </Button>
+                </SubmitButton>
               </form>
             </CardContent>
           </Card>

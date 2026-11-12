@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { adminFetch, type Paged } from '@/lib/clipzi';
 import { cancelTask, retryTask } from './actions';
 
@@ -52,9 +53,9 @@ function FilterBar({ params }: { params: { q?: string; status?: string } }) {
               </option>
             ))}
           </select>
-          <Button size='sm' type='submit'>
+          <SubmitButton size='sm'>
             Filter
-          </Button>
+          </SubmitButton>
           <Button variant='ghost' size='sm' render={<Link href='/dashboard/tasks' />}>
             Reset
           </Button>
@@ -135,16 +136,16 @@ export default async function TasksPage({
                           {['error', 'cancelled'].includes(task.status) ? (
                             <form action={retryTask}>
                               <input type='hidden' name='tid' value={task.id} />
-                              <Button size='sm' type='submit' variant='secondary'>
+                              <SubmitButton size='sm' variant='secondary'>
                                 Ulangi
-                              </Button>
+                              </SubmitButton>
                             </form>
                           ) : (
                             <form action={cancelTask}>
                               <input type='hidden' name='tid' value={task.id} />
-                              <Button size='sm' type='submit' variant='destructive'>
+                              <SubmitButton size='sm' variant='destructive'>
                                 Batalkan
-                              </Button>
+                              </SubmitButton>
                             </form>
                           )}
                         </div>

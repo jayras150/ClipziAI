@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
-import { Mail, ShieldCheck, Youtube, Unlink, LoaderCircle, Save, LogOut, Check } from "lucide-react"
+import { Mail, ShieldCheck, Youtube, Unlink, Save, LogOut, Check } from "lucide-react"
 
+import { ClipzySpinner } from "@/components/ClipzySpinner"
 import Navbar from "@/components/Navbar"
 import ConfirmDialog from "@/components/ConfirmDialog"
 import SiteFooter from "@/components/SiteFooter"
@@ -187,10 +188,12 @@ export default function ProfilePage() {
       <div className="ui-shell">
         <Navbar />
         <main className="ui-container" style={{ padding: "80px 0", textAlign: "center" }}>
-          <LoaderCircle size={22} className="animate-spin ui-gold" />
-          <p className="ui-muted" style={{ marginTop: 12 }}>
-            Loading your profile…
-          </p>
+          <div style={{ display: "grid", placeItems: "center", gap: 14 }}>
+            <ClipzySpinner size="lg" className="ui-gold" />
+            <p className="ui-muted" style={{ margin: 0 }}>
+              Memuat profil Anda…
+            </p>
+          </div>
         </main>
       </div>
     )
@@ -344,7 +347,7 @@ export default function ProfilePage() {
             </div>
 
             <button type="submit" className="ui-btn ui-btn-gold" disabled={savingProfile}>
-              <Save size={15} /> {savingProfile ? "Saving…" : "Save changes"}
+              {savingProfile ? <ClipzySpinner size="xs" /> : <Save size={15} />} {savingProfile ? "Saving…" : "Save changes"}
             </button>
           </form>
 
@@ -392,7 +395,7 @@ export default function ProfilePage() {
               className={youtube.connected ? "ui-btn ui-btn-ghost" : "ui-btn ui-btn-gold"}
             >
               {youtubeBusy ? (
-                <LoaderCircle size={15} className="animate-spin" />
+                <ClipzySpinner size="xs" />
               ) : youtube.connected ? (
                 <Unlink size={15} />
               ) : (
@@ -460,7 +463,7 @@ export default function ProfilePage() {
               />
             </div>
             <button type="submit" className="ui-btn ui-btn-ghost" disabled={savingPassword}>
-              <Save size={15} /> {savingPassword ? "Updating…" : "Update password"}
+              {savingPassword ? <ClipzySpinner size="xs" /> : <Save size={15} />} {savingPassword ? "Updating…" : "Update password"}
             </button>
           </form>
         </div>

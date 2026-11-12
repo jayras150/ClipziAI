@@ -639,3 +639,162 @@
     -webkit-text-fill-color: currentColor;
   }
 }
+/* ==========================================================================
+   Clipzy spinner — animasi loading khas ClipzyAI.
+   Dipakai <ClipzySpinner /> (orbit | ring | dots) di admin & frontend.
+   Semua transform/opacity supaya tetap 60fps dan tidak memicu layout shift.
+   ========================================================================== */
+@keyframes cz-orbit-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes cz-orbit-spin-reverse {
+  from { transform: rotate(360deg); }
+  to { transform: rotate(0deg); }
+}
+@keyframes cz-orbit-pulse {
+  0%, 100% { transform: scale(0.86); opacity: 0.55; }
+  50% { transform: scale(1.12); opacity: 1; }
+}
+@keyframes cz-ring-sweep {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes cz-dot-bounce {
+  0%, 80%, 100% { transform: translateY(0) scale(0.8); opacity: 0.5; }
+  40% { transform: translateY(-5px) scale(1); opacity: 1; }
+}
+@keyframes cz-shimmer {
+  from { background-position: -180% 0; }
+  to { background-position: 180% 0; }
+}
+
+.cz-spinner {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  color: currentColor;
+}
+
+.cz-spinner__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: var(--cz-ring-width, 2px) solid currentColor;
+  opacity: 0.16;
+}
+
+.cz-spinner__arc {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: var(--cz-ring-width, 2px) solid transparent;
+  border-top-color: currentColor;
+  border-right-color: color-mix(in srgb, currentColor 45%, transparent);
+  animation: cz-ring-sweep 0.9s cubic-bezier(0.65, 0.05, 0.36, 1) infinite;
+}
+
+.cz-spinner__orbit {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 1px dashed color-mix(in srgb, currentColor 30%, transparent);
+  animation: cz-orbit-spin 2.4s linear infinite;
+}
+
+.cz-spinner__orbit--reverse {
+  inset: 18%;
+  border-style: solid;
+  border-color: color-mix(in srgb, currentColor 22%, transparent);
+  animation: cz-orbit-spin-reverse 1.6s linear infinite;
+}
+
+.cz-spinner__core {
+  width: 38%;
+  height: 38%;
+  border-radius: 9999px;
+  background: currentColor;
+  box-shadow: 0 0 10px color-mix(in srgb, currentColor 65%, transparent);
+  animation: cz-orbit-pulse 1.4s ease-in-out infinite;
+}
+
+.cz-spinner__dot {
+  position: absolute;
+  width: 18%;
+  height: 18%;
+  border-radius: 9999px;
+  background: currentColor;
+  top: -6%;
+  left: 41%;
+  box-shadow: 0 0 8px color-mix(in srgb, currentColor 60%, transparent);
+}
+
+.cz-spinner--dots {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 1em;
+}
+.cz-spinner--dots > span {
+  width: 0.3em;
+  height: 0.3em;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: cz-dot-bounce 1s ease-in-out infinite;
+}
+.cz-spinner--dots > span:nth-child(2) { animation-delay: 0.15s; }
+.cz-spinner--dots > span:nth-child(3) { animation-delay: 0.3s; }
+
+/* Baris status proses (dipakai di kartu task / panel admin). */
+.cz-processing {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, currentColor 8%, transparent),
+    color-mix(in srgb, currentColor 16%, transparent)
+  );
+  background-size: 220% 100%;
+  animation: cz-shimmer 2.6s linear infinite;
+  font-size: 13px;
+}
+
+.cz-processing__label {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.cz-processing__hint {
+  opacity: 0.66;
+  font-size: 11px;
+}
+
+/* Overlay full-area saat memuat halaman/tabel. */
+.cz-overlay-loader {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  gap: 12px;
+  background: color-mix(in srgb, var(--background, #0b0d12) 72%, transparent);
+  backdrop-filter: blur(6px);
+  z-index: 20;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cz-spinner__arc,
+  .cz-spinner__orbit,
+  .cz-spinner__orbit--reverse,
+  .cz-spinner__core,
+  .cz-spinner__dot,
+  .cz-spinner--dots > span,
+  .cz-processing {
+    animation-duration: 3s;
+  }
+}
+

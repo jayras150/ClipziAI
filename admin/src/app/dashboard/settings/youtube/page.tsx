@@ -1,6 +1,7 @@
 import PageContainer from '@/components/layout/page-container';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -105,9 +106,9 @@ export default async function YoutubeCookiesPage() {
                   className='border-input bg-background w-full rounded-md border p-2 font-mono text-xs'
                 />
               </div>
-              <Button type='submit' size='sm'>
+              <SubmitButton size='sm'>
                 Simpan cookies
-              </Button>
+              </SubmitButton>
             </form>
           </CardContent>
         </Card>
@@ -122,9 +123,9 @@ export default async function YoutubeCookiesPage() {
               </CardDescription>
             </div>
             <form action={probeAllCookies}>
-              <Button type='submit' size='sm' variant='outline'>
+              <SubmitButton size='sm' variant='outline'>
                 Uji semua
-              </Button>
+              </SubmitButton>
             </form>
           </CardHeader>
           <CardContent>
@@ -162,9 +163,9 @@ export default async function YoutubeCookiesPage() {
                         <div className='flex flex-wrap justify-end gap-1'>
                           <form action={probeCookie}>
                             <input type='hidden' name='cid' value={row.id} />
-                            <Button size='sm' variant='outline' type='submit'>
+                            <SubmitButton size='sm' variant='outline'>
                               Uji
-                            </Button>
+                            </SubmitButton>
                           </form>
                           <form action={setCookieStatus}>
                             <input type='hidden' name='cid' value={row.id} />
@@ -173,15 +174,15 @@ export default async function YoutubeCookiesPage() {
                               name='action'
                               value={row.status === 'active' ? 'disable' : 'reactivate'}
                             />
-                            <Button size='sm' variant='secondary' type='submit'>
+                            <SubmitButton size='sm' variant='secondary'>
                               {row.status === 'active' ? 'Nonaktifkan' : 'Aktifkan'}
-                            </Button>
+                            </SubmitButton>
                           </form>
                           <form action={deleteCookie}>
                             <input type='hidden' name='cid' value={row.id} />
-                            <Button size='sm' variant='destructive' type='submit'>
+                            <SubmitButton size='sm' variant='destructive'>
                               Hapus
-                            </Button>
+                            </SubmitButton>
                           </form>
                         </div>
                       </TableCell>

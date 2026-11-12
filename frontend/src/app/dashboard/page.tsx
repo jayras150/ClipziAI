@@ -7,7 +7,6 @@ import {
   Play,
   Youtube,
   Unlink,
-  LoaderCircle,
   Link2,
   Trash2,
   Download,
@@ -33,6 +32,7 @@ import SubtitlePreview from "@/components/SubtitlePreview"
 import { readApiError } from "@/lib/api-errors"
 import { requestYouTubeAccessToken } from "@/lib/social"
 import ConfirmDialog from "@/components/ConfirmDialog"
+import { ClipzySpinner, InlineSpinner, ProcessingBar } from "@/components/ClipzySpinner"
 import ClipModal from "@/components/ClipModal"
 import SiteFooter from "@/components/SiteFooter"
 import UserMenu from "@/components/UserMenu"
@@ -632,6 +632,8 @@ export default function DashboardPage() {
     if (!Number.isNaN(start) && !Number.isNaN(end) && end > start) return end - start
     return null
   })()
+  const activeTaskForBanner =
+    tasks.find((task) => ACTIVE_STATUSES.includes(task.status)) || null
   const renderEstimate = trimSeconds
     ? `≈ ${trimSeconds.toFixed(1)}s per clip · estimated render ±${Math.max(
         2,
@@ -673,7 +675,7 @@ export default function DashboardPage() {
                 disabled={youtubeLoading}
                 className="ui-btn ui-btn-ghost"
               >
-                {youtubeLoading ? <LoaderCircle size={15} className="animate-spin" /> : <Unlink size={15} />}
+                {youtubeLoading ? <ClipzySpinner size="xs" /> : <Unlink size={15} />}
                 Disconnect
               </button>
             </>
@@ -684,7 +686,7 @@ export default function DashboardPage() {
               disabled={youtubeLoading}
               className="ui-btn ui-btn-ghost"
             >
-              {youtubeLoading ? <LoaderCircle size={15} className="animate-spin" /> : <Youtube size={15} />}
+              {youtubeLoading ? <ClipzySpinner size="xs" /> : <Youtube size={15} />}
               Connect YouTube
             </button>
           )}
@@ -1196,7 +1198,7 @@ export default function DashboardPage() {
 
                 <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                   <button type="submit" className="ui-btn ui-btn-gold" disabled={submitting}>
-                    {submitting ? <LoaderCircle size={15} className="animate-spin" /> : <Play size={15} />}
+                    {submitting ? <ClipzySpinner size="xs" /> : <Play size={15} />}
                     {submitting ? "Starting…" : "Process"}
                   </button>
                   <button
@@ -1237,7 +1239,7 @@ export default function DashboardPage() {
 
             {tasksLoading && tasks.length === 0 ? (
               <div className="ui-card" style={{ textAlign: "center" }}>
-                <LoaderCircle className="animate-spin" size={22} />
+                <ClipzySpinner size="md" />
               </div>
             ) : tasks.length === 0 ? (
               <div className="ui-card" style={{ textAlign: "center" }}>
@@ -1249,6 +1251,15 @@ export default function DashboardPage() {
               </div>
             ) : (
               <div className="task-grid">
+              {activeTaskForBanner ? (
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <ProcessingBar
+                    title="AI sedang memproses video"
+                    hint="Progres diperbarui otomatis. Anda boleh menutup halaman ini."
+                    progress={activeTaskForBanner.progress}
+                  />
+                </div>
+              ) : null}
                 {tasks.map((task) => (
                   <article key={task.id} className="ui-card ui-card-hover">
                     <div
@@ -1280,7 +1291,7 @@ export default function DashboardPage() {
                           ) : task.status === "queued" ? (
                             <Clock size={15} />
                           ) : (
-                            <LoaderCircle size={15} className="animate-spin" />
+                            <ClipzySpinner size="xs" />
                           )}
                         </div>
                         <div style={{ minWidth: 0 }}>
@@ -1301,7 +1312,11 @@ export default function DashboardPage() {
                           </span>
                         </div>
                       </div>
-                      <span className={statusBadgeClass(task.status)} style={statusBadgeStyle(task.status)}>
+                      <span
+                        className={statusBadgeClass(task.status)}
+                        style={{ ...statusBadgeStyle(task.status), display: "inline-flex", alignItems: "center", gap: 6 }}
+                      >
+                        {ACTIVE_STATUSES.includes(task.status) ? <InlineSpinner /> : null}
                         {STATUS_LABEL[task.status] ?? task.status}
                       </span>
                     </div>

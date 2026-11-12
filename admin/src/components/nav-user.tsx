@@ -4,6 +4,7 @@ import Link from 'next/link';
 
 import { signOut, signOutEverywhere } from '@/app/auth/actions';
 import { Icons } from '@/components/icons';
+import { LogoutMenuItem } from '@/components/layout/logout-menu-item';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -95,19 +96,10 @@ export function NavUser({
               {/* Logout harus benar-benar bekerja: server action menghapus
                   kedua cookie sesi + mencatat audit, lalu redirect ke login. */}
               <form action={signOut}>
-                <DropdownMenuItem
-                  render={<button type='submit' className='w-full' />}
-                  className='text-destructive'
-                >
-                  <Icons.logout className='mr-2 h-4 w-4' />
-                  Log out
-                </DropdownMenuItem>
+                <LogoutMenuItem label='Log out' destructive />
               </form>
               <form action={signOutEverywhere}>
-                <DropdownMenuItem render={<button type='submit' className='w-full' />}>
-                  <Icons.logout className='mr-2 h-4 w-4' />
-                  Log out dari semua perangkat
-                </DropdownMenuItem>
+                <LogoutMenuItem label='Log out dari semua perangkat' />
               </form>
             </DropdownMenuGroup>
           </DropdownMenuContent>

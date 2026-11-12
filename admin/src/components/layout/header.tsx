@@ -1,7 +1,7 @@
 import React from 'react';
 import { SidebarTrigger } from '../ui/sidebar';
 import { Separator } from '../ui/separator';
-import { Button } from '../ui/button';
+import { SubmitButton } from '../ui/submit-button';
 import { Icons } from '../icons';
 import { Breadcrumbs } from '../breadcrumbs';
 import SearchInput from '../search-input';
@@ -33,9 +33,15 @@ export default function Header() {
         {/* Tombol logout selalu terlihat (termasuk di mobile) supaya admin
             tidak pernah "terjebak" di sesi yang tidak bisa diakhiri. */}
         <form action={signOut}>
-          <Button type='submit' variant='ghost' size='icon' title='Log out' aria-label='Log out'>
+          <SubmitButton
+            variant='ghost'
+            size='icon'
+            iconOnly
+            title='Log out'
+            aria-label='Log out'
+          >
             <Icons.logout className='size-4' />
-          </Button>
+          </SubmitButton>
         </form>
       </div>
     </header>

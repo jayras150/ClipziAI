@@ -1,16 +1,24 @@
 import { cn } from '@/lib/utils';
-import { IconLoader } from '@tabler/icons-react';
 
-function Spinner({ className, ...props }: React.ComponentProps<'svg'>) {
+import { ClipzySpinner } from '@/components/ui/clipzy-spinner';
+
+/**
+ * Spinner default aplikasi.
+ *
+ * Dipertahankan dengan API lama (`className`, props svg) supaya komponen
+ * template (`LoadingButton`, dsb) otomatis memakai animasi Clipzy yang baru.
+ */
+function Spinner({ className, ...props }: React.HTMLAttributes<HTMLSpanElement>) {
   return (
-    <IconLoader
-      data-slot='spinner'
-      role='status'
-      aria-label='Loading'
-      className={cn('size-4 animate-spin', className)}
+    <ClipzySpinner
+      variant='ring'
+      size='sm'
+      aria-label='Memuat'
+      className={cn('text-current', className)}
       {...props}
     />
   );
 }
 
 export { Spinner };
+

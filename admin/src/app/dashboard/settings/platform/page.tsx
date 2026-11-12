@@ -1,6 +1,7 @@
 import PageContainer from '@/components/layout/page-container';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { adminFetch, type PlatformConfig } from '@/lib/clipzi';
@@ -100,9 +101,9 @@ export default async function PlatformSettingsPage() {
                   />
                   Mode maintenance
                 </label>
-                <Button type='submit' size='sm'>
+                <SubmitButton size='sm'>
                   Simpan setelan
-                </Button>
+                </SubmitButton>
               </div>
             </form>
           </CardContent>
@@ -129,9 +130,9 @@ export default async function PlatformSettingsPage() {
                 <label className='text-muted-foreground mb-1 block text-xs'>Subdomain admin</label>
                 <Input name='admin_domain' placeholder='admin.clipzy.id' className='h-9 w-52' />
               </div>
-              <Button type='submit' size='sm'>
+              <SubmitButton size='sm'>
                 Terapkan domain
-              </Button>
+              </SubmitButton>
             </form>
 
             <div className='grid gap-2 text-sm md:grid-cols-2'>
@@ -155,9 +156,9 @@ export default async function PlatformSettingsPage() {
 
             {status.status === 'pending' ? (
               <form action={cancelDomain}>
-                <Button type='submit' size='sm' variant='outline'>
+                <SubmitButton size='sm' variant='outline'>
                   Batalkan permintaan
-                </Button>
+                </SubmitButton>
               </form>
             ) : null}
 

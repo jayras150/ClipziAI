@@ -5,7 +5,6 @@ import Link from "next/link"
 import {
   CheckCircle2,
   Download,
-  LoaderCircle,
   Sparkles,
   Wand2,
   X,
@@ -13,6 +12,7 @@ import {
 } from "lucide-react"
 
 import { api, ClipData } from "@/lib/api"
+import { ClipzySpinner } from "@/components/ClipzySpinner"
 import { readApiError } from "@/lib/api-errors"
 
 /**
@@ -418,7 +418,7 @@ export default function ClipModal({
                 }
               >
                 {generating ? (
-                  <LoaderCircle size={14} className="animate-spin" />
+                  <ClipzySpinner size="xs" />
                 ) : (
                   <Sparkles size={14} />
                 )}
@@ -430,7 +430,7 @@ export default function ClipModal({
                 onClick={() => void save()}
                 disabled={busy || !title.trim()}
               >
-                {saving ? <LoaderCircle size={14} className="animate-spin" /> : <Wand2 size={14} />}
+                {saving ? <ClipzySpinner size="xs" /> : <Wand2 size={14} />}
                 Save
               </button>
             </div>
@@ -481,7 +481,7 @@ export default function ClipModal({
                   disabled={busy || !title.trim()}
                 >
                   {uploading ? (
-                    <LoaderCircle size={15} className="animate-spin" />
+                    <ClipzySpinner size="xs" />
                   ) : (
                     <Youtube size={15} />
                   )}

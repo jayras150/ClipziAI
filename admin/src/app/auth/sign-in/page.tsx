@@ -4,6 +4,7 @@ import { useActionState } from 'react';
 
 import { signIn, type AuthState } from '@/app/auth/actions';
 import { Button } from '@/components/ui/button';
+import { ClipzySpinner } from '@/components/ui/clipzy-spinner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -39,8 +40,9 @@ export default function SignInPage() {
             {state.error ? (
               <p className='text-destructive text-sm'>{state.error}</p>
             ) : null}
-            <Button className='w-full' type='submit' disabled={pending}>
-              {pending ? 'Memproses...' : 'Masuk'}
+            <Button className='w-full gap-2' type='submit' disabled={pending}>
+              {pending ? <ClipzySpinner size='sm' variant='orbit' /> : null}
+              {pending ? 'Memverifikasi…' : 'Masuk'}
             </Button>
           </form>
         </CardContent>

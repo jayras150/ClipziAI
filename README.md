@@ -34,6 +34,7 @@ Setiap perubahan besar dicatat di sini (tanggal · area · ringkasan · cara ver
 | 12 Nov 2026 | Domain | Setelan `platform` di DB, tombol **Terapkan domain** 1 klik, agent `clipzi-domain-sync` (systemd timer 30 s) menulis `.env` + reload Caddy + opsional DNS Cloudflare. | Settings › Platform › Terapkan domain |
 | 12 Nov 2026 | Cookies YouTube | Simpan cookies dari **base64** atau Netscape, validasi, uji (probe), aktif/nonaktif, hapus, ekspor base64. Tetap terenkripsi AES-256-GCM. | Settings › YouTube Cookies |
 | 12 Nov 2026 | Landing | Menu FEATURES/HOW IT WORKS/DEMO benar-benar center (grid `1fr auto 1fr`). | Buka `https://domain` di desktop |
+| 13 Nov 2026 | Indikator proses | Spinner animasi Clipzy (`orbit`/`ring`/`dots`) dipakai admin & frontend. Tombol submit otomatis spinner (`useFormStatus`), `loading.tsx` per rute, banner shimmer saat task queued/processing. | Klik aksi apa pun di admin → spinner; buka `/dashboard` saat memuat |
 
 ## Arsitektur
 
@@ -208,6 +209,40 @@ GET/PUT  /api/admin/settings/branding      POST /branding/upload?kind=logo|favic
 GET      /api/branding                     (publik) dipakai layout & navbar
 GET      /api/pricing/*                    plan publik
 ```
+
+## Indikator proses (spinner)
+
+Semua proses yang butuh waktu punya indikator visual yang konsisten — tidak ada lagi
+tombol "diam" atau halaman kosong saat menunggu API.
+
+**Komponen**
+
+| Lokasi | Komponen | Varian |
+|---|---|---|
+| Admin | `admin/src/components/ui/clipzy-spinner.tsx` → `ClipzySpinner`, `InlineSpinner`, `ProcessingBar`, `OverlayLoader` | `orbit` (default), `ring` (di tombol), `dots` (teks) |
+| Frontend | `frontend/src/components/ClipzySpinner.tsx` → `ClipzySpinner`, `InlineSpinner`, `ProcessingBar` | idem |
+
+Animasi murni CSS (`cz-orbit-spin`, `cz-ring-sweep`, `cz-orbit-pulse`, `cz-dot-bounce`,
+`cz-shimmer`) di `admin/src/styles/globals.css` dan `frontend/src/app/theme.css`.
+Semua `transform`/`opacity` (60 fps), dan otomatis melambat bila pengguna mengaktifkan
+`prefers-reduced-motion`.
+
+**Tombol submit otomatis**
+
+`admin/src/components/ui/submit-button.tsx` memakai `useFormStatus()`: cukup ganti
+`<Button type='submit'>` menjadi `<SubmitButton>` di dalam `<form action={...}>`, maka
+tombol langsung menampilkan spinner + disabled selama server action berjalan. Dipakai di
+Users (blokir, kredit, plan, reset password, paksa logout), Plans, Tasks (batalkan/ulangi),
+Settings AI/Platform/YouTube Cookies, logout (header + dropdown), dan halaman login admin.
+
+**Loading per rute**
+
+- `admin/src/app/dashboard/loading.tsx` → skeleton + spinner orbit saat server component
+  mengambil data (berlaku untuk semua sub-rute dashboard).
+- `frontend/src/app/dashboard/loading.tsx` → kartu shimmer + spinner saat studio dimuat.
+- Login/register/profile memakai spinner pada tombol simpan dan loader halaman.
+- Dashboard publik menampilkan `ProcessingBar` (shimmer) selama ada task `queued`/
+  `processing`, plus spinner kecil di badge status dan kartu task.
 
 ## Sesi & logout
 
