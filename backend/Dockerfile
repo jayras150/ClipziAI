@@ -157,6 +157,10 @@ FROM runtime AS api
 
 COPY --from=builder-api-whisper /opt/venv /opt/venv
 
+# Server PO token resmi (sudah ter-build di dalam image) dipakai sebagai sumber
+# file, supaya build kita tidak perlu compile TypeScript (rapuh).
+FROM brainicism/bgutil-ytdlp-pot-provider:2.0.2-node AS potprovider
+
 FROM runtime AS worker
 
 # Vast.ai menaruh launcher-nya sendiri di `/.launch` di dalam instance. Pada
@@ -181,22 +185,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && command -v sshd \
     && node --version
 
-# PO token provider (bgutil) untuk YouTube. Server dibaking saat build supaya boot
-# instance Vast tetap cepat; `pipeline_onstart.sh` hanya menjalankannya.
-# Build resmi: `npm ci && npx tsc` (repo tidak punya script `build`), output build/main.js.
-RUN git clone https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /opt/bgutil \
-    && cd /opt/bgutil/server \
-    && npm ci --no-audit --no-fund \
-    && npx tsc \
-    && test -f /opt/bgutil/server/build/main.js \
-    && git -C /opt/bgutil rev-parse HEAD > /opt/bgutil/COMMIT
 USER clipzi
+
+# Binary server + dependency dari image resmi (tanpa compile ulang).
+COPY --from=potprovider /app/build /opt/bgutil/server/build
+COPY --from=potprovider /app/node_modules /opt/bgutil/server/node_modules
+COPY --from=potprovider /app/package.json /opt/bgutil/server/package.json
 
 COPY --from=builder-worker /opt/venv /opt/venv
 
-# Plugin yt-dlp diambil dari repo yang SAMA dengan server (versi cocok).
+# Plugin yt-dlp dari PyPI, versi sama dengan server (2.0.2). --no-deps agar
+# versi yt-dlp di venv tidak diubah.
 USER root
-RUN /opt/venv/bin/pip install --no-cache-dir /opt/bgutil/plugin \
+RUN /opt/venv/bin/pip install --no-cache-dir --no-deps bgutil-ytdlp-pot-provider==2.0.2 \
     && /opt/venv/bin/python -c "import yt_dlp; print('yt-dlp', yt_dlp.version.__version__)" \
     && ls /opt/venv/lib/python3.11/site-packages/yt_dlp_plugins >/dev/null
 USER clipzi
