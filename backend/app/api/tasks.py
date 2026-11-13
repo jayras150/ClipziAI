@@ -253,6 +253,10 @@ async def list_task_clips(
             file_size=clip.file_size,
             viral_score=clip.viral_score,
             viral_factors=clip.viral_factors,
+            ai_hook=(clip.viral_factors or {}).get("ai_hook")
+            or (clip.viral_factors or {}).get("llm_hook"),
+            ai_viral_reason=(clip.viral_factors or {}).get("ai_viral_reason")
+            or (clip.viral_factors or {}).get("llm_reason"),
             ai_suggested_title=clip.ai_suggested_title,
             ai_suggested_description=clip.ai_suggested_description,
             ai_suggested_tags=clip.ai_suggested_tags,

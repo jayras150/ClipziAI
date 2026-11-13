@@ -243,6 +243,8 @@ async def _prepare_metadata_bg(clip_id: UUID, user_id: UUID) -> None:
             factors = dict(clip.viral_factors or {})
             factors["ai_hook"] = result.get("hook") or result["title"]
             factors["ai_language"] = result.get("language")
+            if result.get("viral_reason"):
+                factors["ai_viral_reason"] = result["viral_reason"]
             clip.viral_factors = factors
             await db.commit()
             _PREPARE_ERROR.pop(clip_id, None)

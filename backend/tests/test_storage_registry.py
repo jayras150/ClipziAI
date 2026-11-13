@@ -256,3 +256,34 @@ def test_get_storage_tidak_memuat_ulang_bila_sudah_terisi(monkeypatch):
 
     reg.get_storage()
     assert calls["n"] == 0
+
+
+def test_normalize_domain_membersihkan_url():
+    from app.services.storage_registry import normalize_domain
+
+    assert normalize_domain("https://CDN.ProxyAI.live/path") == "cdn.proxyai.live"
+    assert normalize_domain(" cdn.proxyai.live ") == "cdn.proxyai.live"
+    assert normalize_domain("") == ""
+
+
+def test_custom_domain_target_r2():
+    from app.services.storage_registry import custom_domain_target
+
+    item = {
+        "provider": "r2",
+        "bucket": "files",
+        "endpoint": "https://d7a75c6cd293f2fa36cba8c5a403c035.r2.cloudflarestorage.com",
+    }
+    assert (
+        custom_domain_target(item)
+        == "files.d7a75c6cd293f2fa36cba8c5a403c035.r2.cloudflarestorage.com"
+    )
+    assert custom_domain_target({"provider": "b2", "bucket": "x"}) is None
+
+
+def test_check_custom_domain_format_salah():
+    from app.services.storage_registry import check_custom_domain
+
+    result = check_custom_domain("bukan domain", None)
+    assert result["dns_ok"] is False
+    assert result["hint"]

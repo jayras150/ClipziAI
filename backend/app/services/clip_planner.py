@@ -305,12 +305,46 @@ def _select_stratified(
 
 
 RERANK_SYSTEM_PROMPT = (
-    "Kamu editor short-form video. Beri skor potensi viral 0-100 untuk setiap "
-    "kandidat potongan video. Nilai: kekuatan hook 3 detik pertama, kelengkapan "
-    "kalimat (tidak menggantung), emosi/konflik, dan kejelasan topik.\n"
-    "Balas HANYA JSON ringkas (tanpa penjelasan): "
-    '{"clips":[{"id":<id>,"score":<0-100>}]} — satu entri untuk SETIAP id.'
+    "You are a senior short-form video editor who has produced viral Shorts, Reels "
+    "and TikToks. You rate clip candidates ONLY by how likely they are to perform "
+    "as a standalone short video.\n\n"
+    "Rubric (score 0-100):\n"
+    "- Hook in the first 3 seconds: does the opening line create curiosity, tension, "
+    "a bold claim, a number or a direct question? (40%)\n"
+    "- Self-contained story: does it make sense without the rest of the video and end "
+    "on a payoff instead of a dangling sentence? (30%)\n"
+    "- Emotional charge / conflict / surprise / practical value (20%)\n"
+    "- Clarity of topic: one specific idea, not rambling (10%)\n\n"
+    "Penalise: filler openings ('so', 'yeah', 'jadi', 'eh'), mid-sentence starts or "
+    "ends, repeated words, pure small talk, and clips that are just a transcript "
+    "fragment without a point.\n\n"
+    "Return ONLY compact JSON, no prose:\n"
+    '{"clips":[{"id":<id>,"score":<0-100>,"hook":"<max 80 chars rephrasing of the '
+    'opening line>","reason":"<max 20 words: why this clip would/would not go viral>"}]}\n'
+    "Include exactly one entry for EVERY id you were given."
 )
+
+
+def _rerank_snippet(candidate: Dict[str, Any], limit: int = 700) -> str:
+    """Teks klip untuk rerank (bukan cuma kalimat awal/akhir)."""
+    text = str(candidate.get("transcript") or "").strip()
+    if not text:
+        factors = candidate.get("factors") or {}
+        text = " ".join(
+            part
+            for part in (
+                str(factors.get("first_sentence") or ""),
+                str(factors.get("last_sentence") or ""),
+            )
+            if part
+        ).strip()
+    text = " ".join(text.split())
+    if len(text) > limit:
+        head = text[: int(limit * 0.65)]
+        tail = text[-int(limit * 0.3) :]
+        text = f"{head} … {tail}"
+    return text
+
 
 
 def _llm_json(
@@ -365,15 +399,16 @@ def rerank_with_llm(
     shortlist = sorted(candidates, key=lambda c: -c["score"])[:limit]
     lines: List[str] = []
     for index, candidate in enumerate(shortlist):
-        first = str(candidate["factors"].get("first_sentence") or "")[:120]
-        last = str(candidate["factors"].get("last_sentence") or "")[:120]
+        snippet = _rerank_snippet(candidate)
         lines.append(
-            f"[{index}] durasi={candidate['duration']:.0f}s "
-            f"heuristik={candidate['score']:.0f} | awal: {first} | akhir: {last}"
+            f"[{index}] duration={candidate['duration']:.0f}s "
+            f"heuristic={candidate['score']:.0f}\n    text: {snippet or '(empty transcript)'}"
         )
     user_prompt = (
-        f"Target durasi klip {target_min:.0f}-{target_max:.0f} detik.\n"
-        "Kandidat:\n" + "\n".join(lines) + "\n\nBeri skor semua kandidat di atas."
+        f"Target clip length: {target_min:.0f}-{target_max:.0f} seconds.\n"
+        "Grade every candidate below. Judge the hook, whether the clip stands alone "
+        "and ends on a payoff, and how specific/viral the idea is.\n\n"
+        "Candidates:\n" + "\n".join(lines) + "\n\nScore all candidates above."
     )
 
     try:
@@ -381,7 +416,7 @@ def rerank_with_llm(
             llm,
             RERANK_SYSTEM_PROMPT,
             user_prompt,
-            max_tokens=300,
+            max_tokens=min(1600, 220 + 140 * len(shortlist)),
             deadline=deadline,
         )
     except Exception as exc:

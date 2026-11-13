@@ -16,6 +16,7 @@ import logging
 import re
 import threading
 import time
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -242,6 +243,93 @@ def _public_reachable(resolved: ResolvedStorage, url: str) -> bool:
             resolved.public_domain,
         )
     return ok
+
+
+def normalize_domain(value: str) -> str:
+    """`https://cdn.domain.com/path` -> `cdn.domain.com`."""
+    text = (value or "").strip().lower()
+    text = re.sub(r"^[a-z]+://", "", text)
+    return text.split("/")[0].strip().strip(".")
+
+
+def custom_domain_target(item: Dict[str, Any]) -> Optional[str]:
+    """CNAME yang harus dipasang untuk custom domain R2."""
+    from urllib.parse import urlparse
+
+    provider = str(item.get("provider") or "")
+    host = urlparse(item.get("endpoint") or "").hostname
+    bucket = item.get("bucket") or ""
+    if provider == "r2" and host and bucket:
+        return f"{bucket}.{host}"
+    return None
+
+
+def check_custom_domain(domain: str, item: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Verifikasi domain storage: DNS resolving + HTTPS + sertifikat.
+
+    Dipakai tab Cloudflare CDN (mode manual): pengguna memasang CNAME sendiri di
+    dashboard Cloudflare, lalu menekan **Uji domain**.
+    """
+    import socket
+
+    cleaned = normalize_domain(domain)
+    result: Dict[str, Any] = {
+        "domain": cleaned,
+        "cname_target": custom_domain_target(item) if item else None,
+        "resolved": [],
+        "dns_ok": False,
+        "http_status": None,
+        "cert_ok": False,
+        "reachable": False,
+        "hint": None,
+    }
+    if not re.match(r"^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$", cleaned):
+        result["hint"] = "Format domain tidak valid (contoh: cdn.proxyai.live)."
+        return result
+
+    try:
+        infos = socket.getaddrinfo(cleaned, 443, proto=socket.IPPROTO_TCP)
+        result["resolved"] = sorted({info[4][0] for info in infos})
+        result["dns_ok"] = bool(result["resolved"])
+    except Exception as exc:
+        result["hint"] = f"DNS belum mengarah ke mana pun: {exc}"
+        return result
+
+    try:
+        request = urllib.request.Request(
+            "https://" + cleaned + "/",
+            headers={"User-Agent": "ClipziDomainCheck/1.0"},
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            result["http_status"] = int(response.status)
+            result["cert_ok"] = True
+            result["reachable"] = True
+    except urllib.error.HTTPError as exc:
+        result["http_status"] = int(exc.code)
+        result["cert_ok"] = True  # TLS berhasil, hanya status HTTP non-2xx
+        result["reachable"] = exc.code < 500
+        if exc.code in (401, 403):
+            result["hint"] = (
+                "Domain aktif tetapi menolak akses (401/403). Di Cloudflare R2 pastikan "
+                "Custom Domain terhubung ke bucket yang benar dan Public Access aktif."
+            )
+        elif exc.code == 404:
+            result["hint"] = (
+                "Domain aktif (sertifikat OK) tetapi root bucket mengembalikan 404 — ini "
+                "normal untuk R2. URL file tetap bisa dibuka: coba /<object-key>."
+            )
+    except Exception as exc:
+        text = str(exc)
+        result["cert_ok"] = "CERTIFICATE" not in text.upper() and "SSL" not in text.upper()
+        if "CERTIFICATE" in text.upper() or "SSL" in text.upper():
+            result["hint"] = (
+                "Sertifikat belum siap. Di Cloudflare tunggu status SSL/TLS edge certificate "
+                "menjadi Active (biasanya < 5 menit setelah CNAME benar)."
+            )
+        else:
+            result["hint"] = f"Koneksi HTTPS gagal: {text[:160]}"
+    return result
+
 
 
 @dataclass
@@ -709,63 +797,13 @@ def test_item(item: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def sync_mirrors(limit: int = 200) -> Dict[str, Any]:
-    """Salin objek yang belum ada di mirror (dipanggil manual dari dashboard)."""
-    import asyncio
+    """DEPRECATED: pakai `app.services.storage_sync.start_sync()`.
 
-    config = get_config()
-    primary_item = None
-    for item in config.get("items", []):
-        if item.get("id") == config.get("primary_id"):
-            primary_item = item
-            break
-    if not primary_item:
-        return {"ok": False, "error": "primary belum diset"}
+    Versi lama menyalin objek di dalam satu request HTTP dan membaca seluruh
+    file ke RAM, sehingga request timeout (HeadersTimeoutError) untuk klip
+    besar. Sekarang sync berjalan sebagai job background dengan streaming.
+    """
+    from app.services import storage_sync
 
-    def worker() -> Dict[str, Any]:
-        primary = resolve(primary_item)
-        copied = 0
-        failed = 0
-        skipped = 0
-        for mirror_id in config.get("mirror_ids", []):
-            mirror_item = next((i for i in config["items"] if i.get("id") == mirror_id), None)
-            if not mirror_item:
-                continue
-            try:
-                mirror = resolve(mirror_item)
-            except Exception:
-                failed += 1
-                continue
-            token = None
-            while copied + skipped < limit:
-                kwargs = {"Bucket": primary.bucket, "MaxKeys": 200}
-                if primary.path_prefix:
-                    kwargs["Prefix"] = primary.path_prefix
-                if token:
-                    kwargs["ContinuationToken"] = token
-                listing = primary.client.list_objects_v2(**kwargs)
-                for obj in listing.get("Contents", []):
-                    key = obj["Key"]
-                    if key.endswith("/"):
-                        continue
-                    exists = True
-                    try:
-                        mirror.client.head_object(Bucket=mirror.bucket, Key=key)
-                    except Exception:
-                        exists = False
-                    if exists:
-                        skipped += 1
-                        continue
-                    try:
-                        body = primary.client.get_object(Bucket=primary.bucket, Key=key)["Body"].read()
-                        mirror.client.put_object(Bucket=mirror.bucket, Key=key, Body=body)
-                        copied += 1
-                    except Exception:
-                        failed += 1
-                    if copied + skipped >= limit:
-                        break
-                if not listing.get("IsTruncated"):
-                    break
-                token = listing.get("NextContinuationToken")
-        return {"ok": True, "copied": copied, "skipped": skipped, "failed": failed}
-
-    return await asyncio.get_event_loop().run_in_executor(None, worker)
+    result = storage_sync.start_sync(mode="reconcile", limit=max(1, min(500, limit)))
+    return {"ok": bool(result.get("started")), "job": result}

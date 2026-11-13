@@ -32,6 +32,8 @@ MIN_TRANSCRIPT_WORDS = 6
 MAX_TITLE_LENGTH = 100          # batas keras YouTube
 MAX_DESCRIPTION_LENGTH = 4800   # batas YouTube 5000, sisakan ruang hashtag
 MAX_TAGS = 12
+MIN_TITLE_LENGTH = 18           # judul lebih pendek dari ini tidak berfungsi sebagai hook
+MIN_COPIED_WORDS = 7            # judul yang menyalin 7+ kata berurutan dari transkrip ditolak
 
 # Frasa template yang dilarang muncul (indikasi AI tidak membaca transkrip).
 BANNED_PHRASES = (
@@ -62,24 +64,40 @@ GENERIC_TAGS = {
 }
 
 SYSTEM_PROMPT = (
-    "Kamu adalah editor short-form video profesional yang menulis metadata "
-    "YouTube Shorts berdasarkan transkrip video.\n"
-    "ATURAN WAJIB:\n"
-    "1. Kamu HANYA boleh memakai informasi yang tertulis di transkrip. Jangan "
-    "menambah nama orang, merek, angka, tempat, atau klaim yang tidak ada.\n"
-    "2. Judul harus menyebut topik/aksi utama yang benar-benar diucapkan dan "
-    "membuat orang ingin menonton, tanpa clickbait bohong. 40-90 karakter, "
-    "maksimal 100 karakter, tanpa tanda kutip dan tanpa ALL CAPS.\n"
-    "3. Deskripsi: 2-4 kalimat yang merangkum isi cuplikan + 1 ajakan singkat, "
-    "lalu diakhiri 3-5 hashtag relevan. Dilarang memakai kalimat template.\n"
-    "4. Tag: 8-12 tag huruf kecil, spesifik (nama topik, benda, aktivitas yang "
-    "disebut di transkrip). Tag generik seperti 'shorts' maksimal 2.\n"
-    "5. Balas HANYA JSON valid dengan skema: "
-    '{"title": string, "description": string, "tags": string[], '
-    '"hook": string, "language": string}\n'
-    "6. 'hook' = kalimat pembuka video (maks 80 karakter) dari ide utama "
-    "transkrip, dipakai sebagai overlay teks di kartu klip.\n"
-    "7. 'language' = kode ISO-639-1 bahasa dominan transkrip (contoh: id, en)."
+    "You are a senior short-form video editor who writes YouTube Shorts metadata "
+    "that earns clicks without lying. You receive the Whisper transcript of ONE "
+    "clip.\n\n"
+    "HARD RULES\n"
+    "1. Use ONLY facts stated in the transcript. Never invent names, brands, "
+    "numbers, places or claims.\n"
+    "2. NEVER copy a sentence from the transcript verbatim as the title. Rewrite it "
+    "into a hook: keep the specific claim/number/promise, drop the filler opener.\n"
+    "3. Title: 40-90 characters (hard max 100), sentence case, no quotes, no ALL "
+    "CAPS, no emoji spam (max 1). It must contain the single most surprising or "
+    "useful idea of the clip.\n"
+    "4. Hook: max 80 characters, the on-screen opening line. Punchier than the "
+    "title, still true to the transcript.\n"
+    "5. Description: 2-4 sentences. Sentence 1 = the payoff/insight. Sentence 2-3 = "
+    "context from the transcript. Then a short CTA, then 3-5 hashtags.\n"
+    "6. Tags: 8-12 lowercase, specific (topics, objects, activities actually "
+    "mentioned). At most 2 generic tags (shorts, viral).\n"
+    "7. No template wording: never write 'watch this amazing clip', 'created with "
+    "Clipzi', 'don't forget to like and subscribe'.\n"
+    "8. viral_reason: one sentence (max 25 words) explaining WHY this moment can "
+    "stop the scroll (tension, surprise, number, contrarian take, practical tip).\n"
+    "9. language: ISO-639-1 of the dominant transcript language (id, en, ...).\n\n"
+    "OUTPUT: only valid JSON, no prose:\n"
+    '{"title": string, "description": string, "tags": string[], "hook": string, '
+    '"viral_reason": string, "language": string}\n\n'
+    "EXAMPLES\n"
+    "Bad title (transcript dump): 'jadi gini guys saya mau kasih tips budgeting "
+    "yang benar buat anak muda'\n"
+    "Good title: 'Budgeting Rule That Saved Me 40% of My Salary'\n"
+    "Bad title (clickbait, not in transcript): 'This ONE Trick Makes You a "
+    "Millionaire in 24 Hours'\n"
+    "Good title: 'Why Your 50/30/20 Budget Keeps Failing'\n"
+    "Bad hook: 'Halo semuanya, kembali lagi di channel ini'\n"
+    "Good hook: 'Your budget fails because of this one line item.'"
 )
 
 
@@ -188,16 +206,16 @@ def build_heuristic_metadata(
     if title:
         title = title[0].upper() + title[1:]
     if len(title.split()) < 3:
-        title = (source_title or " ".join(keywords[:3]) or "Momen penting").strip()
+        title = (source_title or " ".join(keywords[:3]) or "Key moment").strip()
     if not title:
-        title = "Klip %s-%s" % (start_time or "0:00", end_time or "")
+        title = "Clip %s-%s" % (start_time or "0:00", end_time or "")
 
     description_parts = [first] if first else []
     if last and last != first:
         description_parts.append(last)
     description = " ".join(description_parts).strip()
     if keywords:
-        extra = "Topik utama: %s." % ", ".join(keywords[:5])
+        extra = "Key topics: %s." % ", ".join(keywords[:5])
         if extra.lower() not in description.lower():
             description = (description + " " + extra).strip()
     if not description:
@@ -210,6 +228,7 @@ def build_heuristic_metadata(
         "description": description[:MAX_DESCRIPTION_LENGTH],
         "tags": tags,
         "hook": (first or title)[:80],
+        "viral_reason": None,
         "language": None,
         "variation": 0,
         "heuristic": True,
@@ -282,18 +301,25 @@ class MetadataGenerator:
         if len(text) > 6000:
             text = f"{text[:3600]}\n...\n{text[-2200:]}"
 
+        keywords = _top_keywords(text, limit=10)
+        opening = " ".join(text.split()[:30])
         user_prompt = (
-            f"Transkrip klip (Whisper, {len(words)} kata, durasi "
-            f"{duration:.1f} detik, rentang {start_time}-{end_time}):\n"
+            f"Clip transcript (Whisper, {len(words)} words, duration "
+            f"{duration:.1f}s, range {start_time}-{end_time}):\n"
             f'"""\n{text}\n"""\n\n'
-            f"Judul video sumber: {source_title or '(tidak diketahui)'}\n"
-            f"Bahasa yang diminta: {language or 'ikuti bahasa transkrip'}\n"
+            f"Source video title: {source_title or '(unknown)'}\n"
+            f"Opening line (first ~3 seconds): {opening}\n"
+            f"Recurring content words: {', '.join(keywords) or '(none)'}\n"
+            f"Output language: {language or 'match the transcript language'}\n\n"
+            "Task: turn this moment into Shorts metadata. Rewrite the core idea into "
+            "a hook-driven title (never paste a transcript sentence), give the "
+            "on-screen hook, a description with 3-5 hashtags, 8-12 specific tags, and "
+            "one sentence explaining why the moment can stop the scroll.\n"
         )
         if variation:
             user_prompt += (
-                f"\nIni percobaan ke-{variation + 1}: pakai sudut pandang dan "
-                "pilihan kata yang berbeda dari versi sebelumnya, tetapi tetap "
-                "hanya berdasarkan transkrip di atas.\n"
+                f"\nAttempt #{variation + 1}: use a different angle and different "
+                "wording from the previous version, still grounded in the transcript.\n"
             )
 
         last_error: Optional[Exception] = None
@@ -347,6 +373,24 @@ class MetadataGenerator:
         if len(title) > MAX_TITLE_LENGTH:
             title = title[:MAX_TITLE_LENGTH].rstrip()
 
+        # --- Anti "transcript dump": judul tidak boleh menyalin kalimat transkrip.
+        normalized_transcript = " ".join(re.sub(r"[^\w\s]", " ", transcript.lower()).split())
+        normalized_title = " ".join(re.sub(r"[^\w\s]", " ", title.lower()).split())
+        title_tokens = normalized_title.split()
+        if len(title_tokens) >= MIN_COPIED_WORDS:
+            for start in range(0, max(0, len(title_tokens) - MIN_COPIED_WORDS) + 1):
+                window = " ".join(title_tokens[start : start + MIN_COPIED_WORDS])
+                if window and window in normalized_transcript:
+                    raise MetadataGenerationError(
+                        "The AI title is copied verbatim from the transcript "
+                        f"({MIN_COPIED_WORDS}+ words). It was rejected so a real hook "
+                        "is written instead."
+                    )
+        if len(title) < MIN_TITLE_LENGTH:
+            raise MetadataGenerationError(
+                f"The AI title is too short ({len(title)} chars) to work as a hook."
+            )
+
         lowered = f"{title} {description}".lower()
         for phrase in BANNED_PHRASES:
             if phrase in lowered:
@@ -381,11 +425,16 @@ class MetadataGenerator:
         if not hook:
             hook = title
 
+        viral_reason = re.sub(
+            r"\s+", " ", str(payload.get("viral_reason") or "")
+        ).strip()[:240]
+
         return {
             "title": title,
             "description": description,
             "tags": grounded,
             "hook": hook[:80],
+            "viral_reason": viral_reason or None,
             "language": language,
             "variation": variation,
         }

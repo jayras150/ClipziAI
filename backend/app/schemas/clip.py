@@ -23,6 +23,9 @@ class ClipResponse(BaseModel):
     file_size: Optional[int]
     viral_score: Optional[float]
     viral_factors: Optional[dict]
+    # Hasil AI yang dipakai UI untuk menjelaskan "kenapa klip ini".
+    ai_hook: Optional[str] = None
+    ai_viral_reason: Optional[str] = None
     ai_suggested_title: Optional[str]
     ai_suggested_description: Optional[str]
     ai_suggested_tags: Optional[List[str]]

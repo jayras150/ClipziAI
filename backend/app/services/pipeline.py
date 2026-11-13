@@ -916,6 +916,14 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
             # 6) Simpan klip & tandai task selesai
             _lap("rendered")
             for index, clip in enumerate(rendered, 1):
+                meta = clip.get("meta") or {}
+                factors = dict((clip.get("viral") or {}).get("factors") or {})
+                if meta.get("hook"):
+                    factors["ai_hook"] = meta["hook"]
+                if meta.get("viral_reason"):
+                    factors["ai_viral_reason"] = meta["viral_reason"]
+                if meta.get("language"):
+                    factors["ai_language"] = meta["language"]
                 db.add(
                     Clip(
                         task_id=task.id,
@@ -929,12 +937,10 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                         thumbnail_url=clip["thumbnail_url"],
                         file_size=clip["file_size"],
                         viral_score=(clip.get("viral") or {}).get("score"),
-                        viral_factors=(clip.get("viral") or {}).get("factors"),
-                        ai_suggested_title=((clip.get("meta") or {}).get("title") or None),
-                        ai_suggested_description=(
-                            (clip.get("meta") or {}).get("description") or None
-                        ),
-                        ai_suggested_tags=((clip.get("meta") or {}).get("tags") or None),
+                        viral_factors=factors or None,
+                        ai_suggested_title=(meta.get("title") or None),
+                        ai_suggested_description=(meta.get("description") or None),
+                        ai_suggested_tags=(meta.get("tags") or None),
                         editing_applied=[
                             k
                             for k, v in options.items()

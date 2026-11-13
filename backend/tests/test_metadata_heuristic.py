@@ -22,7 +22,7 @@ def test_deskripsi_memuat_kalimat_awal_akhir_dan_topik():
     meta = build_heuristic_metadata(TRANSCRIPT, duration=63.9)
     assert "belajar coding" in meta["description"]
     assert "konsisten" in meta["description"].lower()
-    assert "Topik utama:" in meta["description"]
+    assert "Key topics:" in meta["description"]
 
 
 def test_tag_dari_kata_kunci_transkrip_dan_tidak_kosong():
