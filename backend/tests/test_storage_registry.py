@@ -121,6 +121,46 @@ def test_get_storage_memuat_konfigurasi_bila_cache_kosong(monkeypatch):
     assert len(service.items) == 1
 
 
+def test_get_storage_di_dalam_event_loop_tetap_memuat(monkeypatch):
+    """Pipeline async: loading lewat thread, bukan `asyncio.run()` di loop aktif."""
+    import asyncio
+
+    from app.services import storage_registry as reg
+
+    monkeypatch.setattr(reg, "_config", dict(reg.DEFAULT_STORAGE))
+    calls = {"n": 0}
+
+    async def fake_load():
+        calls["n"] += 1
+        return reg.set_config(
+            {
+                "primary_id": "p1",
+                "mirror_ids": [],
+                "items": [
+                    {
+                        "id": "p1",
+                        "name": "uji",
+                        "provider": "r2",
+                        "bucket": "b",
+                        "endpoint": "https://x",
+                        "region": "auto",
+                        "access_key_enc": "x",
+                        "secret_key_enc": "y",
+                        "enabled": True,
+                    }
+                ],
+            }
+        )
+
+    monkeypatch.setattr(reg, "load_storage_config", fake_load)
+
+    async def pipeline():
+        return reg.get_storage().primary_id
+
+    assert asyncio.run(pipeline()) == "p1"
+    assert calls["n"] == 1
+
+
 def test_get_storage_tidak_memuat_ulang_bila_sudah_terisi(monkeypatch):
     from app.services import storage_registry as reg
 

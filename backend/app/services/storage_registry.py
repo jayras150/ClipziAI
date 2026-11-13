@@ -443,16 +443,39 @@ def get_storage() -> StorageService:
 
 
 def _ensure_loaded_sync() -> None:
-    """Muat konfigurasi storage dari DB pada konteks sinkron (worker pipeline)."""
+    """Muat konfigurasi storage dari DB pada konteks sinkron (worker pipeline).
+
+    Pipeline memanggil `get_storage()` dari dalam event loop async. `asyncio.run()`
+    tidak boleh dipakai di sana, jadi konfigurasi dimuat di **thread terpisah**
+    yang punya event loop sendiri. Bila tetap gagal (mis. DB tidak terjangkau),
+    dipakai seed dari env R2_* supaya upload tidak mati total.
+    """
     try:
-        asyncio.run(load_storage_config())
-        if get_config().get("items"):
-            return
+        asyncio.get_running_loop()
     except RuntimeError:
-        # Ada event loop berjalan: jangan dipaksa; pakai seed dari env.
-        logger.debug("load_storage_config() dilewati (event loop aktif)")
-    except Exception as exc:
-        logger.warning("Gagal memuat konfigurasi storage dari DB: %s", exc)
+        try:
+            asyncio.run(load_storage_config())
+        except Exception as exc:
+            logger.warning("Gagal memuat konfigurasi storage dari DB: %s", exc)
+    else:
+        errors: List[Exception] = []
+
+        def _load() -> None:
+            try:
+                asyncio.run(load_storage_config())
+            except Exception as exc:  # pragma: no cover - jalur thread
+                errors.append(exc)
+
+        thread = threading.Thread(target=_load, name="clipzi-storage-load", daemon=True)
+        thread.start()
+        thread.join(timeout=20)
+        if errors:
+            logger.warning("Gagal memuat konfigurasi storage dari DB: %s", errors[0])
+        elif thread.is_alive():
+            logger.warning("Memuat konfigurasi storage melewati batas 20 detik")
+
+    if get_config().get("items"):
+        return
     try:
         set_config(_from_env())
     except Exception as exc:
