@@ -124,6 +124,14 @@ async def domain_applied(
     return {"status": "failed"}
 
 
+class WorkerEvent(BaseModel):
+    """Event singkat yang dikirim worker (boot/stage/done/error).
+
+    Dulu deklarasi `class` ini sempat hilang sehingga nama `WorkerEvent` tidak
+    pernah ada; handler menangkap NameError sebagai payload invalid dan
+    membalas **400** untuk semua callback worker (boot tidak pernah tercatat,
+    supervisor mengira worker tidak pernah start).
+    """
 
     task_id: str
     event: str                      # boot | started | stage | done | error
