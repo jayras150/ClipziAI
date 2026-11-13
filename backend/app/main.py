@@ -26,6 +26,7 @@ from app.api.admin import ai as admin_ai
 from app.api.admin import branding as admin_branding
 from app.api.admin import platform as admin_platform
 from app.api.admin import proxies as admin_proxies
+from app.api.admin import storage as admin_storage
 from app.api import branding as public_branding
 from app.api.admin import youtube as admin_youtube
 from app.api.admin import workers as admin_workers
@@ -79,6 +80,14 @@ async def lifespan(app: FastAPI):
         await load_and_apply_platform_config()
     except Exception as exc:
         logger.warning("Gagal memuat setelan platform dari database: %s", exc)
+    # Registry storage multi-provider (R2/B2/S3/...). Bila belum ada, otomatis
+    # dibuat dari env R2_* agar deployment lama tetap jalan.
+    try:
+        from app.services.storage_registry import load_storage_config
+
+        await load_storage_config()
+    except Exception as exc:
+        logger.warning("Gagal memuat konfigurasi storage: %s", exc)
     # Pool proxy YouTube (hasil filter aktif) dipakai otomatis oleh downloader.
     try:
         from app.services.proxy_pool import load_and_apply_proxy_pool
@@ -192,6 +201,9 @@ app.include_router(
 )
 app.include_router(
     admin_proxies.router, prefix="/api/admin/settings/proxies", tags=["Admin Proxy Pool"]
+)
+app.include_router(
+    admin_storage.router, prefix="/api/admin/settings/storage", tags=["Admin Storage"]
 )
 app.include_router(
     admin_branding.router, prefix="/api/admin/settings", tags=["Admin Branding"]

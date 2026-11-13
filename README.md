@@ -37,6 +37,9 @@ Setiap perubahan besar dicatat di sini (tanggal · area · ringkasan · cara ver
 | 13 Nov 2026 | Indikator proses | Spinner animasi Clipzy (`orbit`/`ring`/`dots`) dipakai admin & frontend. Tombol submit otomatis spinner (`useFormStatus`), `loading.tsx` per rute, banner shimmer saat task queued/processing. | Klik aksi apa pun di admin → spinner; buka `/dashboard` saat memuat |
 | 13 Nov 2026 | Worker yt-dlp | Format ladder `bv*…/bv*+ba/b/b*` + client ladder (default→web→android/ios→tv_embedded) + retry tanpa cookies + dump format saat gagal + cek `has_audio` (retry audio wajib). `yt-dlp>=2026.10.26`. | Task YouTube dari dashboard selesai; log worker memuat daftar format bila gagal |
 | 13 Nov 2026 | Branding | `BrandingProvider` + `BrandLogo`: logo/nama/favicon berlaku di **semua** halaman (landing, login, register, dashboard, footer, navbar), accent color live, favicon/OG cache-bust, kartu pratinjau logo/favicon/OG dengan dimensi & ukuran. | Ganti logo di admin → semua halaman + tab browser berubah |
+| 13 Nov 2026 | Proxy YouTube | Upload banyak file .txt → engine normalisasi (`proxy_parser`) → tombol **START FILTER ACTIVE PROXY** menguji semua proxy, membuang yang mati, dan membuat satu `active.txt` yang otomatis dipakai worker (rotasi). Layer download: cookies → tanpa cookies → proxy. | Settings › YouTube Cookies › Proxy |
+| 13 Nov 2026 | Storage multi-provider | Registry `storage` (R2, Backblaze B2, S3, Wasabi, Spaces, Supabase, GCS, MinIO, dll): primary + mirror, kredensial terenkripsi, uji koneksi, dan **Sync** objek ke mirror. Semua upload memakai satu pintu `get_storage()`. | Settings › Storage |
+| 13 Nov 2026 | PO token | Plugin `bgutil-ytdlp-pot-provider` + server Node dibaking ke image worker; `pipeline_onstart.sh` menjalankan provider di `127.0.0.1:4416`. Melengkapi cookies saat YouTube membatasi format. | Log worker: `bgutil PO token provider siap` |
 | 13 Nov 2026 | Monitoring VPS | Agent host `clipzi-host-metrics` (systemd, 5 s) → `POST /api/internal/host-metrics`; endpoint `GET /api/admin/system/host`; System tab menampilkan CPU/RAM/disk/jaringan/container realtime tiap 3 s + grafik 10 menit. | System → kartu live bergerak, badge `live` |
 
 ## Arsitektur
@@ -317,6 +320,52 @@ journalctl -u clipzi-host-metrics -n 20 --no-pager
 Agent membaca `CLIPZI_WORKER_TOKEN` dari `backend/.env` dan mengirim ke
 `http://127.0.0.1:8000` (port backend dipublish ke loopback di compose VPS).
 
+## Proxy YouTube (filter aktif otomatis)
+
+YouTube memblokir banyak IP datacenter (respons hanya storyboard / minta login).
+Selain cookies dan PO token, sistem mendukung **pool proxy** dengan filter otomatis.
+
+1. **Upload banyak file** `.txt/.csv` (drag & drop) atau paste teks di
+   `Settings › YouTube Cookies › Proxy`.
+2. Engine `app/services/proxy_parser.py` menormalkan semua format umum menjadi
+   `scheme://[user:pass@]host:port`:
+
+   ```
+   host:port                 -> http://host:port
+   host:port:user:pass       -> http://user:pass@host:port
+   user:pass@host:port       -> http://user:pass@host:port
+   socks5://host:port        -> socks5://host:port   (port 1080/1081/9050/9150 otomatis SOCKS)
+   label|host:port           -> label disimpan
+   # komentar, baris kosong, pemisah koma/; /tab diabaikan/diterima
+   ```
+
+3. Klik **START FILTER ACTIVE PROXY**: setiap proxy diuji paralel
+   (`api.ipify.org` + opsional `youtube.com/generate_204`). Hanya yang aktif yang
+   disimpan; yang mati dibuang; urut berdasarkan latency.
+4. Hasilnya digenerate menjadi satu file **`active.txt`** (tombol Unduh) dan
+   **otomatis dipakai** worker: `settings.YTDLP_PROXY` + env `YTDLP_PROXY_POOL`
+   (rotasi maks 3 proxy per task). Endpoint fallback untuk worker:
+   `GET /api/internal/proxies/active.txt`.
+
+Urutan percobaan downloader: **cookies (L1) → tanpa cookies (L2) → proxy (L3/L4)**, dengan
+player-client ladder (default → web → android/ios → tv_embedded).
+
+## Storage multi-provider (Primary + Mirror)
+
+Semua upload memakai satu pintu: `app/services/storage_registry.py` → `get_storage()`.
+
+- Provider yang didukung (semua S3-compatible): **Cloudflare R2, Backblaze B2, AWS S3,
+  Wasabi, DigitalOcean Spaces, Linode/Akamai, Scaleway, Hetzner, Supabase Storage,
+  GCS (S3 interop), IDrive e2, Storj, Filebase, MinIO/custom**.
+- Data di `platform_settings` key `storage`: `primary_id`, `mirror_ids`, `items[]`.
+  Kredensial **AES-256-GCM**, UI hanya menampilkan mask (`AKI***PLE`).
+- Migrasi aman: bila belum ada konfigurasi, otomatis diseed dari env `R2_*`
+  (id `env-r2`) sehingga deployment lama tidak berubah.
+- Upload ditulis ke **primary**, lalu **direplikasi background** ke mirror.
+  Tombol **Sync mirror** menyalin objek yang belum ada (maks 200 per klik).
+- Aksi di `Settings › Storage`: tambah/edit, **Uji** (put→head→delete), jadikan
+  **primary**, toggle **mirror**, hapus, dan **Sync**.
+
 ## AI provider & daftar model
 
 Semua provider memakai API chat-completions yang kompatibel OpenAI, jadi satu klien
@@ -526,6 +575,9 @@ clone source dari `repo.bundle` bila repo belum ada -> `pg_restore --clean --if-
 | Cookies selalu `expired` | Ekspor ulang cookies dari browser (mode incognito, login YouTube), unggah lagi, lalu **Uji** |
 | **`Requested format is not available`** | Selector lama `bestvideo+bestaudio/best` gagal saat YouTube hanya memberi video-only/combined tertentu. Sejak 13 Nov 2026 worker memakai ladder `bv*…/bv*+ba/b/b*` + beberapa player client + retry tanpa cookies, dan menulis daftar format ke `worker.log` bila gagal. Bila masih gagal: unggah cookies (Settings › YouTube Cookies), cek versi yt-dlp di log worker, lalu lihat `formats_tersedia` di pesan error task. |
 | **`Sign in to confirm you're not a bot`** (dari VPS/Vast) | YouTube menolak IP datacenter. **Wajib cookies**: Settings › YouTube Cookies (base64 atau Netscape) lalu ulangi task. Worker kini menambahkan HINT ini otomatis di pesan error task. |
+| Semua proxy mati setelah START FILTER | Normal di daftar gratis. Upload file baru / uji ulang; hanya proxy aktif dipakai sistem. |
+| Upload klip gagal: `storage belum dikonfigurasi` | Isi minimal satu provider di Settings › Storage (bucket + endpoint + keys) lalu **Uji**. |
+| Mirror tertinggal | Settings › Storage › **Sync mirror** (200 objek per klik). |
 | Unduhan sukses tapi transkripsi kosong | Video terunduh tanpa stream audio (fallback `b*`). Worker otomatis mengulang dengan format audio wajib; kalau tetap gagal → pesan task menyarankan unggah cookies. |
 | Domain baru belum aktif setelah "Terapkan domain" | Cek `systemctl status clipzi-domain-sync.timer`, `journalctl -u clipzi-domain-sync.service -n 50`, dan status di Settings › Platform (harus `applied`) |
 | Admin tampak "tidak berubah" setelah deploy | Compose admin memakai tag **`:admin`**, bukan `:latest`. Jalankan `docker pull sujinwo555/clipzi-admin:admin` lalu `docker compose -f docker-compose.admin.yml up -d --force-recreate admin`. |

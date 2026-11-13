@@ -11,10 +11,9 @@ from app.api.deps import get_db_session
 from app.models.audit_log import ActorType, AuditLog
 from app.models.user import User
 from app.services.branding import DEFAULT_BRANDING, get_branding, normalize_branding, set_branding
-from app.services.storage import R2Storage
+from app.services.storage_registry import get_storage
 
 router = APIRouter()
-storage = R2Storage()
 
 ALLOWED_TYPES = {
     "image/png": "png",
@@ -111,6 +110,7 @@ async def upload_branding_asset(
 
     key = "branding/%s/%s.%s" % (kind, uuid4().hex, extension)
     try:
+        storage = get_storage()
         url = storage.upload_bytes(
             data,
             key,

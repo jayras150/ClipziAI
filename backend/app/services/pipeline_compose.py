@@ -26,7 +26,7 @@ from app.services.credit_service import CreditService
 from app.services.pipeline import _download_asset, _ext_from_url, _fmt_hms
 from app.services.platform_watermark import apply_platform_watermark
 from app.services.processor import VideoProcessor
-from app.services.storage import R2Storage
+from app.services.storage_registry import get_storage
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -77,7 +77,7 @@ async def run_compose_pipeline(task_id: UUID) -> Dict[str, Any]:
         work_dir = Path(settings.WORKER_WORK_DIR) / str(task.id)
         work_dir.mkdir(parents=True, exist_ok=True)
         processor = VideoProcessor(str(work_dir))
-        storage = R2Storage()
+        storage = get_storage()
 
         task.status = TaskStatus.PROCESSING
         task.progress = 5
@@ -243,7 +243,7 @@ async def run_split_pipeline(task_id: UUID) -> Dict[str, Any]:
         work_dir = Path(settings.WORKER_WORK_DIR) / str(task.id)
         work_dir.mkdir(parents=True, exist_ok=True)
         processor = VideoProcessor(str(work_dir))
-        storage = R2Storage()
+        storage = get_storage()
 
         task.status = TaskStatus.PROCESSING
         task.progress = 10

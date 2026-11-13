@@ -28,7 +28,7 @@ from app.services.credit_service import CreditService
 from app.services.downloader import VideoDownloader, ytdlp_version
 from app.services.processor import VideoProcessor, get_caption_style
 from app.services.speech_boundaries import detect_silences
-from app.services.storage import R2Storage
+from app.services.storage_registry import get_storage
 from app.services.transcriber import AudioTranscriber
 from app.services.viral import score_clip
 from app.services.platform_watermark import apply_platform_watermark
@@ -205,7 +205,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
         downloader = VideoDownloader(str(work_dir / "input"))
         processor = VideoProcessor(str(work_dir))
         transcriber = AudioTranscriber()
-        storage = R2Storage()
+        storage = get_storage()
 
         options: Dict[str, Any] = task.editing_options or {}
         # ---- observability: catat durasi tiap stage (B11) ----

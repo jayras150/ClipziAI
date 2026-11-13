@@ -12,7 +12,7 @@ from app.api.admin.deps import is_admin_email
 from app.core.security import hash_password, verify_password
 from app.models.user import User
 from app.models.user_profile import UserProfile
-from app.services.storage import R2Storage
+from app.services.storage_registry import get_storage
 from app.schemas.user import (
     UserProfileResponse,
     UserUpdate,
@@ -21,7 +21,6 @@ from app.schemas.user import (
 )
 
 router = APIRouter()
-storage = R2Storage()
 
 # Watermark user: hanya gambar, maks 2 MB (dipakai ffmpeg overlay per klip).
 ALLOWED_WATERMARK_TYPES = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
@@ -151,6 +150,7 @@ async def upload_user_watermark(
 
     key = f"branding/user-watermark/{current_user.id}/{uuid4().hex}.{extension}"
     try:
+        storage = get_storage()
         watermark_url = storage.upload_bytes(data, key, content_type)
     except Exception as exc:  # R2 error / kredensial salah
         raise HTTPException(
