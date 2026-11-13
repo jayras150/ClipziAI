@@ -12,6 +12,7 @@ from app.models.user import User
 from app.services.ai_client import PROVIDER_DEFAULTS, provider_metadata
 from app.services.ai_config import (
     ai_is_configured,
+    ai_status_hint,
     apply_ai_config_to_env,
     effective_base_url,
     get_ai_config,
@@ -24,7 +25,8 @@ router = APIRouter()
 
 
 class AIConfigIn(BaseModel):
-    enabled: bool = True
+    # None = "jangan ubah": mengirim API key baru otomatis mengaktifkan AI.
+    enabled: Optional[bool] = None
     provider: str = "openrouter"
     base_url: str = ""
     api_key: Optional[str] = None
@@ -223,7 +225,10 @@ async def test_ai(
 
     cfg = await get_ai_config(db)
     if not ai_is_configured(cfg):
-        raise HTTPException(status_code=400, detail="AI belum aktif atau API key kosong.")
+        raise HTTPException(
+            status_code=400,
+            detail=ai_status_hint(cfg) or "AI belum siap dipakai. Periksa Settings › AI.",
+        )
 
     client = AsyncOpenAI(
         api_key=decrypt_api_key(cfg.get("api_key_enc")) or "sk-no-key-provided",

@@ -77,3 +77,100 @@ def test_injeksi_env_langsung_berlaku_untuk_seluruh_sistem(monkeypatch):
     assert settings.AI_MAX_TOKENS == 512
     assert "AI_PROVIDER" in result["injected"]
     assert result["api_key_set"] is True
+
+
+
+class _FakeRow:
+    def __init__(self, value):
+        self.value = value
+
+
+class _FakeResult:
+    def __init__(self, row):
+        self._row = row
+
+    def scalar_one_or_none(self):
+        return self._row
+
+
+class _FakeDB:
+    """DB minimum untuk `set_ai_config` (tanpa Postgres)."""
+
+    def __init__(self, row=None):
+        self.row = row
+        self.added = []
+        self.commits = 0
+
+    async def execute(self, *_a, **_k):
+        return _FakeResult(self.row)
+
+    def add(self, obj):
+        self.added.append(obj)
+        self.row = _FakeRow(getattr(obj, "value", None))
+
+    async def commit(self):
+        self.commits += 1
+
+
+def _run_set(payload, current=None):
+    import asyncio
+
+    from app.models.platform_setting import PlatformSetting
+
+    cfg = ai_config.normalize_ai(current) if current else None
+    row = _FakeRow(cfg) if cfg else None
+    db = _FakeDB(row)
+    ai_config.clear_cache()
+    try:
+        result = asyncio.run(ai_config.set_ai_config(db, payload))
+    finally:
+        ai_config.clear_cache()
+    assert db.commits >= 1
+    # Pastikan nilai yang disimpan memang konfigurasi baru.
+    if db.row is not None:
+        saved = db.row.value if isinstance(db.row.value, dict) else None
+    else:
+        saved = None
+    return result, saved
+
+
+def test_simpan_api_key_baru_otomatis_mengaktifkan_ai():
+    """Bug: toggle 'AI aktif' pernah dimatikan -> key benar tapi AI tetap mati."""
+    result, _saved = _run_set(
+        {"api_key": "sk-or-baru-1234567890"},
+        current={"enabled": False, "provider": "openrouter"},
+    )
+    assert result["enabled"] is True
+    assert ai_config.ai_is_configured(result) is True
+
+
+def test_enabled_none_tidak_menimpa_status_lama():
+    result, _saved = _run_set(
+        {"enabled": None, "model_metadata": "openai/gpt-4o-mini"},
+        current={"enabled": False, "provider": "openrouter"},
+    )
+    assert result["enabled"] is False
+
+
+def test_hint_menjelaskan_ai_dinonaktifkan():
+    cfg = ai_config.normalize_ai(
+        {"enabled": False, "provider": "openrouter", "api_key_enc": ai_config.encrypt_api_key("sk-x-1234567890")}
+    )
+    hint = ai_config.ai_status_hint(cfg)
+    assert hint and "dinonaktifkan" in hint.lower()
+
+
+def test_hint_menjelaskan_api_key_kosong():
+    cfg = ai_config.normalize_ai({"enabled": True, "provider": "openrouter"})
+    hint = ai_config.ai_status_hint(cfg)
+    assert hint and "api key kosong" in hint.lower()
+
+
+def test_public_config_menyertakan_status_siap():
+    cfg = ai_config.normalize_ai(
+        {"enabled": True, "provider": "openrouter", "api_key_enc": ai_config.encrypt_api_key("sk-x-1234567890")}
+    )
+    public = ai_config.public_ai_config(cfg)
+    assert public["ready"] is True
+    assert public["status_hint"] is None
+

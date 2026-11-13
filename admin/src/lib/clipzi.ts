@@ -136,6 +136,9 @@ export type AiConfig = {
   rerank_budget_seconds: number;
   metadata_budget_seconds: number;
   providers: string[];
+  /** Alasan AI belum siap dipakai (null = siap). */
+  status_hint?: string | null;
+  ready?: boolean;
 };
 
 export type BrandingConfig = {

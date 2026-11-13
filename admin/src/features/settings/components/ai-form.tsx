@@ -169,6 +169,17 @@ export default function AiForm({ config, providers }: Props) {
 
   return (
     <div className='space-y-4'>
+      {config.status_hint ? (
+        <div className='rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800'>
+          <p className='font-medium'>AI belum siap dipakai</p>
+          <p className='mt-1 text-xs'>{config.status_hint}</p>
+          {!form.enabled ? (
+            <Button size='sm' className='mt-2' onClick={() => set('enabled', true)}>
+              Aktifkan AI sekarang
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       <Card>
         <CardHeader>
           <CardTitle>Provider</CardTitle>

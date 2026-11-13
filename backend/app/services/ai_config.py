@@ -147,6 +147,29 @@ def ai_is_configured(cfg: Dict[str, Any]) -> bool:
     return cfg.get("provider") == "ollama" and bool(effective_base_url(cfg))
 
 
+def ai_status_hint(cfg: Dict[str, Any]) -> Optional[str]:
+    """Penjelasan singkat kenapa AI tidak siap dipakai (None bila siap).
+
+    Pesan lama "AI belum aktif atau API key kosong" ambigu: sering kali key
+    sudah benar tetapi toggle "AI aktif" mati. Dipakai endpoint admin & UI.
+    """
+    key = ""
+    try:
+        key = decrypt_api_key(cfg.get("api_key_enc"))
+    except Exception as exc:
+        return (
+            "API key tersimpan tetapi tidak bisa didekripsi "
+            f"({type(exc).__name__}). Simpan ulang API key."
+        )
+    if not cfg.get("enabled") and key:
+        return "AI dinonaktifkan (toggle 'AI aktif' mati). Aktifkan lalu uji lagi."
+    if not cfg.get("enabled"):
+        return "AI dinonaktifkan. Aktifkan toggle 'AI aktif' di Settings › AI."
+    if not key and cfg.get("provider") != "ollama":
+        return "API key kosong. Simpan API key provider terlebih dahulu."
+    return None
+
+
 def public_ai_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     key = decrypt_api_key(cfg.get("api_key_enc"))
     payload = {k: v for k, v in cfg.items() if k != "api_key_enc"}
@@ -154,6 +177,9 @@ def public_ai_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     payload["api_key_masked"] = mask_api_key(key)
     payload["effective_base_url"] = effective_base_url(cfg)
     payload["providers"] = sorted(PROVIDER_DEFAULTS.keys())
+    # Alasan siap/tidaknya AI (None = siap). Ditampilkan sebagai banner di UI.
+    payload["status_hint"] = ai_status_hint(cfg)
+    payload["ready"] = ai_is_configured(cfg)
     return payload
 
 
@@ -195,13 +221,18 @@ async def set_ai_config(db: AsyncSession, payload: dict) -> Dict[str, Any]:
     merged = dict(current)
 
     for field in DEFAULT_AI:
-        if field in payload:
+        if field in payload and payload[field] is not None:
             merged[field] = payload[field]
     if payload.get("clear_api_key"):
         merged["api_key_enc"] = ""
     new_key = str(payload.get("api_key") or "").strip()
     if new_key:
         merged["api_key_enc"] = encrypt_api_key(new_key)
+        # Menyimpan API key = niat mengaktifkan AI. Tanpa ini, toggle "AI aktif"
+        # yang pernah dimatikan membuat semua request gagal dengan pesan
+        # "AI belum aktif atau API key kosong" walau key sudah benar.
+        if payload.get("enabled") is None:
+            merged["enabled"] = True
 
     cfg = normalize_ai(merged)
 
