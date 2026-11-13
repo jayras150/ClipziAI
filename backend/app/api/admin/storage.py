@@ -121,7 +121,23 @@ async def save_storage(
 
     saved = await registry.save_storage_config(db, config)
     await _audit(db, request, current_admin, "storage_saved", {"id": item["id"], "provider": item["provider"]})
-    return registry.public_view(saved)
+    view = registry.public_view(saved)
+    # Peringatan format kredensial (mis. B2 memakai keyID master yang terlalu pendek).
+    try:
+        access = payload.access_key or (
+            __import__("app.core.security", fromlist=["decrypt_field"]).decrypt_field(item["access_key_enc"])
+            if item.get("access_key_enc")
+            else ""
+        )
+        secret = payload.secret_key or (
+            __import__("app.core.security", fromlist=["decrypt_field"]).decrypt_field(item["secret_key_enc"])
+            if item.get("secret_key_enc")
+            else ""
+        )
+        view["warnings"] = registry.credential_warnings(item["provider"], access, secret)
+    except Exception:
+        view["warnings"] = []
+    return view
 
 
 @router.delete("/{item_id}")
@@ -153,6 +169,11 @@ async def test_storage(
         raise HTTPException(status_code=404, detail="Storage tidak ditemukan")
 
     result = registry.test_item(item)
+    # Kalau berhasil hanya dengan path-style berbeda, simpan koreksinya otomatis.
+    suggested = result.get("suggested") or {}
+    if suggested.get("path_style") is not None:
+        item["path_style"] = bool(suggested["path_style"])
+
     import datetime as _dt
 
     item["last_check"] = {

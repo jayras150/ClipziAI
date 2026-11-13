@@ -39,6 +39,7 @@ export function StorageManager({ initial }: { initial: StorageConfigView }) {
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [editing, setEditing] = useState(false);
   const [message, setMessage] = useState("");
+  const [warning, setWarning] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string>("");
   const [pending, startTransition] = useTransition();
@@ -101,6 +102,11 @@ export function StorageManager({ initial }: { initial: StorageConfigView }) {
         if (form.secret_key) payload.secret_key = form.secret_key;
         const fresh = await saveStorage(payload);
         setConfig(fresh);
+        if (fresh.warnings?.length) {
+          setWarning(fresh.warnings.join(" "));
+        } else {
+          setWarning("");
+        }
         setMessage("Storage disimpan. Kredensial tersimpan terenkripsi (AES-256-GCM).");
         resetForm();
       } catch (err) {
@@ -117,11 +123,13 @@ export function StorageManager({ initial }: { initial: StorageConfigView }) {
       try {
         const result = await testStorage(item.id);
         setConfig(result.storage);
-        setMessage(
-          result.result.ok
-            ? "Koneksi " + item.name + " OK (" + result.result.latency_ms + " ms)"
-            : "Gagal: " + (result.result.error || "tidak diketahui")
-        );
+        if (result.result.ok) {
+          setWarning(result.result.note || "");
+          setMessage("Koneksi " + item.name + " OK (" + result.result.latency_ms + " ms)");
+        } else {
+          setWarning(result.result.hint || "");
+          setMessage("Gagal: " + (result.result.error || "tidak diketahui"));
+        }
       } catch (err) {
         setError((err as Error).message);
       } finally {
@@ -224,6 +232,9 @@ export function StorageManager({ initial }: { initial: StorageConfigView }) {
                   {check && !check.ok && check.error ? (
                     <p className="text-destructive text-xs">{check.error}</p>
                   ) : null}
+                  {check && !check.ok && check.hint ? (
+                    <p className="text-xs text-amber-600">{check.hint}</p>
+                  ) : null}
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" variant="outline" className="gap-2" onClick={() => onTest(item)} disabled={pending || busy === item.id}>
                       {busy === item.id ? <ClipzySpinner size="xs" variant="ring" /> : null}
@@ -252,6 +263,11 @@ export function StorageManager({ initial }: { initial: StorageConfigView }) {
           )}
 
           {message ? <p className="text-sm text-emerald-600">{message}</p> : null}
+          {warning ? (
+            <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-sm text-amber-700 dark:text-amber-400">
+              {warning}
+            </p>
+          ) : null}
           {error ? <p className="text-destructive text-sm">{error}</p> : null}
         </CardContent>
       </Card>

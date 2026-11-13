@@ -11,6 +11,7 @@ sudah dipakai selama ini, sehingga deployment lama tidak berubah perilaku.
 """
 from __future__ import annotations
 
+import re
 import threading
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -220,12 +221,19 @@ def resolve(item: Dict[str, Any], timeout: int = 30) -> ResolvedStorage:
     if not access_key or not secret_key:
         raise ValueError("kredensial storage belum diisi")
     endpoint = (item.get("endpoint") or "").strip()
+    region = item.get("region") or "auto"
+    # Backblaze: region WAJIB sama dengan region di endpoint (ca-east-006, dsb).
+    # Salah region -> SigV4 ditolak dan koneksi kadang ditutup provider.
+    if item.get("provider") == "b2" and endpoint:
+        match = re.search(r"s3\.([a-z0-9-]+)\.backblazeb2\.com", endpoint)
+        if match:
+            region = match.group(1)
     client = boto3.client(
         "s3",
         endpoint_url=endpoint or None,
         aws_access_key_id=access_key,
         aws_secret_access_key=secret_key,
-        region_name=item.get("region") or "auto",
+        region_name=region,
         config=Config(
             signature_version="s3v4",
             s3={"addressing_style": "path" if item.get("path_style") else "virtual"},
@@ -461,30 +469,123 @@ def public_view(config: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def test_item(item: Dict[str, Any]) -> Dict[str, Any]:
-    """Uji koneksi: put -> head -> delete objek kecil."""
-    import time as _time
+def credential_warnings(provider: str, access_key: str, secret_key: str) -> List[str]:
+    """Peringatan cepat saat format kredensial tidak lazim (menghindari bingung)."""
+    warnings: List[str] = []
+    key = (access_key or "").strip()
+    secret = (secret_key or "").strip()
+    if not key or not secret:
+        warnings.append("Access key / secret key kosong.")
+        return warnings
+    if provider == "b2" and len(key) < 20:
+        warnings.append(
+            "B2: 'Access Key' tampaknya keyID master (pendek). Pakai Application Key -> keyID "
+            "(biasanya ±31 karakter) + applicationKey."
+        )
+    if provider == "r2" and len(key) != 32:
+        warnings.append("R2: access key biasanya 32 karakter hex (Access Key ID).")
+    if len(secret) < 16:
+        warnings.append("Secret key terlalu pendek untuk provider S3 mana pun.")
+    return warnings
+
+
+def _probe(resolved: ResolvedStorage, bucket: str) -> None:
+    """put -> head -> delete objek kecil (melempar exception bila gagal)."""
     from uuid import uuid4
 
-    started = _time.monotonic()
     key = "_clipzi_check/" + uuid4().hex + ".txt"
+    resolved.client.put_object(
+        Bucket=bucket, Key=key, Body=b"clipzi-storage-check", ContentType="text/plain"
+    )
+    resolved.client.head_object(Bucket=bucket, Key=key)
+    resolved.client.delete_object(Bucket=bucket, Key=key)
+
+
+def _diagnose(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Ambil pesan error asli dari provider (beberapa menutup koneksi saat auth gagal)."""
     try:
         resolved = resolve(item, timeout=10)
-        resolved.client.put_object(
-            Bucket=resolved.bucket,
-            Key=key,
-            Body=b"clipzi-storage-check",
-            ContentType="text/plain",
-        )
-        resolved.client.head_object(Bucket=resolved.bucket, Key=key)
-        resolved.client.delete_object(Bucket=resolved.bucket, Key=key)
-        return {"ok": True, "latency_ms": int((_time.monotonic() - started) * 1000)}
-    except (ClientError, BotoCoreError, ValueError, Exception) as exc:
+        resolved.client.list_buckets()
+        return {"error_code": None, "error_message": None}
+    except ClientError as exc:
+        err = exc.response.get("Error", {}) if hasattr(exc, "response") else {}
         return {
-            "ok": False,
-            "latency_ms": int((_time.monotonic() - started) * 1000),
-            "error": (type(exc).__name__ + ": " + str(exc))[:200],
+            "error_code": err.get("Code"),
+            "error_message": err.get("Message"),
         }
+    except Exception as exc:
+        return {"error_code": type(exc).__name__, "error_message": str(exc)[:200]}
+
+
+def _hint_for(code: Optional[str], provider: str) -> Optional[str]:
+    if not code:
+        return None
+    if code in ("InvalidAccessKeyId", "Malformed Access Key Id"):
+        base = "Access Key tidak valid/ditolak provider."
+        if provider == "b2":
+            return base + " Backblaze: pakai Application Key -> keyID (±31 karakter), bukan master keyID."
+        if provider == "r2":
+            return base + " R2: pakai Access Key ID (32 hex) + Secret Access Key (64 hex)."
+        return base + " Periksa kembali Access Key ID."
+    if code == "SignatureDoesNotMatch":
+        return "Secret key salah, atau region tidak cocok dengan endpoint."
+    if code == "NoSuchBucket":
+        return "Bucket tidak ditemukan di akun/region ini."
+    if code in ("AccessDenied", "AllAccessDisabled"):
+        return "Key valid tetapi tidak punya izin tulis ke bucket ini."
+    if code == "ConnectionClosedError":
+        return "Provider menutup koneksi (biasanya karena kredensial salah atau endpoint/region tidak cocok)."
+    if code in ("EndpointConnectionError", "ConnectTimeoutError"):
+        return "Endpoint tidak bisa dihubungi; cek penulisan endpoint dan jaringan server."
+    return None
+
+
+def test_item(item: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Uji koneksi storage dengan beberapa variasi addressing.
+
+    Beberapa provider (mis. Backblaze) menutup koneksi saat kredensial salah,
+    sehingga pesan aslinya hilang. Bila itu terjadi, kita panggil ListBuckets
+    untuk mendapatkan kode error yang sebenarnya, lalu kembalikan hint yang
+    bisa langsung ditindaklanjuti.
+    """
+    import time as _time
+
+    provider = str(item.get("provider") or "")
+    variants: List[Dict[str, Any]] = [
+        {"path_style": bool(item.get("path_style")), "label": "sesuai konfigurasi"},
+        {"path_style": not bool(item.get("path_style")), "label": "kebalikan path-style"},
+    ]
+
+    last_error = ""
+    for variant in variants:
+        started = _time.monotonic()
+        try:
+            candidate = dict(item)
+            candidate["path_style"] = variant["path_style"]
+            resolved = resolve(candidate, timeout=10)
+            _probe(resolved, resolved.bucket)
+            latency = int((_time.monotonic() - started) * 1000)
+            result: Dict[str, Any] = {"ok": True, "latency_ms": latency}
+            if variant["path_style"] != bool(item.get("path_style")):
+                result["suggested"] = {"path_style": variant["path_style"]}
+                result["note"] = "Berhasil dengan path-style " + ("aktif" if variant["path_style"] else "nonaktif") + "."
+            return result
+        except Exception as exc:
+            last_error = type(exc).__name__ + ": " + str(exc)[:200]
+
+    diagnosis = _diagnose(item)
+    code = diagnosis.get("error_code")
+    hint = _hint_for(str(code) if code else None, provider)
+    return {
+        "ok": False,
+        "latency_ms": None,
+        "error": (code + ": " + (diagnosis.get("error_message") or ""))[:240]
+        if code
+        else last_error,
+        "error_code": code,
+        "hint": hint,
+    }
 
 
 async def sync_mirrors(limit: int = 200) -> Dict[str, Any]:

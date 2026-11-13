@@ -26,7 +26,7 @@ export type StorageItem = {
   enabled: boolean;
   access_key_masked?: string | null;
   has_credentials?: boolean;
-  last_check?: { ok?: boolean; latency_ms?: number; error?: string | null; at?: string } | null;
+  last_check?: { ok?: boolean; latency_ms?: number; error?: string | null; hint?: string | null; at?: string } | null;
 };
 
 export type StorageConfigView = {
@@ -34,6 +34,7 @@ export type StorageConfigView = {
   mirror_ids: string[];
   items: StorageItem[];
   providers: StorageProvider[];
+  warnings?: string[];
 };
 
 export async function fetchStorage(): Promise<StorageConfigView> {
@@ -59,7 +60,10 @@ export async function deleteStorage(id: string): Promise<StorageConfigView> {
 
 export async function testStorage(
   id: string
-): Promise<{ result: { ok: boolean; latency_ms?: number; error?: string | null }; storage: StorageConfigView }> {
+): Promise<{
+  result: { ok: boolean; latency_ms?: number; error?: string | null; hint?: string | null; note?: string | null };
+  storage: StorageConfigView;
+}> {
   return adminFetch(`/api/admin/settings/storage/${id}/test`, { method: 'POST' });
 }
 
