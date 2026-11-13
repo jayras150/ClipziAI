@@ -134,6 +134,41 @@ def _run_set(payload, current=None):
     return result, saved
 
 
+def test_validate_api_key_menolak_base_url():
+    import pytest
+
+    with pytest.raises(ValueError) as exc:
+        ai_config.validate_api_key("https://openrouter.ai/api/v1", "openrouter")
+    assert "Base URL" in str(exc.value)
+
+    with pytest.raises(ValueError):
+        ai_config.validate_api_key("short", "openrouter")
+
+    with pytest.raises(ValueError):
+        ai_config.validate_api_key("sk-or-v1 punya spasi di tengah", "openrouter")
+
+    # key wajar tidak melempar
+    ai_config.validate_api_key("sk-or-v1-0123456789abcdef0123456789abcdef", "openrouter")
+
+
+def test_hint_menandai_key_berisi_base_url():
+    cfg = ai_config.normalize_ai(
+        {
+            "enabled": True,
+            "provider": "openrouter",
+            "api_key_enc": ai_config.encrypt_api_key("https://openrouter.ai/api/v1"),
+        }
+    )
+    hint = ai_config.ai_status_hint(cfg)
+    assert hint and "base url" in hint.lower()
+
+
+def test_simpan_key_base_url_ditolak():
+    import pytest
+
+    with pytest.raises(ValueError):
+        _run_set({"api_key": "https://openrouter.ai/api/v1"}, current={"provider": "openrouter"})
+
 def test_simpan_api_key_baru_otomatis_mengaktifkan_ai():
     """Bug: toggle 'AI aktif' pernah dimatikan -> key benar tapi AI tetap mati."""
     result, _saved = _run_set(

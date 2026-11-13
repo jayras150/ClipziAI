@@ -221,10 +221,14 @@ export default function AiForm({ config, providers }: Props) {
             <Input
               id='api_key'
               type='password'
-              placeholder={config.api_key_set ? 'biarkan kosong bila tidak diubah' : 'sk-...'}
+              placeholder={config.api_key_set ? 'biarkan kosong bila tidak diubah' : 'sk-or-v1-...'}
               value={form.api_key}
               onChange={(event) => set('api_key', event.target.value)}
             />
+            <p className='text-muted-foreground text-xs'>
+              Tempel <strong>API key</strong> (contoh OpenRouter <code>sk-or-v1-…</code>), bukan Base URL.
+              Base URL diisi di kolom sebelah kiri.
+            </p>
           </div>
           <div className='flex items-end gap-2'>
             <Button

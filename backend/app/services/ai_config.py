@@ -147,6 +147,30 @@ def ai_is_configured(cfg: Dict[str, Any]) -> bool:
     return cfg.get("provider") == "ollama" and bool(effective_base_url(cfg))
 
 
+def validate_api_key(value: str, provider: str = "") -> None:
+    """Tolak nilai yang jelas bukan API key (mis. Base URL yang salah tempel).
+
+    Kasus nyata: kolom API key diisi `https://openrouter.ai/api/v1`, sehingga
+    provider membalas 401 "Missing Authentication header" dan pesan lama
+    ("AI belum aktif atau API key kosong") menyesatkan.
+    """
+    text = (value or "").strip()
+    if not text:
+        return
+    lowered = text.lower()
+    if lowered.startswith(("http://", "https://")):
+        raise ValueError(
+            "Yang diisi adalah Base URL, bukan API key. Tempel API key provider "
+            "(contoh OpenRouter: sk-or-v1-...)."
+        )
+    if any(ch.isspace() for ch in text):
+        raise ValueError("API key tidak boleh mengandung spasi/baris baru.")
+    if len(text) < 16:
+        raise ValueError("API key terlalu pendek — sepertinya tidak lengkap.")
+    if provider and provider != "custom" and lowered.startswith("bearer "):
+        raise ValueError("Hapus awalan 'Bearer ' — cukup key-nya saja.")
+
+
 def ai_status_hint(cfg: Dict[str, Any]) -> Optional[str]:
     """Penjelasan singkat kenapa AI tidak siap dipakai (None bila siap).
 
@@ -160,6 +184,11 @@ def ai_status_hint(cfg: Dict[str, Any]) -> Optional[str]:
         return (
             "API key tersimpan tetapi tidak bisa didekripsi "
             f"({type(exc).__name__}). Simpan ulang API key."
+        )
+    if key.strip().lower().startswith(("http://", "https://")):
+        return (
+            "Nilai di kolom API key adalah Base URL, bukan API key. Ganti dengan "
+            "API key provider (contoh OpenRouter: sk-or-v1-...)."
         )
     if not cfg.get("enabled") and key:
         return "AI dinonaktifkan (toggle 'AI aktif' mati). Aktifkan lalu uji lagi."
@@ -227,6 +256,7 @@ async def set_ai_config(db: AsyncSession, payload: dict) -> Dict[str, Any]:
         merged["api_key_enc"] = ""
     new_key = str(payload.get("api_key") or "").strip()
     if new_key:
+        validate_api_key(new_key, str(merged.get("provider") or ""))
         merged["api_key_enc"] = encrypt_api_key(new_key)
         # Menyimpan API key = niat mengaktifkan AI. Tanpa ini, toggle "AI aktif"
         # yang pernah dimatikan membuat semua request gagal dengan pesan

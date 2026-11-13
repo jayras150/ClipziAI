@@ -190,7 +190,10 @@ async def update_ai(
 ):
     before = public_ai_config(await get_ai_config(db))
     data = payload.model_dump()
-    cfg = await set_ai_config(db, data)
+    try:
+        cfg = await set_ai_config(db, data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     after = public_ai_config(cfg)
     injection = apply_ai_config_to_env(cfg)
 
