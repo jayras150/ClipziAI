@@ -158,6 +158,12 @@ class InstanceSupervisor:
             if status in {"completed", "error", "cancelled"}:
                 return "done", status or "terminal"
 
+            # Baris instance bisa ditandai `destroyed` dari dashboard (admin
+            # menghapus instance duplikat). Tanpa cek ini supervisor tetap
+            # menganggapnya hilang lalu membuat instance GPU baru (biaya ganda).
+            if await self._instance_row_destroyed(instance_id):
+                return "done", "instance dihapus manual"
+
             if time.monotonic() - started > settings.VAST_ONESHOT_TIMEOUT:
                 return "failed", "melewati batas waktu task"
 
@@ -245,6 +251,30 @@ class InstanceSupervisor:
                 return "failed", f"boot timeout (status={actual or 'unknown'})"
 
             await asyncio.sleep(settings.VAST_SUPERVISOR_INTERVAL)
+
+    async def _instance_row_destroyed(self, instance_id: int) -> bool:
+        """True bila baris instance terakhir sudah berstatus `destroyed`."""
+        from sqlalchemy import select
+
+        from app.db.session import AsyncSessionLocal
+        from app.models.worker_instance import WorkerInstance
+
+        try:
+            async with AsyncSessionLocal() as db:
+                row = (
+                    await db.execute(
+                        select(WorkerInstance)
+                        .where(WorkerInstance.instance_id == instance_id)
+                        .order_by(WorkerInstance.created_at.desc())
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+        except Exception:
+            return False
+        if row is None:
+            return False
+        state = getattr(row.state, "value", row.state)
+        return str(state) == "destroyed"
 
     async def _instance_exists(self, instance_id: int) -> bool:
         """Cek daftar instance milik user (lebih andal daripada 404 tunggal)."""

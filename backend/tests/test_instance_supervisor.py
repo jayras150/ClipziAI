@@ -82,6 +82,11 @@ def _supervisor(
     sup._update_record = noop  # type: ignore[method-assign]
     sup._update_record_by_instance = noop  # type: ignore[method-assign]
     sup._collect_logs = noop  # type: ignore[method-assign]
+
+    async def not_destroyed(_instance_id: int) -> bool:
+        return False
+
+    sup._instance_row_destroyed = not_destroyed  # type: ignore[method-assign]
     return sup
 
 
@@ -209,6 +214,22 @@ def test_watch_404_tidak_membunuh_task_yang_sedang_processing():
     sup = _supervisor(client, ["processing"] * 8 + ["completed"])
     outcome, reason = asyncio.run(sup._watch(1))
     assert outcome == "done", reason
+
+
+def test_watch_berhenti_saat_instance_dihapus_manual():
+    """Admin menghapus instance duplikat => supervisor berhenti, tidak respawn."""
+    client = _FakeClient([], default=None, existing_ids=[])
+    sup = _supervisor(client, ["processing"])
+
+    async def destroyed(_instance_id: int) -> bool:
+        return True
+
+    sup._instance_row_destroyed = destroyed  # type: ignore[method-assign]
+
+    outcome, reason = asyncio.run(sup._watch(1))
+    assert outcome == "done"
+    assert "dihapus manual" in reason
+    assert client.destroyed == []
 
 
 def test_make_create_instance_meneruskan_env_dan_id(monkeypatch):
