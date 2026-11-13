@@ -119,7 +119,7 @@ async def refresh_token(request: RefreshTokenRequest, db: AsyncSession = Depends
     from app.services.auth_session import is_token_revoked
 
     if await is_token_revoked(db, user.id, payload):
-        raise HTTPException(status_code=401, detail="Sesi sudah berakhir, silakan masuk lagi")
+        raise HTTPException(status_code=401, detail="Your session has expired. Please sign in again.")
 
     access_token = create_access_token({"sub": str(user.id)})
     new_refresh_token = create_refresh_token({"sub": str(user.id)})

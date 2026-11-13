@@ -3,22 +3,34 @@
 import { useState, useTransition } from "react";
 
 import {
+  cancelStorageSync,
   deleteStorage,
   fetchStorage,
+  locateStorageObject,
   saveStorage,
   setMirrorStorages,
   setPrimaryStorage,
-  syncStorage,
+  startStorageSync,
+  storageSyncStatus,
   testStorage,
   type StorageConfigView,
-  type StorageItem
+  type StorageItem,
+  type SyncJobStatus
 } from "@/app/dashboard/settings/storage-actions";
+import { StorageCloudflare } from "@/features/settings/components/storage-cloudflare";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ClipzySpinner } from "@/components/ui/clipzy-spinner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select";
 
 const EMPTY_FORM = {
   id: "",
@@ -43,6 +55,13 @@ export function StorageManager({ initial }: { initial: StorageConfigView }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string>("");
   const [pending, startTransition] = useTransition();
+  const [tab, setTab] = useState<"providers" | "cloudflare">("providers");
+  const [syncJob, setSyncJob] = useState<SyncJobStatus | null>(null);
+  const [syncMode, setSyncMode] = useState<"push" | "reconcile" | "heal">("push");
+  const [locateKey, setLocateKey] = useState("");
+  const [locate, setLocate] = useState<Awaited<ReturnType<typeof locateStorageObject>> | null>(
+    null
+  );
 
   const providers = config.providers || [];
   const preset = providers.find((row) => row.id === form.provider);
@@ -164,18 +183,57 @@ export function StorageManager({ initial }: { initial: StorageConfigView }) {
     });
   };
 
+  const pollSync = async () => {
+    for (let attempt = 0; attempt < 240; attempt += 1) {
+      const status = await storageSyncStatus();
+      setSyncJob(status);
+      if (status.state !== "running") return status;
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+    return null;
+  };
+
   const onSync = () => {
     setBusy("sync");
     setMessage("");
+    setError("");
     startTransition(async () => {
       try {
-        const result = await syncStorage();
-        setMessage(
-          result.ok
-            ? "Sync selesai: " + (result.copied || 0) + " disalin, " + (result.skipped || 0) + " sudah ada, " + (result.failed || 0) + " gagal"
-            : "Sync gagal: " + (result.error || "tidak diketahui")
-        );
+        const started = await startStorageSync(syncMode, 50, 500);
+        if (!started.started) {
+          setError(started.message || "Sync tidak bisa dimulai");
+          return;
+        }
+        const finalStatus = await pollSync();
+        if (finalStatus) {
+          setMessage(
+            `Sync ${finalStatus.state}: ${finalStatus.copied} disalin, ${finalStatus.skipped} sudah ada, ${finalStatus.failed} gagal` +
+              (finalStatus.error ? ` — ${finalStatus.error}` : "")
+          );
+        }
         setConfig(await fetchStorage());
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setBusy("");
+      }
+    });
+  };
+
+  const onCancelSync = () => {
+    startTransition(async () => {
+      await cancelStorageSync();
+      setMessage("Permintaan batal dikirim.");
+    });
+  };
+
+  const onLocate = () => {
+    if (!locateKey.trim()) return;
+    setBusy("locate");
+    setError("");
+    startTransition(async () => {
+      try {
+        setLocate(await locateStorageObject(locateKey.trim()));
       } catch (err) {
         setError((err as Error).message);
       } finally {
@@ -186,6 +244,27 @@ export function StorageManager({ initial }: { initial: StorageConfigView }) {
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant={tab === "providers" ? "default" : "outline"}
+          onClick={() => setTab("providers")}
+        >
+          Provider
+        </Button>
+        <Button
+          size="sm"
+          variant={tab === "cloudflare" ? "default" : "outline"}
+          onClick={() => setTab("cloudflare")}
+        >
+          Cloudflare CDN
+        </Button>
+      </div>
+
+      {tab === "cloudflare" ? (
+        <StorageCloudflare config={config} onChange={setConfig} />
+      ) : (
+        <>
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-2">
           <div>
@@ -197,10 +276,30 @@ export function StorageManager({ initial }: { initial: StorageConfigView }) {
           </div>
           <div className="flex flex-col items-end gap-2">
             <Badge variant="outline">{config.items.length} storage</Badge>
-            <Button size="sm" variant="outline" className="gap-2" onClick={onSync} disabled={pending || busy === "sync"}>
-              {busy === "sync" ? <ClipzySpinner size="xs" variant="ring" /> : null}
-              Sync mirror
-            </Button>
+            <div className="flex items-center gap-2">
+              <Select
+                value={syncMode}
+                onValueChange={(value: string | null) => setSyncMode((value || "push") as typeof syncMode)}
+              >
+                <SelectTrigger className="h-8 w-[150px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="push">Push ke mirror</SelectItem>
+                  <SelectItem value="reconcile">Rekonsiliasi 2 arah</SelectItem>
+                  <SelectItem value="heal">Pulihkan primary</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button size="sm" variant="outline" className="gap-2" onClick={onSync} disabled={pending || busy === "sync"}>
+                {busy === "sync" ? <ClipzySpinner size="xs" variant="ring" /> : null}
+                Sync
+              </Button>
+              {busy === "sync" ? (
+                <Button size="sm" variant="ghost" onClick={onCancelSync}>
+                  Batal
+                </Button>
+              ) : null}
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -269,6 +368,93 @@ export function StorageManager({ initial }: { initial: StorageConfigView }) {
             </p>
           ) : null}
           {error ? <p className="text-destructive text-sm">{error}</p> : null}
+        </CardContent>
+      </Card>
+
+      {syncJob && syncJob.state !== "idle" ? (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2">
+            <div>
+              <CardTitle className="text-base">Progres sync</CardTitle>
+              <CardDescription>
+                mode <strong>{syncJob.mode}</strong>
+                {syncJob.current ? ` · ${syncJob.current}` : ""}
+                {syncJob.error ? ` · ${syncJob.error}` : ""}
+              </CardDescription>
+            </div>
+            <Badge variant={syncJob.state === "running" ? "secondary" : "outline"}>
+              {syncJob.state}
+            </Badge>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="text-muted-foreground flex flex-wrap gap-3 text-xs">
+              <span>disalin {syncJob.copied}</span>
+              <span>sudah ada {syncJob.skipped}</span>
+              <span>gagal {syncJob.failed}</span>
+              <span>{(syncJob.bytes / (1024 * 1024)).toFixed(1)} MB</span>
+            </div>
+            {syncJob.per_mirror.map((row) => (
+              <div key={row.id} className="rounded-md border p-2 text-xs">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline">{row.provider}</Badge>
+                  <span className="font-medium">{row.name || row.id}</span>
+                  <span className="text-muted-foreground">
+                    {row.copied} disalin · {row.skipped} sudah ada · {row.failed} gagal
+                  </span>
+                  {row.error ? <span className="text-destructive">{row.error}</span> : null}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Cari file di semua storage</CardTitle>
+          <CardDescription>
+            Cek apakah sebuah objek ada di primary atau mirror — dipakai untuk memastikan file
+            benar-benar tersimpan sebelum dipulihkan.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="min-w-[260px] flex-1 space-y-2">
+              <Label>Object key</Label>
+              <Input
+                value={locateKey}
+                onChange={(event) => setLocateKey(event.target.value)}
+                placeholder="clips/<task-id>/<clip>.mp4"
+              />
+            </div>
+            <Button size="sm" className="gap-2" onClick={onLocate} disabled={pending || busy === "locate"}>
+              {busy === "locate" ? <ClipzySpinner size="xs" variant="ring" /> : null}
+              Cari
+            </Button>
+          </div>
+          {locate ? (
+            <div className="space-y-2 text-xs">
+              <p className="text-muted-foreground">
+                Ditemukan di {locate.found} dari {locate.locations.length} storage.
+              </p>
+              {locate.locations.map((row) => (
+                <div key={row.id} className="flex flex-wrap items-center gap-2 rounded-md border p-2">
+                  <Badge variant={row.exists ? "secondary" : "outline"}>
+                    {row.exists ? "ada" : "tidak ada"}
+                  </Badge>
+                  <span className="font-medium">{row.name || row.id}</span>
+                  <span className="text-muted-foreground">{row.provider}</span>
+                  {row.size ? <span className="text-muted-foreground">{(row.size / 1048576).toFixed(1)} MB</span> : null}
+                  {row.error ? <span className="text-destructive">{row.error}</span> : null}
+                  {row.url ? (
+                    <a className="text-primary underline" href={row.url} target="_blank" rel="noreferrer">
+                      buka
+                    </a>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -358,6 +544,8 @@ export function StorageManager({ initial }: { initial: StorageConfigView }) {
           </div>
         </CardContent>
       </Card>
+        </>
+      )}
     </div>
   );
 }

@@ -286,7 +286,7 @@ export default function ClipModal({
         className="clip-modal"
         role="dialog"
         aria-modal="true"
-        aria-label={`Klip ${clip.clip_index + 1}`}
+        aria-label={`Clip ${clip.clip_index + 1}`}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="clip-modal-head">
@@ -354,6 +354,23 @@ export default function ClipModal({
                 </a>
               )}
             </div>
+
+            {clip.ai_hook || clip.ai_viral_reason || clip.viral_score ? (
+              <div className="clip-modal-why">
+                <p className="clip-modal-why-head">
+                  Why this clip
+                  {typeof clip.viral_score === "number" ? (
+                    <span className="clip-modal-why-score">
+                      viral score {Math.round(clip.viral_score)}/100
+                    </span>
+                  ) : null}
+                </p>
+                {clip.ai_hook ? <p className="clip-modal-why-hook">“{clip.ai_hook}”</p> : null}
+                {clip.ai_viral_reason ? (
+                  <p className="clip-modal-why-reason">{clip.ai_viral_reason}</p>
+                ) : null}
+              </div>
+            ) : null}
 
             <details className="clip-modal-transcript">
               <summary>

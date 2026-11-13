@@ -298,7 +298,7 @@ async def connect_youtube_with_token(
     """
     access_token = (payload.access_token or "").strip()
     if not access_token:
-        raise HTTPException(status_code=400, detail="Access token Google tidak boleh kosong.")
+        raise HTTPException(status_code=400, detail="Google access token cannot be empty.")
 
     channel = await youtube_service.get_channel(access_token)
 

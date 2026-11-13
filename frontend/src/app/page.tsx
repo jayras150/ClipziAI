@@ -61,15 +61,6 @@ const STEPS = [
   },
 ]
 
-const CLIP_SAMPLES = [
-  { platform: "YouTube", mark: "YT", color: "#ff4632", score: 97, time: "0:42", gradient: "linear-gradient(160deg,#3a2b12,#141821 62%)" },
-  { platform: "Instagram", mark: "IG", color: "#e0508b", score: 99, time: "0:38", gradient: "linear-gradient(160deg,#2c1430,#141821 62%)" },
-  { platform: "LinkedIn", mark: "IN", color: "#3b8fd6", score: 97, time: "0:51", gradient: "linear-gradient(160deg,#10263a,#141821 62%)" },
-  { platform: "TikTok", mark: "TT", color: "#3ee0e0", score: 98, time: "0:29", gradient: "linear-gradient(160deg,#0e2a2e,#141821 62%)" },
-  { platform: "Facebook", mark: "FB", color: "#4a8ef0", score: 94, time: "0:47", gradient: "linear-gradient(160deg,#122036,#141821 62%)" },
-  { platform: "X", mark: "X", color: "#e7e9ee", score: 92, time: "0:33", gradient: "linear-gradient(160deg,#1d1f26,#141821 62%)" },
-]
-
 const STUDIO_PILLS = [
   "✂ AI clipping",
   "▤ AI captioning",
@@ -136,29 +127,58 @@ export default function LandingPage() {
       <main>
         <section className="container hero hero-v2" id="home">
           <div className="studio-panel">
-            <div className="studio-top">
-              <span className="studio-badge">
-                <span className="pulse" /> AI clipping studio
-              </span>
-              <span className="studio-top-note">10s preview · real Clipzy AI output</span>
+            {/* Card "app window" gaya referensi: video di dalam preview card */}
+            <div className="studio-window">
+              <div className="studio-window-bar">
+                <span className="studio-dots" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                <span className="studio-window-title">CLIPZY STUDIO / PREVIEW</span>
+                <span className="studio-window-more" aria-hidden="true">
+                  •••
+                </span>
+              </div>
+
+              <div className="studio-video-frame">
+                <video
+                  className="studio-video"
+                  src="/media/hook.mp4"
+                  autoPlay
+                  muted
+                  loop
+                  playsInline
+                  preload="auto"
+                  aria-label="Clipzy AI preview clip"
+                />
+                <span className="studio-play" aria-hidden="true">
+                  ▶
+                </span>
+                <div className="studio-video-label">
+                  <strong>Your next viral moment</strong>
+                  AI-selected highlight · 00:42
+                </div>
+                <span className="studio-score">SCORE 94.8</span>
+              </div>
+
+              <div className="studio-timeline">
+                <div className="studio-timeline-head">
+                  <span>GENERATED CLIPS</span>
+                  <span>6 clips found</span>
+                </div>
+                <div className="studio-tracks" aria-hidden="true">
+                  <span className="studio-track" />
+                  <span className="studio-track" />
+                  <span className="studio-track" />
+                  <span className="studio-track" />
+                </div>
+                <div className="studio-progress" aria-hidden="true">
+                  <span />
+                </div>
+              </div>
             </div>
 
-            {/* 1. VIDEO DI PALING ATAS */}
-            <div className="studio-video-frame">
-              <video
-                className="studio-video"
-                src="/media/hook.mp4"
-                autoPlay
-                muted
-                loop
-                playsInline
-                preload="auto"
-                aria-label="Clipzy AI preview clip"
-              />
-              <span className="studio-score">SCORE 94.8</span>
-            </div>
-
-            {/* 2. INPUT BAR */}
             <form className="studio-bar" onSubmit={submitVideo}>
               <span className="studio-bar-icon" aria-hidden="true">
                 🔗
@@ -179,23 +199,6 @@ export default function LandingPage() {
               reframed for every feed.
             </p>
 
-            {/* 3. HASIL KLIP 9:16 */}
-            <div className="studio-clips">
-              {CLIP_SAMPLES.map((clip) => (
-                <div className="studio-clip" key={clip.platform}>
-                  <div className="studio-clip-thumb" style={{ backgroundImage: clip.gradient }}>
-                    <span className="studio-clip-badge" style={{ background: clip.color }}>
-                      {clip.mark}
-                    </span>
-                    <span className="studio-clip-time">{clip.time}</span>
-                    <span className="studio-clip-score">SCORE {clip.score}</span>
-                  </div>
-                  <span className="studio-clip-platform">{clip.platform}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* 4. PILLS FITUR */}
             <div className="studio-pills">
               {STUDIO_PILLS.map((pill) => (
                 <span className="studio-pill" key={pill}>

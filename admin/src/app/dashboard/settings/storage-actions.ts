@@ -85,6 +85,103 @@ export async function setMirrorStorages(ids: string[]): Promise<StorageConfigVie
   return data;
 }
 
-export async function syncStorage(): Promise<{ ok: boolean; copied?: number; skipped?: number; failed?: number; error?: string }> {
-  return adminFetch('/api/admin/settings/storage/sync?limit=200', { method: 'POST' });
+export type SyncMirrorRow = {
+  id: string;
+  name: string | null;
+  provider: string;
+  bucket: string;
+  listed: number;
+  copied: number;
+  skipped: number;
+  failed: number;
+  bytes: number;
+  error: string | null;
+};
+
+export type SyncJobStatus = {
+  state: 'idle' | 'running' | 'done' | 'cancelled' | 'error';
+  mode: 'push' | 'reconcile' | 'heal';
+  started_at: string | null;
+  finished_at: string | null;
+  per_mirror: SyncMirrorRow[];
+  total: number;
+  done: number;
+  copied: number;
+  skipped: number;
+  failed: number;
+  bytes: number;
+  current: string;
+  error: string | null;
+};
+
+export type DomainCheck = {
+  domain: string;
+  cname_target?: string | null;
+  resolved: string[];
+  dns_ok: boolean;
+  http_status: number | null;
+  cert_ok: boolean;
+  reachable: boolean;
+  hint?: string | null;
+  at?: string;
+};
+
+/** Mulai sync di background (job) — respons langsung, progres lewat status. */
+export async function startStorageSync(
+  mode: 'push' | 'reconcile' | 'heal' = 'push',
+  limit = 50,
+  maxSizeMb = 500
+): Promise<{ started: boolean; message?: string; mode?: string }> {
+  return adminFetch('/api/admin/settings/storage/sync', {
+    method: 'POST',
+    body: JSON.stringify({ mode, limit, max_size_mb: maxSizeMb })
+  });
 }
+
+export async function storageSyncStatus(): Promise<SyncJobStatus> {
+  return adminFetch<SyncJobStatus>('/api/admin/settings/storage/sync/status');
+}
+
+export async function cancelStorageSync(): Promise<{ cancelled: boolean; message?: string }> {
+  return adminFetch('/api/admin/settings/storage/sync/cancel', { method: 'POST' });
+}
+
+/** Cari satu objek di semua provider (primary + mirror). */
+export async function locateStorageObject(key: string): Promise<{
+  key: string;
+  found: number;
+  locations: {
+    id: string;
+    name: string | null;
+    provider: string;
+    bucket: string;
+    object_key: string;
+    exists: boolean;
+    size: number | null;
+    url: string | null;
+    error?: string;
+  }[];
+}> {
+  return adminFetch(`/api/admin/settings/storage/locate?key=${encodeURIComponent(key)}`);
+}
+
+export async function setCustomDomain(id: string, domain: string): Promise<{
+  storage: StorageConfigView;
+  result: DomainCheck;
+}> {
+  const data = await adminFetch<{ storage: StorageConfigView; result: DomainCheck }>(
+    `/api/admin/settings/storage/${id}/custom-domain`,
+    { method: 'POST', body: JSON.stringify({ domain }) }
+  );
+  revalidatePath('/dashboard/settings/storage');
+  return data;
+}
+
+export async function checkStorageDomain(domain: string, itemId?: string): Promise<DomainCheck> {
+  const data = await adminFetch<{ result: DomainCheck; storage_id: string }>(
+    '/api/admin/settings/storage/domain-check',
+    { method: 'POST', body: JSON.stringify({ domain, item_id: itemId || null }) }
+  );
+  return data.result;
+}
+

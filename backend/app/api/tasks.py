@@ -394,7 +394,7 @@ async def compose_task_clips(
         )
     ).scalars().all()
     if len({str(clip.id) for clip in found}) != len(clip_ids):
-        raise HTTPException(status_code=400, detail="Ada clip_id yang tidak valid untuk task ini")
+        raise HTTPException(status_code=400, detail="One or more clip IDs are not valid for this task")
 
     profile = (
         await db.execute(select(UserProfile).where(UserProfile.user_id == current_user.id))

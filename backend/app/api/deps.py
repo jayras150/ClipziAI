@@ -70,7 +70,7 @@ async def get_current_user(
     if await is_token_revoked(db, user.id, payload):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Sesi sudah berakhir, silakan masuk lagi",
+            detail="Your session has expired. Please sign in again.",
         )
 
     return user

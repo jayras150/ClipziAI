@@ -131,9 +131,16 @@ export function BrandLogo({
 
   const brandClass = variant === "landing" ? "brand" : "ui-brand"
   const markClass = variant === "landing" ? "brand-mark" : "ui-brand-mark"
+  // Bila logo gambar sudah diunggah, header hanya menampilkan gambar (tanpa teks
+  // nama) supaya tidak dobel/turang rapi. Tanpa logo, tetap ada mark + nama.
+  const withName = showName && !logo
 
   return (
-    <Link className={`${brandClass} ${className}`.trim()} href={href} onClick={onClick}>
+    <Link
+      className={`${brandClass} ${logo ? "brand-has-image" : ""} ${className}`.trim()}
+      href={href}
+      onClick={onClick}
+    >
       {logo ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -144,7 +151,7 @@ export function BrandLogo({
       ) : (
         <span className={markClass}>▶</span>
       )}
-      {showName ? <span>{name}</span> : null}
+      {withName ? <span>{name}</span> : null}
     </Link>
   )
 }
