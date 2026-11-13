@@ -366,6 +366,25 @@ Semua upload memakai satu pintu: `app/services/storage_registry.py` → `get_sto
 - Aksi di `Settings › Storage`: tambah/edit, **Uji** (put→head→delete), jadikan
   **primary**, toggle **mirror**, hapus, dan **Sync**.
 
+### Kalau uji koneksi storage gagal
+
+Tombol **Uji** mencoba dua mode addressing (virtual-hosted lalu path-style) dan, bila
+provider menutup koneksi (Backblaze sering begitu saat auth ditolak), sistem memanggil
+`ListBuckets` untuk mengambil **kode error asli**. Hasilnya ditampilkan sebagai
+`error_code` + `hint` yang bisa langsung ditindaklanjuti:
+
+| Kode | Arti | Solusi |
+|---|---|---|
+| `InvalidAccessKeyId` / `Malformed Access Key Id` | key salah format | B2: pakai **Application Key → keyID** (±31 karakter), bukan master keyID. R2: Access Key ID 32 hex, Secret 64 hex |
+| `SignatureDoesNotMatch` | secret salah / region beda | salin ulang secret; samakan `region` dengan endpoint (B2: `ca-east-006`, dst) |
+| `NoSuchBucket` | bucket tidak ada | buat bucket atau perbaiki nama |
+| `AccessDenied` | tidak ada izin tulis | beri izin `write`/`listFiles` pada key |
+| `ConnectionClosedError` / `EndpointConnectionError` | endpoint tak terjangkau | cek penulisan endpoint (`https://s3.<region>.backblazeb2.com`) |
+
+Saat menyimpan, admin juga menampilkan **peringatan format kredensial** (mis. access key
+B2 terlalu pendek) supaya salah tempel ketahuan sebelum menekan Uji.
+
+
 ## AI provider & daftar model
 
 Semua provider memakai API chat-completions yang kompatibel OpenAI, jadi satu klien
