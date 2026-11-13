@@ -314,6 +314,26 @@ def _make_create_instance(task_id: UUID, client: Any):
             worker_env["CLIPZI_CALLBACK_URL"] = settings.CLIPZI_CALLBACK_URL
         if settings.CLIPZI_WORKER_TOKEN:
             worker_env["CLIPZI_WORKER_TOKEN"] = settings.CLIPZI_WORKER_TOKEN
+        # Worker menulis progres + klip langsung ke database dan membaca
+        # konfigurasi storage dari `platform_settings`. Kredensial di sana
+        # terenkripsi, jadi ENCRYPTION_KEY wajib sama dengan API. Tanpa ini
+        # upload gagal dengan "storage belum dikonfigurasi".
+        worker_env["DATABASE_URL"] = settings.DATABASE_URL
+        worker_env["ENCRYPTION_KEY"] = settings.ENCRYPTION_KEY
+        worker_env["SECRET_KEY"] = settings.SECRET_KEY
+        for optional in (
+            "SUPABASE_URL",
+            "SUPABASE_KEY",
+            "REDIS_URL",
+            "R2_ACCESS_KEY_ID",
+            "R2_SECRET_ACCESS_KEY",
+            "R2_ENDPOINT_URL",
+            "R2_BUCKET_NAME",
+            "R2_PUBLIC_DOMAIN",
+        ):
+            value = getattr(settings, optional, None)
+            if value:
+                worker_env[optional] = value
 
         kwargs: Dict[str, Any] = {
             "disk": settings.VAST_WORKER_DISK,

@@ -11,6 +11,8 @@ sudah dipakai selama ini, sehingga deployment lama tidak berubah perilaku.
 """
 from __future__ import annotations
 
+import asyncio
+import logging
 import re
 import threading
 from dataclasses import dataclass
@@ -22,6 +24,8 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from app.core.config import get_settings
 from app.core.security import decrypt_field, encrypt_field
+
+logger = logging.getLogger(__name__)
 
 STORAGE_KEY = "storage"
 
@@ -301,7 +305,15 @@ class StorageService:
             return None, None
         try:
             return item, self._resolved(item)
-        except Exception:
+        except Exception as exc:
+            # Tanpa log ini, kegagalan dekripsi/kredensial tampak seperti
+            # "storage belum dikonfigurasi" tanpa petunjuk apa pun.
+            logger.warning(
+                "Storage '%s' tidak bisa dipakai (%s): %s",
+                item.get("id"),
+                item.get("provider"),
+                exc,
+            )
             return None, None
 
     # ---------- replikasi ke mirror ----------
@@ -417,8 +429,34 @@ class StorageService:
 
 
 def get_storage() -> StorageService:
-    """Entry point tunggal untuk seluruh aplikasi (sinkron, tanpa DB)."""
+    """Entry point tunggal untuk seluruh aplikasi (sinkron, tanpa DB).
+
+    Konfigurasi dimuat sekali secara lazy. Ini penting untuk **worker** yang
+    menjalankan pipeline langsung (bukan lewat startup FastAPI): tanpa lazy load,
+    `_config` masih kosong sehingga semua upload gagal dengan pesan
+    "storage belum dikonfigurasi (Settings > Storage)" walau dashboard sudah
+    berisi provider.
+    """
+    if not get_config().get("items"):
+        _ensure_loaded_sync()
     return StorageService()
+
+
+def _ensure_loaded_sync() -> None:
+    """Muat konfigurasi storage dari DB pada konteks sinkron (worker pipeline)."""
+    try:
+        asyncio.run(load_storage_config())
+        if get_config().get("items"):
+            return
+    except RuntimeError:
+        # Ada event loop berjalan: jangan dipaksa; pakai seed dari env.
+        logger.debug("load_storage_config() dilewati (event loop aktif)")
+    except Exception as exc:
+        logger.warning("Gagal memuat konfigurasi storage dari DB: %s", exc)
+    try:
+        set_config(_from_env())
+    except Exception as exc:
+        logger.warning("Seed storage dari env gagal: %s", exc)
 
 
 async def load_storage_config() -> Dict[str, Any]:

@@ -76,3 +76,83 @@ def test_public_view_menyertakan_provider_presets():
     view = public_view({"items": [], "primary_id": None, "mirror_ids": []})
     ids = [row["id"] for row in view["providers"]]
     assert "r2" in ids and "b2" in ids
+
+
+def test_get_storage_memuat_konfigurasi_bila_cache_kosong(monkeypatch):
+    """Worker: `get_storage()` wajib lazy-load konfigurasi.
+
+    Regresi: dulu worker tidak pernah memanggil `load_storage_config()` (hanya
+    startup FastAPI), sehingga cache kosong dan semua upload gagal dengan pesan
+    "storage belum dikonfigurasi (Settings > Storage)".
+    """
+    from app.services import storage_registry as reg
+
+    monkeypatch.setattr(reg, "_config", dict(reg.DEFAULT_STORAGE))
+    calls = {"n": 0}
+
+    async def fake_load():
+        calls["n"] += 1
+        return reg.set_config(
+            {
+                "primary_id": "p1",
+                "mirror_ids": [],
+                "items": [
+                    {
+                        "id": "p1",
+                        "name": "uji",
+                        "provider": "r2",
+                        "bucket": "b",
+                        "endpoint": "https://x",
+                        "region": "auto",
+                        "access_key_enc": "x",
+                        "secret_key_enc": "y",
+                        "enabled": True,
+                    }
+                ],
+            }
+        )
+
+    monkeypatch.setattr(reg, "load_storage_config", fake_load)
+
+    service = reg.get_storage()
+
+    assert calls["n"] == 1
+    assert service.primary_id == "p1"
+    assert len(service.items) == 1
+
+
+def test_get_storage_tidak_memuat_ulang_bila_sudah_terisi(monkeypatch):
+    from app.services import storage_registry as reg
+
+    monkeypatch.setattr(
+        reg,
+        "_config",
+        reg.normalize_config(
+            {
+                "primary_id": "p1",
+                "items": [
+                    {
+                        "id": "p1",
+                        "name": "uji",
+                        "provider": "r2",
+                        "bucket": "b",
+                        "endpoint": "https://x",
+                        "region": "auto",
+                        "access_key_enc": "x",
+                        "secret_key_enc": "y",
+                        "enabled": True,
+                    }
+                ],
+            }
+        ),
+    )
+    calls = {"n": 0}
+
+    async def fake_load():  # pragma: no cover - tidak boleh terpanggil
+        calls["n"] += 1
+        return {}
+
+    monkeypatch.setattr(reg, "load_storage_config", fake_load)
+
+    reg.get_storage()
+    assert calls["n"] == 0
