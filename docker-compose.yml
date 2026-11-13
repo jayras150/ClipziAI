@@ -9,8 +9,9 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      # Override khusus compose: database memakai service `db` di jaringan Docker
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/clipzi
+      # CATATAN: jangan hardcode DATABASE_URL di sini. Produksi memakai Supabase
+      # dari backend/.env; override ke service `db` membuat API gagal start
+      # (host `db` tidak ada) saat container dijalankan tanpa profile db.
       - DEBUG=true
     volumes:
       - ./backend:/app
