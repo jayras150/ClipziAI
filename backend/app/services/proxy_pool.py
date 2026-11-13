@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import time
 from datetime import datetime, timezone
@@ -26,6 +27,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.services.platform_settings import get_setting, set_setting
 from app.services.proxy_parser import mask_url, parse_proxy_text
+
+logger = logging.getLogger(__name__)
 
 PROXY_KEY = "proxy_pool"
 CACHE_TTL = 30
@@ -298,8 +301,15 @@ async def start_filter(
     timeout: float = 8.0,
     concurrency: int = 25,
     check_youtube: bool = True,
+    db: Optional[AsyncSession] = None,
 ) -> Dict[str, Any]:
-    """Mulai job filter di background (dipanggil tombol START FILTER)."""
+    """Mulai job filter di background (dipanggil tombol START FILTER).
+
+    Bila klien tidak mengirim teks/item apa pun (mis. halaman admin baru dibuka
+    dan daftar proxy sudah tersimpan), job memakai **pool tersimpan** sebagai
+    kandidat. Tanpa fallback ini tombol START FILTER selalu menjawab
+    "Tidak ada proxy valid untuk diuji" dan proxy aktif tidak pernah terbentuk.
+    """
     global _task
     if _task and not _task.done():
         return {"started": False, "status": _job, "message": "Filter masih berjalan"}
@@ -310,6 +320,11 @@ async def start_filter(
         candidates.extend(parsed["items"])
     if items:
         candidates.extend(normalize_items(items))
+    if not candidates and db is not None:
+        stored = await get_pool(db)
+        candidates.extend(normalize_items(stored.get("items")))
+        if candidates:
+            logger.info("Filter proxy memakai %s proxy tersimpan", len(candidates))
 
     deduped: List[Dict[str, Any]] = []
     seen = set()

@@ -98,7 +98,7 @@ export function ProxyManager({ initial }: { initial: ProxyPoolView }) {
     startTransition(async () => {
       try {
         const result = await startProxyFilter({
-          text: mode === "paste" ? text : undefined,
+          text: mode === "paste" && preview?.source === "paste" ? text : undefined,
           items: preview?.source === "files" ? (preview.items as ProxyItem[]) : undefined,
           check_youtube: true
         });
@@ -183,6 +183,16 @@ export function ProxyManager({ initial }: { initial: ProxyPoolView }) {
             </Button>
             <Button size="sm" variant="outline" onClick={onToggleAutoUse} disabled={pending}>
               {pool.auto_use ? "Matikan auto-use" : "Aktifkan auto-use"}
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={onStartFilter}
+              disabled={filtering || pending || !pool.items.length}
+              className="gap-2"
+            >
+              {filtering ? <ClipzySpinner size="xs" variant="ring" /> : null}
+              {filtering ? "Menguji proxy…" : `Uji ulang ${pool.items.length} proxy tersimpan`}
             </Button>
             <Button size="sm" variant="ghost" render={<a href="/api/proxies/active" download />}>
               Unduh active.txt ({pool.active_txt_lines})

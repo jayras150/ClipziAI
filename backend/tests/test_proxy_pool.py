@@ -96,3 +96,59 @@ def test_normalize_pool_membuang_proxy_mati():
     assert pool["active_txt"] == "http://a:1\n"
     assert len(pool["items"]) == 2
     assert pool["items"][0]["status"] == "active"
+
+
+def test_start_filter_memakai_pool_tersimpan(monkeypatch):
+    """START FILTER tanpa input harus menguji proxy yang sudah tersimpan.
+
+    Regresi: dulu kandidat hanya diambil dari payload request, sehingga
+    membuka halaman admin lalu menekan START FILTER selalu menjawab
+    "Tidak ada proxy valid untuk diuji" dan tidak ada proxy aktif yang terbentuk.
+    """
+    import asyncio
+
+    from app.services import proxy_pool
+
+    stored = {
+        "items": [
+            {"url": "http://1.2.3.4:8080", "status": "active"},
+            {"url": "socks5://1.2.3.5:1080", "status": "unchecked"},
+        ]
+    }
+    seen: dict = {}
+
+    async def fake_get_pool(db):  # noqa: ANN001 - signature mengikuti aslinya
+        assert db is not None
+        return stored
+
+    async def fake_run_filter(candidates, target, timeout, concurrency, check_youtube):
+        seen["urls"] = [item["url"] for item in candidates]
+
+    monkeypatch.setattr(proxy_pool, "get_pool", fake_get_pool)
+    monkeypatch.setattr(proxy_pool, "_run_filter", fake_run_filter)
+    monkeypatch.setattr(proxy_pool, "_task", None)
+
+    async def scenario():
+        result = await proxy_pool.start_filter(db=object())  # type: ignore[arg-type]
+        task = proxy_pool._task
+        if task is not None:
+            await task
+        return result
+
+    result = asyncio.run(scenario())
+    assert result["started"] is True
+    assert result["total"] == 2
+    assert seen["urls"] == ["http://1.2.3.4:8080", "socks5://1.2.3.5:1080"]
+
+
+def test_start_filter_tanpa_kandidat_menolak(monkeypatch):
+    """Tanpa input dan tanpa DB, job tidak boleh jalan (menghindari tes kosong)."""
+    import asyncio
+
+    from app.services import proxy_pool
+
+    monkeypatch.setattr(proxy_pool, "_task", None)
+
+    result = asyncio.run(proxy_pool.start_filter())
+    assert result["started"] is False
+    assert "Tidak ada proxy" in result["message"]

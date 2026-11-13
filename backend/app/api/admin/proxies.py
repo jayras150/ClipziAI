@@ -160,6 +160,7 @@ async def start_filter(
         timeout=payload.timeout_s,
         concurrency=payload.concurrency,
         check_youtube=payload.check_youtube,
+        db=db,
     )
     if result.get("started"):
         await _audit(db, request, current_admin, "proxy_filter_started", {"total": result.get("total")})
