@@ -142,7 +142,16 @@ def effective_base_url(cfg: Dict[str, Any]) -> Optional[str]:
 def ai_is_configured(cfg: Dict[str, Any]) -> bool:
     if not cfg.get("enabled"):
         return False
-    if decrypt_api_key(cfg.get("api_key_enc")):
+    try:
+        key = decrypt_api_key(cfg.get("api_key_enc"))
+    except Exception:
+        return False
+    if key:
+        try:
+            # Key yang isinya Base URL / terlalu pendek tidak dianggap siap.
+            validate_api_key(key, str(cfg.get("provider") or ""))
+        except ValueError:
+            return False
         return True
     return cfg.get("provider") == "ollama" and bool(effective_base_url(cfg))
 

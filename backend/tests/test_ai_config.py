@@ -42,15 +42,32 @@ def test_ai_is_configured_butuh_key_atau_ollama():
     tanpa_key = ai_config.normalize_ai({"enabled": True, "provider": "openrouter"})
     assert ai_config.ai_is_configured(tanpa_key) is False
     dengan_key = ai_config.normalize_ai(
-        {"enabled": True, "provider": "openrouter", "api_key_enc": ai_config.encrypt_api_key("x1234567890")}
+        {
+            "enabled": True,
+            "provider": "openrouter",
+            "api_key_enc": ai_config.encrypt_api_key("sk-or-v1-0123456789abcdef"),
+        }
     )
     assert ai_config.ai_is_configured(dengan_key) is True
     ollama = ai_config.normalize_ai({"enabled": True, "provider": "ollama", "base_url": "http://localhost:11434/v1"})
     assert ai_config.ai_is_configured(ollama) is True
     nonaktif = ai_config.normalize_ai(
-        {"enabled": False, "provider": "openrouter", "api_key_enc": ai_config.encrypt_api_key("x1234567890")}
+        {
+            "enabled": False,
+            "provider": "openrouter",
+            "api_key_enc": ai_config.encrypt_api_key("sk-or-v1-0123456789abcdef"),
+        }
     )
     assert ai_config.ai_is_configured(nonaktif) is False
+    # key berisi Base URL tidak boleh dianggap siap (penyebab 401 OpenRouter)
+    url_key = ai_config.normalize_ai(
+        {
+            "enabled": True,
+            "provider": "openrouter",
+            "api_key_enc": ai_config.encrypt_api_key("https://openrouter.ai/api/v1"),
+        }
+    )
+    assert ai_config.ai_is_configured(url_key) is False
 
 
 def test_injeksi_env_langsung_berlaku_untuk_seluruh_sistem(monkeypatch):
@@ -203,7 +220,11 @@ def test_hint_menjelaskan_api_key_kosong():
 
 def test_public_config_menyertakan_status_siap():
     cfg = ai_config.normalize_ai(
-        {"enabled": True, "provider": "openrouter", "api_key_enc": ai_config.encrypt_api_key("sk-x-1234567890")}
+        {
+            "enabled": True,
+            "provider": "openrouter",
+            "api_key_enc": ai_config.encrypt_api_key("sk-or-v1-0123456789abcdef"),
+        }
     )
     public = ai_config.public_ai_config(cfg)
     assert public["ready"] is True
