@@ -14,6 +14,7 @@ from app.models.audit_log import ActorType, AuditLog
 from app.models.clip import Clip
 from app.models.task import Task, TaskStatus
 from app.models.user import User
+from app.services.vast_worker import dispatch_mode, submit_task
 
 router = APIRouter(dependencies=[Depends(get_current_admin)])
 
@@ -173,5 +174,35 @@ async def retry_task(
     task.progress = 0
     task.error_message = None
     await db.commit()
-    await _audit(db, request, current_admin, "task_retried", str(task_id), {"from": before})
-    return {"message": f"Task {task_id} dimasukkan kembali ke antrean", "status": "queued"}
+
+    # Kirim ulang ke worker. Tanpa langkah ini task hanya berubah status jadi
+    # `queued` dan TIDAK PERNAH diproses (tidak ada scheduler yang menarik
+    # antrean), sehingga tombol Retry terlihat berhasil tapi task menggantung.
+    dispatch = await submit_task(task.id)
+    if not dispatch.get("queued"):
+        task.status = TaskStatus.ERROR
+        task.error_message = (
+            f"Gagal mengirim ulang task ke worker (mode {dispatch_mode()}): "
+            f"{dispatch.get('error') or 'tanpa keterangan'}"
+        )
+        await db.commit()
+
+    await _audit(
+        db,
+        request,
+        current_admin,
+        "task_retried",
+        str(task_id),
+        {"from": before, "dispatch_mode": dispatch_mode(), "queued": bool(dispatch.get("queued"))},
+    )
+    if dispatch.get("queued"):
+        return {
+            "message": f"Task {task_id} dimasukkan kembali ke antrean",
+            "status": "queued",
+            "dispatch_mode": dispatch_mode(),
+        }
+    return {
+        "message": f"Task {task_id} gagal dikirim ke worker: {task.error_message}",
+        "status": "error",
+        "dispatch_mode": dispatch_mode(),
+    }
