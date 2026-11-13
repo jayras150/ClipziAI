@@ -74,10 +74,21 @@ async def destroy_worker_instance(
         raise HTTPException(status_code=503, detail="VAST_API_KEY belum diset")
 
     client = _get_vast_client()
+    already_gone = False
     try:
         await asyncio.to_thread(client.destroy_instance, instance_id)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Gagal menghapus: {exc}") from exc
+        # Vast membalas 404 bila instance sudah tidak ada (mis. dihapus otomatis
+        # setelah container mati, atau sisa baris lama). Itu bukan kegagalan:
+        # tanpa toleransi ini, baris "ghost" tidak bisa dibersihkan dari dashboard.
+        if "404" in str(exc) or "not found" in str(exc).lower():
+            already_gone = True
+            logger.warning(
+                "Instance %s sudah tidak ada di Vast (404); baris ditandai destroyed.",
+                instance_id,
+            )
+        else:
+            raise HTTPException(status_code=502, detail=f"Gagal menghapus: {exc}") from exc
 
     row: Optional[WorkerInstance] = (
         await db.execute(
@@ -89,10 +100,10 @@ async def destroy_worker_instance(
     ).scalar_one_or_none()
     if row is not None:
         row.state = "destroyed"
-        row.destroy_reason = "admin manual"
+        row.destroy_reason = ("admin manual (sudah tidak ada)" if already_gone else "admin manual")[:120]
         await db.commit()
 
     logger.warning(
         "Admin %s menghapus instance %s secara manual", current_user.email, instance_id
     )
-    return {"ok": True, "instance_id": instance_id}
+    return {"ok": True, "instance_id": instance_id, "already_gone": already_gone}
