@@ -29,7 +29,10 @@ class _FakeClient:
     def show_instance(self, instance_id: int) -> Optional[Dict[str, Any]]:
         if not self.sequence:
             return self.default
-        return self.sequence.pop(0)
+        item = self.sequence.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
 
     def show_instances(self) -> List[Dict[str, Any]]:
         return [{"id": i, "actual_status": "running"} for i in self.existing_ids]
@@ -175,12 +178,37 @@ def test_watch_toleran_404_sesaat():
     assert outcome == "done", reason
 
 
-def test_watch_404_tiga_kali_baru_gagal():
+def test_watch_404_lima_kali_baru_gagal():
     client = _FakeClient([], default=None, existing_ids=[])
     sup = _supervisor(client, ["queued"])
     outcome, reason = asyncio.run(sup._watch(1))
     assert outcome == "failed"
     assert "404" in reason
+
+
+def test_watch_galat_jaringan_bukan_instance_hilang():
+    """Timeout/koneksi putus tidak boleh dihitung sebagai instance hilang."""
+    client = _FakeClient(
+        [
+            TimeoutError("read timeout"),
+            OSError("Connection reset by peer"),
+            TimeoutError("read timeout"),
+            {"actual_status": "running"},
+            {"actual_status": "running"},
+        ],
+        default={"actual_status": "running"},
+    )
+    sup = _supervisor(client, ["processing", "processing", "processing", "completed"])
+    outcome, reason = asyncio.run(sup._watch(1))
+    assert outcome == "done", reason
+
+
+def test_watch_404_tidak_membunuh_task_yang_sedang_processing():
+    """404 berulang + task masih processing => instance dipertahankan."""
+    client = _FakeClient([], default=None, existing_ids=[])
+    sup = _supervisor(client, ["processing"] * 8 + ["completed"])
+    outcome, reason = asyncio.run(sup._watch(1))
+    assert outcome == "done", reason
 
 
 def test_make_create_instance_meneruskan_env_dan_id(monkeypatch):

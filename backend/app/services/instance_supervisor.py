@@ -161,23 +161,49 @@ class InstanceSupervisor:
             if time.monotonic() - started > settings.VAST_ONESHOT_TIMEOUT:
                 return "failed", "melewati batas waktu task"
 
+            info = None
+            transient_error = ""
             try:
                 info = await loop.run_in_executor(
                     None, self.client.show_instance, instance_id
                 )
             except Exception as exc:
+                # Simpan pesan asli: galat jaringan/rate-limit BUKAN bukti
+                # instance sudah tidak ada (dulu semuanya dihitung "404").
+                transient_error = str(exc)
                 logger.warning("show_instance(%s) gagal: %s", instance_id, exc)
-                info = None
 
             if not info:
+                text = transient_error.lower()
+                explicit_404 = ("404" in text) or ("not found" in text)
+                if transient_error and not explicit_404:
+                    # Galat sementara: pertahankan instance, coba lagi nanti.
+                    await asyncio.sleep(settings.VAST_SUPERVISOR_INTERVAL)
+                    continue
                 # Vast kadang membalas 404 sesaat saat container masih dibuat.
-                # Jangan langsung membunuh instance: konfirmasi dulu ke daftar
-                # instance, baru nyatakan hilang setelah 3 kali berturut-turut.
+                # Konfirmasi dulu ke daftar instance, dan baru nyatakan hilang
+                # setelah 5 kali berturut-turut (sebelumnya 3 -> terlalu cepat,
+                # instance yang masih bekerja ikut dibuang lalu diganti baru
+                # sehingga dua instance menagih bersamaan).
                 missing += 1
                 if missing >= 2 and await self._instance_exists(instance_id):
                     missing = 0
-                elif missing >= 3:
-                    return "failed", "instance hilang (404 x3)"
+                elif missing >= 5:
+                    status_now = await self._task_status()
+                    if status_now in {"completed", "error", "cancelled"}:
+                        return "done", status_now or "terminal"
+                    if status_now == "processing":
+                        # Task jelas sedang dikerjakan worker: jangan bunuh.
+                        logger.warning(
+                            "Instance %s 404 tapi task %s masih processing; "
+                            "instance dipertahankan.",
+                            instance_id,
+                            self.task_id,
+                        )
+                        missing = 0
+                        await asyncio.sleep(settings.VAST_SUPERVISOR_INTERVAL)
+                        continue
+                    return "failed", "instance hilang (404 x5)"
                 await asyncio.sleep(settings.VAST_SUPERVISOR_INTERVAL)
                 continue
             missing = 0
