@@ -25,6 +25,7 @@ from app.api.admin import settings as admin_settings
 from app.api.admin import ai as admin_ai
 from app.api.admin import branding as admin_branding
 from app.api.admin import platform as admin_platform
+from app.api.admin import proxies as admin_proxies
 from app.api import branding as public_branding
 from app.api.admin import youtube as admin_youtube
 from app.api.admin import workers as admin_workers
@@ -78,6 +79,13 @@ async def lifespan(app: FastAPI):
         await load_and_apply_platform_config()
     except Exception as exc:
         logger.warning("Gagal memuat setelan platform dari database: %s", exc)
+    # Pool proxy YouTube (hasil filter aktif) dipakai otomatis oleh downloader.
+    try:
+        from app.services.proxy_pool import load_and_apply_proxy_pool
+
+        await load_and_apply_proxy_pool()
+    except Exception as exc:
+        logger.warning("Gagal memuat pool proxy dari database: %s", exc)
     yield
     # Shutdown
     await engine.dispose()
@@ -181,6 +189,9 @@ app.include_router(admin_settings.router, prefix="/api/admin/settings", tags=["A
 app.include_router(admin_ai.router, prefix="/api/admin/settings", tags=["Admin AI Settings"])
 app.include_router(
     admin_platform.router, prefix="/api/admin/settings", tags=["Admin Platform Settings"]
+)
+app.include_router(
+    admin_proxies.router, prefix="/api/admin/settings/proxies", tags=["Admin Proxy Pool"]
 )
 app.include_router(
     admin_branding.router, prefix="/api/admin/settings", tags=["Admin Branding"]

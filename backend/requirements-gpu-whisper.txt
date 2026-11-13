@@ -14,3 +14,5 @@ nvidia-cublas-cu12>=12.1
 nvidia-cudnn-cu12>=9.0
 # Runtime CUDA (libcudart.so.12) — dibutuhkan llama-server (LLM lokal Qwen3).
 nvidia-cuda-runtime-cu12>=12.1
+# Plugin PO token YouTube (server bgutil dijalankan oleh onstart)
+bgutil-ytdlp-pot-provider>=1.2.0

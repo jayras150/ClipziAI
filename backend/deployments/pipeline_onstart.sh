@@ -55,6 +55,31 @@ except Exception as exc:
 PY
 fi
 
+# --- PO token provider (bgutil) -------------------------------------------
+# Plugin `youtubepot-bgutilhttp` otomatis memakai http://127.0.0.1:4416, jadi
+# cukup jalankan server-nya. Kalau gagal, pipeline tetap lanjut (fallback ke
+# cookies / proxy) daripada menggagalkan task.
+if [ -f /opt/bgutil/server/build/main.js ] && command -v node >/dev/null 2>&1; then
+    node /opt/bgutil/server/build/main.js --port 4416 --host 127.0.0.1 \
+        >> /tmp/bgutil-provider.log 2>&1 &
+    "$PYTHON_BIN" - <<'PY' || true
+import socket
+import time
+
+for _ in range(30):
+    try:
+        with socket.create_connection(("127.0.0.1", 4416), timeout=1):
+            print("[onstart] bgutil PO token provider siap", flush=True)
+            break
+    except OSError:
+        time.sleep(1)
+else:
+    print("[onstart] bgutil provider tidak siap; lanjut tanpa PO token", flush=True)
+PY
+else
+    echo "[onstart] bgutil provider tidak ada di image; lanjut tanpa PO token"
+fi
+
 echo "[onstart] menjalankan pipeline untuk task ${CLIPZI_TASK_ID} (python: ${PYTHON_BIN})"
 
 exec "$PYTHON_BIN" -u -c '

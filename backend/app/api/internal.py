@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -248,4 +249,13 @@ async def host_metrics(
     _verify_agent_token(request)
     sample = store.record(payload.model_dump(exclude_none=True))
     return {"ok": True, "ts": sample["ts"]}
+
+@router.get("/proxies/active.txt", response_class=PlainTextResponse)
+async def active_proxies(request: Request, db: AsyncSession = Depends(get_db_session)):
+    """File proxy aktif untuk worker (fallback bila env YTDLP_PROXY_POOL kosong)."""
+    from app.services import proxy_pool
+
+    _verify_agent_token(request)
+    pool = await proxy_pool.get_pool(db)
+    return PlainTextResponse(pool.get("active_txt") or "", media_type="text/plain; charset=utf-8")
 

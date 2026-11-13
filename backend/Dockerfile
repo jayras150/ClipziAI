@@ -168,10 +168,26 @@ USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
         openssh-client \
         openssh-server \
+        nodejs \
+        npm \
+        git \
+        curl \
+        ca-certificates \
     && mkdir -p /run/sshd \
     && rm -rf /var/lib/apt/lists/* \
     && ssh -V \
-    && command -v sshd
+    && command -v sshd \
+    && node --version
+
+# PO token provider (bgutil) untuk YouTube. Server ini dibaking saat build supaya
+# boot instance Vast tetap cepat; `pipeline_onstart.sh` hanya menjalankannya.
+# Tanpa PO token, YouTube sering hanya mengirim storyboard (format video kosong).
+RUN git clone --depth 1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /opt/bgutil \
+    && cd /opt/bgutil/server \
+    && npm install --no-audit --no-fund \
+    && npm run build \
+    && test -f /opt/bgutil/server/build/main.js \
+    && git -C /opt/bgutil rev-parse --short HEAD > /opt/bgutil/COMMIT
 USER clipzi
 
 COPY --from=builder-worker /opt/venv /opt/venv

@@ -5,6 +5,8 @@ import { SubmitButton } from '@/components/ui/submit-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { ProxyManager } from '@/features/settings/components/proxy-manager';
+import type { ProxyPoolView } from '../proxy-actions';
 import { adminFetch } from '@/lib/clipzi';
 import {
   deleteCookie,
@@ -48,9 +50,10 @@ function fmt(value: string | null): string {
 }
 
 export default async function YoutubeCookiesPage() {
-  const [cookies, settings] = await Promise.all([
+  const [cookies, settings, proxyPool] = await Promise.all([
     adminFetch<CookieRow[]>('/api/admin/ytdlp-cookies'),
-    adminFetch<Settings>('/api/admin/ytdlp-cookies/settings')
+    adminFetch<Settings>('/api/admin/ytdlp-cookies/settings'),
+    adminFetch<ProxyPoolView>('/api/admin/settings/proxies')
   ]);
 
   return (
@@ -211,6 +214,7 @@ export default async function YoutubeCookiesPage() {
             </div>
           </CardContent>
         </Card>
+        <ProxyManager initial={proxyPool} />
       </div>
     </PageContainer>
   );

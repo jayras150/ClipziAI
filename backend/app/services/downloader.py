@@ -15,6 +15,7 @@ private / member-only.
 import asyncio
 import base64
 import binascii
+import json
 import logging
 import os
 from pathlib import Path
@@ -92,6 +93,22 @@ def looks_like_bot_check(message: str) -> bool:
     """True bila YouTube minta verifikasi login (bukan masalah format)."""
     lowered = (message or "").lower()
     return any(marker in lowered for marker in BOT_CHECK_MARKERS)
+
+
+def _proxy_pool_from_env() -> list[str]:
+    """Daftar proxy aktif (hasil filter di dashboard) untuk rotasi."""
+    raw = (os.environ.get("YTDLP_PROXY_POOL") or "").strip()
+    if raw:
+        try:
+            data = json.loads(raw)
+            if isinstance(data, list):
+                urls = [str(u) for u in data if isinstance(u, str) and "://" in u]
+                if urls:
+                    return urls[:10]
+        except Exception:
+            pass
+    single = (settings.YTDLP_PROXY or "").strip()
+    return [single] if single else []
 
 
 def ytdlp_version() -> str:
@@ -283,34 +300,50 @@ class VideoDownloader:
         base_opts = self._base_ydl_opts(cookies_path)
         height = int(str(quality).strip()) if str(quality).strip().isdigit() else 720
 
-        attempts: list[tuple[Optional[list[str]], str, bool]] = []
+        pool = _proxy_pool_from_env()
+        cookie_available = bool(base_opts.get("cookiefile"))
         if require_audio:
-            # Dipakai saat unduhan sebelumnya ternyata tanpa stream audio
-            # (fallback `b*` bisa memilih video-only). Hanya format yang
-            # menjamin audio: video + audio-only.
-            audio_formats = [
+            # Hanya format yang menjamin audio (video + audio-only).
+            formats = [
                 f"bv*[height<={height}]+ba",
                 "bv*+ba",
                 "ba+bv*",
             ]
-            for clients in CLIENT_LADDER:
-                for fmt in audio_formats:
-                    attempts.append((clients, fmt, True))
-            attempts.append((None, "bv*+ba", False))
         else:
-            for clients in CLIENT_LADDER:
-                for fmt in format_ladder(height):
-                    attempts.append((clients, fmt, True))
-            # Last resort: tanpa cookies + format paling sederhana.
-            attempts.append((None, "b", False))
+            formats = format_ladder(height)
+
+        # (clients, format, pakai_cookie, proxy)
+        attempts: list[tuple[Optional[list[str]], str, bool, Optional[str]]] = []
+
+        # L1: cookies (+ PO token otomatis dari plugin bgutil bila aktif).
+        for clients in CLIENT_LADDER:
+            for fmt in formats:
+                attempts.append((clients, fmt, cookie_available, None))
+
+        # L2: tanpa cookies (cookie rusak / tidak diperlukan).
+        for fmt in formats[:2]:
+            attempts.append((None, fmt, False, None))
+
+        # L3/L4: proxy dari pool aktif (maks 3 proxy pertama, format utama).
+        for proxy_url in pool[:3]:
+            attempts.append((None, formats[0], cookie_available, proxy_url))
+            attempts.append((["web"], formats[1], cookie_available, proxy_url))
+
+        if not require_audio:
+            # Last resort tanpa cookie & tanpa proxy.
+            attempts.append((None, "b", False, None))
 
         loop = asyncio.get_event_loop()
         errors: list[str] = []
 
-        for clients, fmt, use_cookies in attempts:
+        for clients, fmt, use_cookies, proxy_url in attempts:
             ydl_opts: Dict[str, Any] = dict(base_opts)
             if not use_cookies:
                 ydl_opts.pop("cookiefile", None)
+            # Proxy hanya dipakai pada lapis proxy; lapis awal tetap langsung.
+            ydl_opts.pop("proxy", None)
+            if proxy_url:
+                ydl_opts["proxy"] = proxy_url
 
             ydl_opts.update(
                 {
@@ -340,9 +373,10 @@ class VideoDownloader:
                 ydl_opts["extractor_args"] = extractor_args
 
             has_cookie = bool(ydl_opts.get("cookiefile"))
+            proxy_tag = ("proxy=" + proxy_url.split("@")[-1]) if proxy_url else "direct"
             label = (
                 f"format={fmt} clients={','.join(clients) if clients else 'default'} "
-                f"cookies={'yes' if has_cookie else 'no'}"
+                f"cookies={'yes' if has_cookie else 'no'} {proxy_tag}"
             )
 
             try:
