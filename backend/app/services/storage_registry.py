@@ -15,6 +15,8 @@ import asyncio
 import logging
 import re
 import threading
+import time
+import urllib.request
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -209,6 +211,39 @@ def get_config() -> Dict[str, Any]:
     return _config
 
 
+# Cache hasil cek URL publik: (bucket|host) -> (ok, waktu_cek)
+_public_cache: Dict[str, tuple[bool, float]] = {}
+_PUBLIC_TTL = 600.0
+
+
+def public_url_reachable(url: str) -> bool:
+    """HEAD satu URL publik (dipakai Uji koneksi untuk status public access)."""
+    try:
+        request = urllib.request.Request(url, method="HEAD")
+        with urllib.request.urlopen(request, timeout=8) as response:
+            return 200 <= int(response.status) < 300
+    except Exception:
+        return False
+
+
+def _public_reachable(resolved: ResolvedStorage, url: str) -> bool:
+    """Cek (sekali per 10 menit per bucket) apakah URL publik bisa diakses."""
+    key = f"{resolved.bucket}|{resolved.public_domain}"
+    now = time.time()
+    cached = _public_cache.get(key)
+    if cached and now - cached[1] < _PUBLIC_TTL:
+        return cached[0]
+    ok = public_url_reachable(url)
+    _public_cache[key] = (ok, now)
+    if not ok:
+        logger.warning(
+            "URL publik %s menolak akses; memakai URL presigned. Aktifkan "
+            "public access (r2.dev/custom domain) di provider agar URL permanen.",
+            resolved.public_domain,
+        )
+    return ok
+
+
 @dataclass
 class ResolvedStorage:
     item: Dict[str, Any]
@@ -289,7 +324,12 @@ class StorageService:
     def _url(self, resolved: ResolvedStorage, object_key: str) -> str:
         key = self._key(resolved, object_key)
         if resolved.public_domain:
-            return resolved.public_domain + "/" + key
+            public = resolved.public_domain.rstrip("/") + "/" + key
+            if _public_reachable(resolved, public):
+                return public
+            # Bucket privat (r2.dev ditolak 403): pakai URL presigned supaya klip
+            # tetap bisa diunduh. Hasil cek di-cache 10 menit agar tidak HEAD
+            # setiap kali render klip.
         try:
             return resolved.client.generate_presigned_url(
                 "get_object",
@@ -550,8 +590,8 @@ def credential_warnings(provider: str, access_key: str, secret_key: str) -> List
     return warnings
 
 
-def _probe(resolved: ResolvedStorage, bucket: str) -> None:
-    """put -> head -> delete objek kecil (melempar exception bila gagal)."""
+def _probe(resolved: ResolvedStorage, bucket: str) -> str:
+    """put -> head objek kecil; kembalikan key (dihapus oleh `_probe_cleanup`)."""
     from uuid import uuid4
 
     key = "_clipzi_check/" + uuid4().hex + ".txt"
@@ -559,7 +599,14 @@ def _probe(resolved: ResolvedStorage, bucket: str) -> None:
         Bucket=bucket, Key=key, Body=b"clipzi-storage-check", ContentType="text/plain"
     )
     resolved.client.head_object(Bucket=bucket, Key=key)
-    resolved.client.delete_object(Bucket=bucket, Key=key)
+    return key
+
+
+def _probe_cleanup(resolved: ResolvedStorage, bucket: str, key: str) -> None:
+    try:
+        resolved.client.delete_object(Bucket=bucket, Key=key)
+    except Exception:
+        pass
 
 
 def _diagnose(item: Dict[str, Any]) -> Dict[str, Any]:
@@ -625,9 +672,21 @@ def test_item(item: Dict[str, Any]) -> Dict[str, Any]:
             candidate = dict(item)
             candidate["path_style"] = variant["path_style"]
             resolved = resolve(candidate, timeout=10)
-            _probe(resolved, resolved.bucket)
+            probe_key = _probe(resolved, resolved.bucket)
             latency = int((_time.monotonic() - started) * 1000)
             result: Dict[str, Any] = {"ok": True, "latency_ms": latency}
+            if resolved.public_domain:
+                public_url = resolved.public_domain.rstrip("/") + "/" + probe_key
+                reachable = public_url_reachable(public_url)
+                result["public_access"] = "ok" if reachable else "denied"
+                if not reachable:
+                    result["public_hint"] = (
+                        "Bucket privat: URL publik menolak akses (403). Sistem otomatis "
+                        "memakai URL presigned (berlaku 7 hari). Untuk URL permanen, "
+                        "aktifkan Public Development URL (r2.dev) atau pasang custom domain "
+                        "di provider."
+                    )
+            _probe_cleanup(resolved, resolved.bucket, probe_key)
             if variant["path_style"] != bool(item.get("path_style")):
                 result["suggested"] = {"path_style": variant["path_style"]}
                 result["note"] = "Berhasil dengan path-style " + ("aktif" if variant["path_style"] else "nonaktif") + "."

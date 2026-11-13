@@ -78,7 +78,67 @@ def test_public_view_menyertakan_provider_presets():
     assert "r2" in ids and "b2" in ids
 
 
-def test_get_storage_memuat_konfigurasi_bila_cache_kosong(monkeypatch):
+def test_url_publik_dipakai_bila_bisa_diakses(monkeypatch):
+    from app.services import storage_registry as reg
+
+    monkeypatch.setattr(reg, "_public_reachable", lambda resolved, url: True)
+
+    class _Client:
+        def generate_presigned_url(self, *a, **k):  # pragma: no cover
+            return "presigned"
+
+    resolved = reg.ResolvedStorage(
+        item={"id": "p1"},
+        client=_Client(),
+        bucket="files",
+        public_domain="https://pub.example",
+        path_prefix="",
+    )
+    service = reg.StorageService()
+    assert service._url(resolved, "clips/a.mp4") == "https://pub.example/clips/a.mp4"
+
+
+def test_url_presigned_dipakai_bila_bucket_privat(monkeypatch):
+    """r2.dev menolak (403) => URL harus presigned, bukan tautan mati."""
+    from app.services import storage_registry as reg
+
+    monkeypatch.setattr(reg, "_public_reachable", lambda resolved, url: False)
+
+    class _Client:
+        def generate_presigned_url(self, *args, **kwargs):
+            return "https://presigned/x.mp4?sign=abc"
+
+    resolved = reg.ResolvedStorage(
+        item={"id": "p1"},
+        client=_Client(),
+        bucket="files",
+        public_domain="https://pub.example",
+        path_prefix="",
+    )
+    service = reg.StorageService()
+    url = service._url(resolved, "clips/a.mp4")
+    assert url.startswith("https://presigned/")
+    assert "pub.example" not in url
+
+
+def test_public_url_reachable_false_saat_403(monkeypatch):
+    from app.services import storage_registry as reg
+
+    class _Denied:
+        status = 403
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(*_a, **_k):
+        raise reg.urllib.error.HTTPError("u", 403, "Forbidden", {}, None)  # type: ignore[attr-defined]
+
+    monkeypatch.setattr(reg.urllib.request, "urlopen", fake_urlopen)
+    assert reg.public_url_reachable("https://pub.example/x") is False
+
     """Worker: `get_storage()` wajib lazy-load konfigurasi.
 
     Regresi: dulu worker tidak pernah memanggil `load_storage_config()` (hanya
