@@ -41,6 +41,12 @@ export type VastConfigData = {
   retry_backoff: number;
   request_timeout: number;
   supervisor_interval: number;
+  restore_enabled: boolean;
+  restore_connection: string;
+  restore_src: string;
+  restore_dst: string;
+  restore_model_path: string;
+  restore_timeout: number;
   sources: Record<string, string>;
   ready: boolean;
 };
@@ -98,7 +104,13 @@ export default function VastPanel({
           max_attempts: Number(form.max_attempts),
           retry_backoff: Number(form.retry_backoff),
           request_timeout: Number(form.request_timeout),
-          supervisor_interval: Number(form.supervisor_interval)
+          supervisor_interval: Number(form.supervisor_interval),
+          restore_enabled: Boolean(form.restore_enabled),
+          restore_connection: form.restore_connection,
+          restore_src: form.restore_src,
+          restore_dst: form.restore_dst,
+          restore_model_path: form.restore_model_path,
+          restore_timeout: Number(form.restore_timeout)
         };
         if (apiKey.trim()) payload.api_key = apiKey.trim();
         if (clearKey) payload.clear_api_key = true;
@@ -261,6 +273,46 @@ export default function VastPanel({
               </div>
             </CardContent>
           </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Restore model dari Google Drive</CardTitle>
+              <CardDescription>
+                Setelah instance dibuat, backend menyalin folder model ke /workspace dan
+                pipeline menunggu sampai file stabil. Jika gagal, worker mengunduh ulang.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className='grid gap-3 md:grid-cols-3'>
+              <label className='text-muted-foreground flex items-center gap-2 text-sm md:col-span-3'>
+                <input
+                  type='checkbox'
+                  checked={Boolean(form.restore_enabled)}
+                  onChange={(event) => set('restore_enabled', event.target.checked)}
+                />
+                Aktifkan restore workspace sebelum pipeline
+              </label>
+              <div className='space-y-1'>
+                <label className='text-muted-foreground text-xs'>Connection ID Vast</label>
+                <Input value={form.restore_connection} onChange={(event) => set('restore_connection', event.target.value)} placeholder='47108' />
+              </div>
+              <div className='space-y-1'>
+                <label className='text-muted-foreground text-xs'>Path model di instance</label>
+                <Input value={form.restore_model_path} onChange={(event) => set('restore_model_path', event.target.value)} placeholder='/workspace/whisper_model' />
+              </div>
+              <div className='space-y-1'>
+                <label className='text-muted-foreground text-xs'>Timeout restore (detik)</label>
+                <Input type='number' min={60} max={3600} value={String(form.restore_timeout)} onChange={(event) => set('restore_timeout', event.target.value)} />
+              </div>
+              <div className='space-y-1 md:col-span-2'>
+                <label className='text-muted-foreground text-xs'>Source di Google Drive</label>
+                <Input value={form.restore_src} onChange={(event) => set('restore_src', event.target.value)} placeholder='/vast-backup/Clipzy/whisper_model' />
+              </div>
+              <div className='space-y-1'>
+                <label className='text-muted-foreground text-xs'>Destination di instance</label>
+                <Input value={form.restore_dst} onChange={(event) => set('restore_dst', event.target.value)} placeholder='/workspace' />
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>Timeout & retry</CardTitle>

@@ -80,6 +80,40 @@ else
     echo "[onstart] bgutil provider tidak ada di image; lanjut tanpa PO token"
 fi
 
+# --- Restore model Whisper dari Google Drive --------------------------------
+if [ -n "${CLIPZI_RESTORE_TIMEOUT:-}" ]; then
+    MODEL_PATH="${CLIPZI_RESTORE_MODEL_PATH:-/workspace/whisper_model}"
+    export GPU_WHISPER_MODEL="$MODEL_PATH"
+    echo "[onstart] menunggu restore model di ${MODEL_PATH} (maks ${CLIPZI_RESTORE_TIMEOUT}s)"
+    deadline=$(( $(date +%s) + CLIPZI_RESTORE_TIMEOUT ))
+    prev_size=""
+    stable=0
+    while :; do
+        if [ -f "$MODEL_PATH/model.bin" ]; then
+            size=$(wc -c < "$MODEL_PATH/model.bin" 2>/dev/null | tr -d ' ' || echo 0)
+            if [ "$size" = "$prev_size" ] && [ "${size:-0}" -gt 100000000 ]; then
+                stable=$((stable + 1))
+            else
+                stable=0
+            fi
+            prev_size="$size"
+            if [ "$stable" -ge 2 ]; then
+                echo "[onstart] restore selesai (${size} byte)"
+                break
+            fi
+        fi
+        if [ "$(date +%s)" -ge "$deadline" ]; then
+            echo "[onstart] restore timeout; fallback unduh model"
+            "$PYTHON_BIN" - <<PY || true
+from faster_whisper.utils import download_model
+download_model("large-v3", output_dir="$MODEL_PATH")
+PY
+            break
+        fi
+        sleep 10
+    done
+fi
+
 echo "[onstart] menjalankan pipeline untuk task ${CLIPZI_TASK_ID} (python: ${PYTHON_BIN})"
 
 exec "$PYTHON_BIN" -u -c '

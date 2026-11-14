@@ -40,6 +40,12 @@ DEFAULT_VAST: Dict[str, Any] = {
     "retry_backoff": 5,
     "request_timeout": 600,
     "supervisor_interval": 5,
+    "restore_enabled": False,
+    "restore_connection": "47108",
+    "restore_src": "/vast-backup/Clipzy/whisper_model",
+    "restore_dst": "/workspace",
+    "restore_model_path": "/workspace/whisper_model",
+    "restore_timeout": 900,
     "api_key_enc": "",
 }
 
@@ -66,6 +72,12 @@ FIELD_TO_ENV: Dict[str, str] = {
     "retry_backoff": "VAST_RETRY_BACKOFF",
     "request_timeout": "VAST_REQUEST_TIMEOUT",
     "supervisor_interval": "VAST_SUPERVISOR_INTERVAL",
+    "restore_enabled": "VAST_RESTORE_ENABLED",
+    "restore_connection": "VAST_RESTORE_CONNECTION",
+    "restore_src": "VAST_RESTORE_SRC",
+    "restore_dst": "VAST_RESTORE_DST",
+    "restore_model_path": "VAST_RESTORE_MODEL_PATH",
+    "restore_timeout": "VAST_RESTORE_TIMEOUT",
 }
 
 _INT_RANGES = {
@@ -81,6 +93,7 @@ _INT_RANGES = {
     "retry_backoff": (1, 300),
     "request_timeout": (30, 3600),
     "supervisor_interval": (2, 120),
+    "restore_timeout": (60, 3600),
 }
 
 _STR_FIELDS = (
@@ -89,6 +102,10 @@ _STR_FIELDS = (
     "worker_image",
     "template_hash",
     "gpu_filter",
+    "restore_connection",
+    "restore_src",
+    "restore_dst",
+    "restore_model_path",
 )
 
 _MODES = {"", "auto", "http", "sdk", "oneshot"}
@@ -100,6 +117,14 @@ def _clamp_int(value: Any, low: int, high: int, default: int) -> int:
     except (TypeError, ValueError):
         number = default
     return max(low, min(high, number))
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def normalize_allowlist(value: Any) -> List[str]:
@@ -148,6 +173,7 @@ def normalize_vast(raw: Optional[dict]) -> Dict[str, Any]:
         merged[field] = str(merged.get(field) or "").strip()[:400]
 
     merged["gpu_allowlist"] = normalize_allowlist(merged.get("gpu_allowlist"))
+    merged["restore_enabled"] = _as_bool(merged.get("restore_enabled"))
     merged["api_key_enc"] = str(merged.get("api_key_enc") or "")
     return merged
 
@@ -340,11 +366,22 @@ def apply_vast_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
         value = cfg.get(field)
         if field == "gpu_allowlist":
             value = ",".join(normalize_allowlist(value))
+        if isinstance(value, bool):
+            value = "1" if value else ""
         try:
             setattr(settings, attr, value)
             os.environ[attr] = str(value if value is not None else "")
         except Exception as exc:  # pragma: no cover
             logger.warning("Gagal set %s: %s", attr, exc)
+
+    if cfg.get("restore_enabled"):
+        # Onstart menunggu restore; jangan biarkan supervisor membunuh instance
+        # sebelum transfer selesai.
+        restore_timeout = int(cfg.get("restore_timeout") or 900)
+        settings.VAST_WORKER_START_TIMEOUT = max(
+            int(getattr(settings, "VAST_WORKER_START_TIMEOUT", 120) or 120),
+            restore_timeout + 300,
+        )
 
     key = _api_key(cfg)
     try:

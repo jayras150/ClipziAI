@@ -39,6 +39,7 @@ import time
 from typing import Any, Dict, Optional
 from uuid import UUID
 
+import requests
 
 from app.core.config import get_settings
 
@@ -340,7 +341,68 @@ def build_worker_env(task_id: Optional[UUID] = None) -> Dict[str, str]:
         value = getattr(settings, name, None)
         if value:
             env[name] = str(value)
+    if getattr(settings, "VAST_RESTORE_ENABLED", False):
+        env["CLIPZI_RESTORE_TIMEOUT"] = str(settings.VAST_RESTORE_TIMEOUT)
+        env["CLIPZI_RESTORE_MODEL_PATH"] = settings.VAST_RESTORE_MODEL_PATH
+        env["GPU_WHISPER_MODEL"] = settings.VAST_RESTORE_MODEL_PATH
     return env
+
+
+async def _restore_workspace(instance_id: int) -> None:
+    """Salin cache model dari Google Drive ke /workspace setelah instance hidup."""
+    if not getattr(settings, "VAST_RESTORE_ENABLED", False):
+        return
+    src = (settings.VAST_RESTORE_SRC or "").strip()
+    dst = (settings.VAST_RESTORE_DST or "/workspace").strip()
+    connection = (settings.VAST_RESTORE_CONNECTION or "").strip()
+    if not src or not connection:
+        logger.warning("Restore dilewati: src/connection kosong")
+        return
+    client = _get_vast_client()
+    deadline = time.monotonic() + int(settings.VAST_RESTORE_TIMEOUT or 900)
+    while time.monotonic() < deadline:
+        try:
+            response = await asyncio.to_thread(
+                client.cloud_copy,
+                src=src,
+                dst=dst,
+                instance=str(instance_id),
+                connection=connection,
+                transfer="Cloud to Instance",
+                update=True,
+                ignore_existing=True,
+            )
+        except Exception as exc:
+            logger.warning("cloud_copy restore gagal (coba lagi): %s", exc)
+            await asyncio.sleep(15)
+            continue
+        url = (response or {}).get("result_url")
+        if not url:
+            logger.warning("cloud_copy restore tanpa result_url: %s", response)
+            return
+        while time.monotonic() < deadline:
+            try:
+                log_text = (await asyncio.to_thread(requests.get, url, timeout=30)).text
+            except Exception:
+                await asyncio.sleep(10)
+                continue
+            lowered = log_text.lower()
+            if any(
+                marker in lowered
+                for marker in (
+                    "failed to create file system",
+                    "invalid_grant",
+                    "couldn't fetch token",
+                )
+            ):
+                logger.warning("Restore GDrive gagal: %s", log_text[-300:])
+                return
+            if "total objects" in lowered:
+                logger.info("Restore workspace selesai untuk instance %s", instance_id)
+                return
+            await asyncio.sleep(10)
+        return
+    logger.warning("Restore workspace timeout untuk instance %s", instance_id)
 
 
 def _make_create_instance(task_id: UUID, client: Any):
@@ -381,7 +443,10 @@ def _make_create_instance(task_id: UUID, client: Any):
         instance_id = created.get("new_contract") or created.get("instance_id")
         if not instance_id:
             raise RuntimeError(f"create_instance tidak mengembalikan instance id: {created}")
-        return int(instance_id)
+        instance_id = int(instance_id)
+        if getattr(settings, "VAST_RESTORE_ENABLED", False):
+            asyncio.create_task(_restore_workspace(instance_id))
+        return instance_id
 
     return _create
 

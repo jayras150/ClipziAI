@@ -209,6 +209,13 @@ class Settings(BaseSettings):
     # Daftar GPU yang diizinkan (dipisah koma, kosong = semua). Difilter setelah
     # search_offers supaya tidak bergantung sintaks query Vast.
     VAST_GPU_ALLOWLIST: str = ""
+    # Restore cache model dari Google Drive (Vast Cloud Sync) sebelum pipeline.
+    VAST_RESTORE_ENABLED: bool = False
+    VAST_RESTORE_CONNECTION: str = "47108"  # id koneksi gdrive-sujinwo555
+    VAST_RESTORE_SRC: str = "/vast-backup/Clipzy/whisper_model"
+    VAST_RESTORE_DST: str = "/workspace"
+    VAST_RESTORE_MODEL_PATH: str = "/workspace/whisper_model"
+    VAST_RESTORE_TIMEOUT: int = 900
     VAST_MIN_WORKERS: int = 0
     VAST_MAX_WORKERS: int = 4
     VAST_TARGET_UTIL: float = 0.9

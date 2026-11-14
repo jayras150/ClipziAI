@@ -90,6 +90,52 @@ def test_env_spec_masks_secrets_and_export(monkeypatch):
     assert "postgresql://user:pass@host/db" in revealed
 
 
+def test_normalize_restore_fields():
+    cfg = vast_config.normalize_vast(
+        {
+            "restore_enabled": "true",
+            "restore_timeout": 9999,
+            "restore_connection": "47108",
+            "restore_src": "/vast-backup/Clipzy/whisper_model",
+            "restore_model_path": "/workspace/whisper_model",
+        }
+    )
+    assert cfg["restore_enabled"] is True
+    assert cfg["restore_timeout"] == 3600
+    assert cfg["restore_connection"] == "47108"
+    assert cfg["restore_model_path"] == "/workspace/whisper_model"
+
+
+def test_worker_env_uses_restored_model(monkeypatch):
+    from app.core.config import get_settings
+    from app.services.vast_worker import build_worker_env
+
+    settings = get_settings()
+    original = (
+        settings.VAST_RESTORE_ENABLED,
+        settings.VAST_RESTORE_TIMEOUT,
+        settings.VAST_RESTORE_MODEL_PATH,
+        settings.GPU_WHISPER_MODEL,
+    )
+    try:
+        settings.VAST_RESTORE_ENABLED = True
+        settings.VAST_RESTORE_TIMEOUT = 900
+        settings.VAST_RESTORE_MODEL_PATH = "/workspace/whisper_model"
+        settings.GPU_WHISPER_MODEL = "large-v3"
+        env = build_worker_env()
+    finally:
+        (
+            settings.VAST_RESTORE_ENABLED,
+            settings.VAST_RESTORE_TIMEOUT,
+            settings.VAST_RESTORE_MODEL_PATH,
+            settings.GPU_WHISPER_MODEL,
+        ) = original
+
+    assert env["CLIPZI_RESTORE_TIMEOUT"] == "900"
+    assert env["CLIPZI_RESTORE_MODEL_PATH"] == "/workspace/whisper_model"
+    assert env["GPU_WHISPER_MODEL"] == "/workspace/whisper_model"
+
+
 def test_invoice_normalization_sorted():
     rows = vast_admin._normalize_invoices(
         [
