@@ -695,7 +695,7 @@ export default function DashboardPage() {
                   <Youtube className="yt-icon" size={18} fill="#ff2d2d" strokeWidth={0} />
                 )}
                 <span className="ui-yt-name">{youtube.channel_name || "YouTube connected"}</span>
-                <ChevronDown size={14} />
+                <ChevronDown size={14} className="ui-yt-chevron" />
               </button>
               {ytMenuOpen && (
                 <div className="ui-dropdown ui-dropdown-sm" role="menu">

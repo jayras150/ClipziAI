@@ -827,6 +827,13 @@
   .landing .nav-actions .btn { min-height: 40px; padding: 9px 12px; font-size: 13px; }
   .landing .nav-actions .ui-avatar { width: 34px; height: 34px; }
 }
+/* Layar sangat kecil: sisakan satu CTA utama agar logo tidak bertabrakan. */
+@media (max-width: 400px) {
+  .landing .brand-logo-img { height: 26px; max-width: 106px; }
+  .landing .nav-actions .btn-ghost { display: none; }
+  .landing .nav-actions .btn { padding: 8px 11px; font-size: 12.5px; }
+  .landing .nav-actions { gap: 6px; }
+}
 @media (max-width: 600px) {
   .landing .container { width: calc(100% - 26px); }
   .landing .hero-copy-block h1, .landing .hero h1 { font-size: clamp(30px, 8vw, 40px); }

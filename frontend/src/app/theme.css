@@ -1596,6 +1596,15 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
   .ui-admin-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .clip-modal { padding: 14px; }
 }
+/* Layar sangat kecil (≤400px): tombol YouTube jadi ikon saja supaya tidak
+   menabrak logo, dan menu tetap di baris kedua. */
+@media (max-width: 400px) {
+  .ui-brand-logo { max-width: 104px; }
+  .ui-btn-yt { max-width: 42px; padding: 8px 9px; gap: 0; }
+  .ui-btn-yt .ui-yt-name,
+  .ui-btn-yt .ui-yt-chevron { display: none; }
+  .ui-nav-actions { gap: 6px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
