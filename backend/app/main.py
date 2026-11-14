@@ -64,11 +64,11 @@ async def lifespan(app: FastAPI):
         except Exception as exc:  # jangan gagalkan startup karena Vast
             logger.warning("Pemeliharaan instance Vast gagal/dilewati: %s", exc)
 
-    asyncio.create_task(_run_vast_maintenance())
     # Cleanup storage berkala (source/audio/temp; klip tidak pernah dihapus).
     from app.services.cleanup_manager import cleanup_scheduler
 
     cleanup_task = asyncio.create_task(cleanup_scheduler())
+    vast_task = asyncio.create_task(_run_vast_maintenance())
     # Setelan AI tersimpan di DB -> inject ke env/settings saat startup supaya
     # kredensial dari dashboard langsung dipakai tanpa menunggu request admin.
     try:
@@ -101,8 +101,17 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("Gagal memuat pool proxy dari database: %s", exc)
     yield
-    # Shutdown
-    cleanup_task.cancel()
+    # Shutdown: batalkan task latar dan tunggu sampai selesai SEBELUM menutup
+    # engine. Tanpa await, koneksi asyncpg bisa ditutup setelah event loop mati
+    # (log "Event loop is closed" saat restart).
+    for task in (cleanup_task, vast_task):
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        except Exception:  # pragma: no cover - task latar tidak boleh gagalkan shutdown
+            logger.warning("Task latar berhenti dengan error saat shutdown", exc_info=True)
     await engine.dispose()
 
 
