@@ -492,6 +492,30 @@ Setup di admin: **Settings › Download Runner** → isi `owner`, `repo`, nama f
 Semua teks yang tampil di **UI user** (frontend) dan pesan error API untuk user
 berbahasa **Inggris**. UI admin internal tetap berbahasa Indonesia.
 
+## Panel Vast.ai (admin)
+
+**Settings › Vast.ai** mengatur limit instance tanpa mengedit `.env`:
+
+- **Storage instance (GB)**, **GPU allowlist** (opsional), filter GPU, **harga maksimum $/jam**,
+  max/min workers, target utilisasi, inactivity timeout, serta timeout boot/oneshot/retry.
+- Prioritas nilai: **DB admin > ENV > default**. Tombol **Hapus override DB** mengembalikan ke ENV.
+- API key Vast bisa disimpan dari admin (terenkripsi AES-256-GCM); nilai asli tidak pernah
+  dikembalikan API. Tombol **Tes koneksi** menampilkan saldo, total spend, dan jumlah instance.
+- **Tes filter offer** menampilkan offer termurah yang cocok (tanpa membuat instance).
+
+**Tab Environment** menampilkan env worker yang dibangun dari **sumber yang sama** dengan
+dispatch instance (`build_worker_env`): `DATABASE_URL`, `ENCRYPTION_KEY`, `SECRET_KEY`,
+`CLIPZI_WORKER_TOKEN`, `CLIPZI_CALLBACK_URL`, storage/R2/Supabase/Redis, dan YTDLP opsional.
+Tersedia **Export .env** (secret disamarkan; opsi nilai asli diaudit), **Copy/Download**, dan
+**Sync ke Vast** (membuat/memperbarui environment variable akun Vast via SDK; simulasi tersedia).
+
+**Tab Billing** menampilkan saldo/total spend dari Vast, invoice resmi (filter tanggal/tipe),
+estimasi biaya lokal dari riwayat instance, dan **Export CSV**.
+
+**Workers** kini menampilkan instance live dari Vast (GPU, disk terpakai/alokasi, harga/jam,
+status) plus riwayat lokal, dengan tombol **Logs** (termasuk opsi **debug/daemon logs**) dan
+**Destroy**. Jika instance sudah dihapus, log jatuh ke `log_tail` lokal.
+
 ## Setelan ekosistem & ganti domain (1 klik)
 
 Semua nilai disimpan di `platform_settings` key `platform`:
