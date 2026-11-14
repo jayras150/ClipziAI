@@ -213,7 +213,7 @@ class Settings(BaseSettings):
     VAST_RESTORE_ENABLED: bool = False
     VAST_RESTORE_CONNECTION: str = "47108"  # id koneksi gdrive-sujinwo555
     VAST_RESTORE_SRC: str = "/vast-backup/Clipzy/whisper_model"
-    VAST_RESTORE_DST: str = "/workspace"
+    VAST_RESTORE_DST: str = "/workspace/whisper_model"
     VAST_RESTORE_MODEL_PATH: str = "/workspace/whisper_model"
     VAST_RESTORE_TIMEOUT: int = 900
     VAST_MIN_WORKERS: int = 0

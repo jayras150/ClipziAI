@@ -308,7 +308,7 @@ export default function VastPanel({
               </div>
               <div className='space-y-1'>
                 <label className='text-muted-foreground text-xs'>Destination di instance</label>
-                <Input value={form.restore_dst} onChange={(event) => set('restore_dst', event.target.value)} placeholder='/workspace' />
+                <Input value={form.restore_dst} onChange={(event) => set('restore_dst', event.target.value)} placeholder='/workspace/whisper_model' />
               </div>
             </CardContent>
           </Card>

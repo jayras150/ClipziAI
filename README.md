@@ -516,6 +516,21 @@ estimasi biaya lokal dari riwayat instance, dan **Export CSV**.
 status) plus riwayat lokal, dengan tombol **Logs** (termasuk opsi **debug/daemon logs**) dan
 **Destroy**. Jika instance sudah dihapus, log jatuh ke `log_tail` lokal.
 
+### Backup & restore model Whisper (Google Drive)
+
+- Backup sekali: script `deployments/whisper_backup_onstart.sh` mengunduh model ke folder
+  nyata `/workspace/whisper_model` (tanpa symlink HuggingFace) lalu disimpan ke
+  **`/vast-backup/Clipzy/whisper_model`** lewat Vast Cloud Sync
+  (connection `47108` / `gdrive-sujinwo555`). Verifikasi: 18 objek, 2,879 GiB.
+- Restore: aktifkan **Settings › Vast.ai → Restore model dari Google Drive**.
+  Setelah instance dibuat, backend menjalankan `cloud_copy` Cloud→Instance ke
+  `/workspace/whisper_model`; `pipeline_onstart.sh` menunggu `model.bin` stabil
+  (maks. `restore_timeout`, default 900s) sebelum pipeline, dan fallback mengunduh
+  model bila restore gagal. `GPU_WHISPER_MODEL` diarahkan ke folder hasil restore.
+- Image worker (2,18 GB) **tetap** di-pull setiap instance baru; restore hanya
+  menghilangkan unduhan model ±3 GB. Jika ingin menghilangkan transfer berulang,
+  gunakan Vast volume (berbayar).
+
 ## Setelan ekosistem & ganti domain (1 klik)
 
 Semua nilai disimpan di `platform_settings` key `platform`:
