@@ -58,12 +58,22 @@ const CLIP_LENGTH_PRESETS = [
  */
 
 const STATUS_LABEL: Record<string, string> = {
+  pending: "Pending",
   queued: "Queued",
+  downloading: "Downloading",
+  download_failed: "Download failed",
+  downloaded: "Downloaded",
   processing: "Processing",
   completed: "Completed",
+  failed: "Failed",
   error: "Failed",
-  canceled: "Canceled",
+  cancelled: "Cancelled",
+  canceled: "Cancelled",
 }
+
+/** Pesan aman untuk user — detail teknis hanya di admin. */
+const USER_ERROR_MESSAGE =
+  "Video gagal diproses.\n\nTerjadi kendala saat mengunduh video.\nSilakan coba kembali."
 
 function statusBadgeClass(status: string): string {
   if (status === "completed") return "ui-badge ui-badge-success"
@@ -173,6 +183,8 @@ export default function DashboardPage() {
   // Dropdown kecil di tombol channel YouTube (isi: Disconnect).
   const [ytMenuOpen, setYtMenuOpen] = useState(false)
   const ytMenuRef = useRef<HTMLDivElement>(null)
+  // Task yang sedang dicoba ulang lewat tombol Try Again.
+  const [retryingTaskId, setRetryingTaskId] = useState("")
 
   // Tutup dropdown channel YouTube saat klik di luar atau tekan Escape.
   useEffect(() => {
@@ -483,7 +495,7 @@ export default function DashboardPage() {
       const task = await api.createTask(stored, url, editingOptions)
       setUrlValue("")
       if (task.status === "error") {
-        setTaskError(task.error_message || "The task was created but could not be sent to a GPU worker.")
+        setTaskError(USER_ERROR_MESSAGE)
       } else {
         setNotice("Task created — Clipzy AI is processing your video.")
       }
@@ -629,7 +641,7 @@ export default function DashboardPage() {
       const task = await api.composeClips(token, openTaskId, selectedClips, composeTransition)
       setNotice(
         task.status === "error"
-          ? task.error_message || "Merge created but it could not be sent to the worker."
+          ? USER_ERROR_MESSAGE
           : `Merging ${selectedClips.length} clip(s) — processing.`,
       )
       setSelectedClips([])
@@ -656,7 +668,7 @@ export default function DashboardPage() {
       const task = await api.splitClip(token, openTaskId, clip.id, value)
       setNotice(
         task.status === "error"
-          ? task.error_message || "Split created but it could not be sent to the worker."
+          ? USER_ERROR_MESSAGE
           : `Clip #${clip.clip_index} split at ${value.toFixed(1)} seconds.`,
       )
       await refreshTasks(token)
@@ -695,6 +707,31 @@ export default function DashboardPage() {
   })()
   const activeTaskForBanner =
     tasks.find((task) => ACTIVE_STATUSES.includes(task.status)) || null
+
+  /** Try Again: pakai task yang sama (backend idempotent, tanpa task baru). */
+  const retryFailedTask = async (task: TaskData) => {
+    if (!token || retryingTaskId) return
+    setRetryingTaskId(task.id)
+    setTaskError("")
+    setNotice("")
+    try {
+      const updated = await api.retryTask(token, task.id)
+      setTasks((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      )
+      setNotice("Task dikirim ulang. Proses download akan dimulai kembali.")
+    } catch (error) {
+      setTaskError(
+        readApiError(
+          (error as { response?: { data?: unknown } })?.response?.data,
+          "Task belum bisa diulang. Silakan coba lagi.",
+        ),
+      )
+    } finally {
+      setRetryingTaskId("")
+    }
+  }
+
   const renderEstimate = trimSeconds
     ? `≈ ${trimSeconds.toFixed(1)}s per clip · estimated render ±${Math.max(
         2,
@@ -1416,10 +1453,29 @@ export default function DashboardPage() {
                       </button>
                     </div>
 
-                    {task.status === "error" && task.error_message && (
-                      <p className="ui-hint" style={{ marginTop: 10, color: "#f0a3a3" }}>
-                        {task.error_message}
-                      </p>
+                    {task.status === "error" && (
+                      <div className="task-error-card">
+                        <p>{task.user_message || USER_ERROR_MESSAGE}</p>
+                        {task.can_retry ? (
+                          <button
+                            type="button"
+                            className="ui-btn ui-btn-gold"
+                            disabled={retryingTaskId === task.id}
+                            onClick={() => void retryFailedTask(task)}
+                          >
+                            {retryingTaskId === task.id ? (
+                              <ClipzySpinner size="xs" />
+                            ) : (
+                              <RefreshCw size={13} />
+                            )}
+                            Try Again
+                          </button>
+                        ) : (
+                          <span className="ui-hint">
+                            Batas percobaan ulang tercapai. Hubungi admin bila masih bermasalah.
+                          </span>
+                        )}
+                      </div>
                     )}
                   </article>
                 ))}
@@ -1451,11 +1507,34 @@ export default function DashboardPage() {
                     Loading clips…
                   </p>
                 ) : clips.length === 0 ? (
-                  <p className="ui-hint" style={{ marginTop: 14 }}>
-                    {openTaskData.status === "error"
-                      ? openTaskData.error_message || "This task failed before producing clips."
-                      : "No clips yet — this panel refreshes automatically while the task runs."}
-                  </p>
+                  openTaskData.status === "error" ? (
+                    <div className="task-error-card" style={{ marginTop: 14 }}>
+                      <p>{openTaskData.user_message || USER_ERROR_MESSAGE}</p>
+                      {openTaskData.can_retry ? (
+                        <button
+                          type="button"
+                          className="ui-btn ui-btn-gold"
+                          disabled={retryingTaskId === openTaskData.id}
+                          onClick={() => void retryFailedTask(openTaskData)}
+                        >
+                          {retryingTaskId === openTaskData.id ? (
+                            <ClipzySpinner size="xs" />
+                          ) : (
+                            <RefreshCw size={13} />
+                          )}
+                          Try Again
+                        </button>
+                      ) : (
+                        <span className="ui-hint">
+                          Batas percobaan ulang tercapai. Hubungi admin bila masih bermasalah.
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="ui-hint" style={{ marginTop: 14 }}>
+                      No clips yet — this panel refreshes automatically while the task runs.
+                    </p>
+                  )
                 ) : (
                   <>
                     {/* Editing lanjutan: gabung klip terpilih (compose) */}

@@ -22,6 +22,12 @@ from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, cast
 
 from app.core.config import get_settings
+from app.services.download_errors import (
+    CATEGORY_COOKIES_MISSING,
+    DownloadError,
+    classify_download_error,
+    http_status_from,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,8 +72,10 @@ def format_ladder(height: int) -> list[str]:
 CLIENT_LADDER: list[Optional[list[str]]] = [
     None,  # default yt-dlp
     ["web"],
+    ["web_safari"],
     ["android", "ios"],
     ["tv_embedded", "web"],
+    ["mweb"],
 ]
 
 
@@ -213,11 +221,20 @@ class VideoDownloader:
         return "unknown"
 
     def _resolve_cookiefile(self, cookies_path: Optional[str] = None) -> Optional[str]:
-        """Tentukan file cookies yang dipakai yt-dlp (lihat docstring modul)."""
+        """Tentukan file cookies yang dipakai yt-dlp (lihat docstring modul).
+
+        Catatan: path eksplisit SELALU dihormati pada setiap pemanggilan. Bila
+        path diberikan tetapi file tidak ada, ini error nyata (bukan alasan
+        untuk diam-diam download tanpa cookies) — supaya log admin tidak lagi
+        menampilkan `cookies=no` tanpa penjelasan.
+        """
         if cookies_path:
             if os.path.exists(cookies_path):
                 return cookies_path
-            logger.warning("cookies_path '%s' tidak ditemukan, diabaikan.", cookies_path)
+            raise DownloadError(
+                f"cookies_path diberikan tetapi file tidak ditemukan: {cookies_path}",
+                category=CATEGORY_COOKIES_MISSING,
+            )
 
         if self._cookiefile_resolved:
             return self._cookiefile_cache
@@ -283,6 +300,7 @@ class VideoDownloader:
         cookies_path: Optional[str] = None,
         quality: str = "720",
         require_audio: bool = False,
+        require_cookies: bool = False,
     ) -> str:
         """
         Unduh video dengan beberapa lapis fallback.
@@ -302,6 +320,34 @@ class VideoDownloader:
 
         pool = _proxy_pool_from_env()
         cookie_available = bool(base_opts.get("cookiefile"))
+        cookie_file = str(base_opts.get("cookiefile") or "")
+        cookie_id = Path(cookie_file).stem if cookie_file else None
+        if cookie_id:
+            try:
+                cookie_bytes = os.path.getsize(cookie_file)
+                cookie_lines = sum(
+                    1 for _ in open(cookie_file, "r", encoding="utf-8", errors="replace")
+                )
+            except OSError:
+                cookie_bytes, cookie_lines = 0, 0
+            logger.info(
+                "cookies yt-dlp aktif: id=%s ukuran=%sB baris=%s",
+                cookie_id,
+                cookie_bytes,
+                cookie_lines,
+            )
+        else:
+            logger.warning(
+                "cookies yt-dlp TIDAK tersedia untuk %s (pool kosong / tidak diteruskan).",
+                url[:120],
+            )
+        if require_cookies and not cookie_available:
+            raise DownloadError(
+                "Cookies wajib untuk YouTube tetapi tidak tersedia/diteruskan ke yt-dlp.",
+                category=CATEGORY_COOKIES_MISSING,
+                cookie_id=cookie_id,
+                ytdlp_version=_ytdlp_version(),
+            )
         if require_audio:
             # Hanya format yang menjamin audio (video + audio-only).
             formats = [
@@ -335,6 +381,7 @@ class VideoDownloader:
 
         loop = asyncio.get_event_loop()
         errors: list[str] = []
+        attempts_meta: list[dict[str, Any]] = []
 
         for clients, fmt, use_cookies, proxy_url in attempts:
             ydl_opts: Dict[str, Any] = dict(base_opts)
@@ -384,6 +431,18 @@ class VideoDownloader:
             except Exception as exc:  # yt_dlp.utils.DownloadError atau jaringan
                 first_line = (str(exc).splitlines() or [""])[0][:180]
                 errors.append(f"{label} -> {type(exc).__name__}: {first_line}")
+                attempts_meta.append(
+                    {
+                        "label": label,
+                        "format": fmt,
+                        "clients": list(clients) if clients else [],
+                        "cookies": has_cookie,
+                        "proxy": bool(proxy_url),
+                        "error_type": type(exc).__name__,
+                        "error": str(exc)[:4000],
+                        "category": classify_download_error(str(exc)),
+                    }
+                )
                 logger.warning("unduhan gagal [%s]: %s", label, first_line)
                 self._cleanup_partial(output_path)
                 continue
@@ -405,12 +464,22 @@ class VideoDownloader:
                 " | HINT: YouTube meminta verifikasi login (bot check). "
                 "Unggah cookies YouTube di Settings > YouTube Cookies, lalu ulangi task. "
             )
-        raise RuntimeError(
+        category = classify_download_error(attempts_text)
+        message = (
             "yt-dlp gagal mengunduh setelah semua format/client dicoba | "
             f"yt-dlp={_ytdlp_version()} | formats_tersedia={formats}"
             + hint
             + " || "
             + attempts_text
+        )
+        raise DownloadError(
+            message,
+            category=category,
+            attempts=attempts_meta,
+            ytdlp_version=_ytdlp_version(),
+            cookie_id=cookie_id,
+            cookie_used=cookie_available,
+            http_status=http_status_from(attempts_text),
         )
 
     def _cleanup_partial(self, output_path: str) -> None:

@@ -5,6 +5,7 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +13,7 @@ from app.api.admin.deps import get_current_admin
 from app.api.deps import get_db_session
 from app.models.audit_log import ActorType, AuditLog
 from app.models.clip import Clip
+from app.models.download_log import DownloadAttempt, TaskLog
 from app.models.task import Task, TaskStatus
 from app.models.user import User
 from app.services.vast_worker import dispatch_mode, submit_task
@@ -44,6 +46,12 @@ def _serialize(task: Task, user_email: Optional[str]) -> dict:
         "source_url": task.source_url,
         "source_type": task.source_type,
         "status": getattr(task.status, "value", str(task.status)),
+        "download_status": task.download_status,
+        "error_category": task.error_category,
+        "user_message": task.user_message,
+        "retry_count": task.retry_count,
+        "max_retries": task.max_retries,
+        "next_retry_at": task.next_retry_at.isoformat() if task.next_retry_at else None,
         "progress": task.progress,
         "total_clips": task.total_clips,
         "credits_spent": task.credits_spent,
@@ -128,6 +136,113 @@ async def get_task_detail(task_id: UUID, db: AsyncSession = Depends(get_db_sessi
     }
 
 
+@router.get("/{task_id}/attempts")
+async def list_download_attempts(
+    task_id: UUID,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Semua percobaan download (full error, tanpa pemotongan) untuk viewer admin."""
+    task = (await db.execute(select(Task).where(Task.id == task_id))).scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task tidak ditemukan")
+    rows = (
+        await db.execute(
+            select(DownloadAttempt)
+            .where(DownloadAttempt.task_id == task_id)
+            .order_by(DownloadAttempt.created_at)
+        )
+    ).scalars().all()
+    return [
+        {
+            "id": str(row.id),
+            "attempt_no": row.attempt_no,
+            "runner_type": row.runner_type,
+            "runner_id": row.runner_id,
+            "yt_dlp_version": row.yt_dlp_version,
+            "extractor_client": row.extractor_client,
+            "format_selector": row.format_selector,
+            "cookie_id": row.cookie_id,
+            "cookie_status": row.cookie_status,
+            "http_status": row.http_status,
+            "error_category": row.error_category,
+            "error_message": row.error_message,
+            "stack_trace": row.stack_trace,
+            "duration_ms": row.duration_ms,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+        for row in rows
+    ]
+
+
+@router.get("/{task_id}/task-logs")
+async def list_task_logs(
+    task_id: UUID,
+    db: AsyncSession = Depends(get_db_session),
+):
+    rows = (
+        await db.execute(
+            select(TaskLog).where(TaskLog.task_id == task_id).order_by(TaskLog.created_at)
+        )
+    ).scalars().all()
+    return [
+        {
+            "id": str(row.id),
+            "level": row.level,
+            "message": row.message,
+            "meta": row.meta,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+        for row in rows
+    ]
+
+
+@router.get("/{task_id}/download-log", response_class=PlainTextResponse)
+async def download_log_text(
+    task_id: UUID,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Unduh log download lengkap sebagai teks (tanpa ellipsis/pemotongan)."""
+    task = (await db.execute(select(Task).where(Task.id == task_id))).scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task tidak ditemukan")
+    attempts = (
+        await db.execute(
+            select(DownloadAttempt)
+            .where(DownloadAttempt.task_id == task_id)
+            .order_by(DownloadAttempt.created_at)
+        )
+    ).scalars().all()
+
+    lines = [
+        f"Task ID        : {task.id}",
+        f"User ID        : {task.user_id}",
+        f"Video URL      : {task.source_url}",
+        f"Status         : {getattr(task.status, 'value', str(task.status))}",
+        f"Download status: {task.download_status}",
+        f"Error category : {task.error_category}",
+        f"Retry          : {task.retry_count}/{task.max_retries}",
+        f"Created        : {task.created_at.isoformat() if task.created_at else '-'}",
+        "",
+        f"=== DOWNLOAD ATTEMPTS ({len(attempts)}) ===",
+    ]
+    for row in attempts:
+        lines.extend(
+            [
+                "",
+                f"--- attempt #{row.attempt_no} @ {row.created_at} ---",
+                f"runner={row.runner_type} ({row.runner_id}) yt-dlp={row.yt_dlp_version}",
+                f"client={row.extractor_client} format={row.format_selector}",
+                f"cookie_id={row.cookie_id} cookie_status={row.cookie_status}",
+                f"http_status={row.http_status} category={row.error_category}",
+                "error:",
+                row.error_message or "-",
+                "stack:",
+                row.stack_trace or "-",
+            ]
+        )
+    return "\n".join(lines)
+
+
 @router.post("/{task_id}/cancel")
 async def cancel_task(
     task_id: UUID,
@@ -173,6 +288,12 @@ async def retry_task(
     task.status = TaskStatus.QUEUED
     task.progress = 0
     task.error_message = None
+    task.user_message = None
+    task.error_category = None
+    task.download_status = "queued"
+    task.next_retry_at = None
+    task.completed_at = None
+    task.source_asset_url = None
     await db.commit()
 
     # Kirim ulang ke worker. Tanpa langkah ini task hanya berubah status jadi

@@ -2377,6 +2377,25 @@ body.drawer-open { overflow: hidden; }
 .clip-pick input:checked::after,
 .clip-select:checked::after { transform: rotate(-45deg) scale(1); }
 
+/* Kartu error user: pesan aman + Try Again (tanpa detail teknis). */
+.task-error-card {
+  margin-top: 10px;
+  padding: 12px 13px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 145, 136, 0.32);
+  background: rgba(255, 145, 136, 0.08);
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+.task-error-card p {
+  margin: 0;
+  white-space: pre-line;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #ffc9c4;
+}
+
 /* Mobile: kartu klip lebih pendek, video tetap utuh (object-fit: contain). */
 @media (max-width: 560px) {
   .clip-media { height: 290px; aspect-ratio: auto; }

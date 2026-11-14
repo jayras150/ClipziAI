@@ -4,8 +4,8 @@ Task schemas - Task CRUD
 from typing import Optional, List, Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field, HttpUrl
 from datetime import datetime
+from pydantic import BaseModel, Field, model_validator, HttpUrl
 
 
 class TaskCreate(BaseModel):
@@ -83,6 +83,13 @@ class TaskResponse(BaseModel):
     progress: int
     total_clips: Optional[int]
     error_message: Optional[str]
+    download_status: Optional[str] = None
+    error_category: Optional[str] = None
+    user_message: Optional[str] = None
+    retry_count: int = 0
+    max_retries: int = 3
+    can_retry: bool = False
+    next_retry_at: Optional[datetime] = None
     auto_upload_youtube: bool
     youtube_upload_status: Optional[str]
     youtube_video_id: Optional[str]
@@ -93,6 +100,20 @@ class TaskResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def _hide_technical_error(cls, data):
+        """User tidak boleh menerima pesan teknis (error_message mentah).
+
+        `user_message` adalah versi aman yang ditampilkan ke pengguna; detail
+        teknis tetap tersimpan di DB dan hanya dibuka lewat endpoint admin.
+        """
+        if hasattr(data, "user_message"):
+            values = {name: getattr(data, name, None) for name in cls.model_fields}
+            values["error_message"] = getattr(data, "user_message", None)
+            return values
+        return data
 
 
 class TaskListResponse(BaseModel):

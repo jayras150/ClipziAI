@@ -34,6 +34,43 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db() -> None:
-    """Initialize database tables."""
+    """Initialize database tables + migrasi kolom ringan yang idempoten.
+
+    Repo ini memakai `create_all()` (tanpa Alembic untuk tabel baru). Untuk
+    kolom baru pada tabel yang SUDAH ADA, `create_all()` tidak menambah apa pun,
+    jadi kita jalankan `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` (khusus
+    PostgreSQL; SQLite dipakai di test dan tidak butuh migrasi ini).
+    """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+        if conn.dialect.name != "postgresql":
+            return
+
+        from sqlalchemy import text
+
+        migrations = (
+            ("download_status", "VARCHAR(24)"),
+            ("error_category", "VARCHAR(40)"),
+            ("user_message", "TEXT"),
+            ("retry_count", "INTEGER DEFAULT 0"),
+            ("max_retries", "INTEGER DEFAULT 3"),
+            ("next_retry_at", "TIMESTAMPTZ"),
+            ("source_asset_url", "TEXT"),
+        )
+        for column, ddl in migrations:
+            await conn.execute(
+                text(f"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS {column} {ddl}")
+            )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_tasks_download_status "
+                "ON tasks (download_status)"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_tasks_error_category "
+                "ON tasks (error_category)"
+            )
+        )

@@ -161,6 +161,31 @@ class Settings(BaseSettings):
     # Folder cache file cookies (hasil decrypt). Kosong = ./.cache/ytdlp_cookies
     YTDLP_COOKIE_CACHE_DIR: Optional[str] = None
 
+    # --- Download retry & observability -------------------------------------
+    # Batas percobaan ulang otomatis (user retry + fallback runner).
+    MAX_DOWNLOAD_RETRIES: int = 3
+    # Backoff eksponensial (detik): 30, 60, 120, ...
+    DOWNLOAD_RETRY_BASE_SECONDS: int = 30
+    # Cookies wajib untuk YouTube (True = jangan diam-diam download tanpa cookies)
+    YOUTUBE_COOKIES_REQUIRED: bool = False
+
+    # --- GitHub Actions runner fallback (downloader) ------------------------
+    RUNNER_FALLBACK_ENABLED: bool = True
+    GITHUB_API_URL: str = "https://api.github.com"
+    # Base URL publik API untuk callback workflow (mis. https://proxyai.live)
+    DOWNLOADER_CALLBACK_BASE_URL: Optional[str] = None
+    # Token HMAC internal (fallback/callback). Kosong = pakai CLIPZI_WORKER_TOKEN.
+    DOWNLOADER_HMAC_SECRET: Optional[str] = None
+    # Masa berlaku token konteks cookies (detik) — one-time.
+    DOWNLOADER_JOB_TOKEN_TTL: int = 900
+    # Batas ukuran video yang diizinkan (MB)
+    DOWNLOADER_MAX_FILE_MB: int = 2048
+
+    # --- Cleanup cloud storage ----------------------------------------------
+    CLEANUP_INTERVAL_MINUTES: int = 60
+    TEMP_TTL_HOURS: int = 6
+    CLEANUP_DRY_RUN: bool = False
+
     # URL API yang dipakai frontend. Tidak dipakai backend, tetapi dibaca di sini
     # agar satu file .env bisa dipakai bersama (Docker compose) tanpa error
     # "extra inputs are not permitted".

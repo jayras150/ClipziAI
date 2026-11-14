@@ -546,6 +546,27 @@ class StorageService:
         except Exception:
             return ""
 
+    def presign_put(self, object_key: str, content_type: str, expiration: int = 3600) -> str:
+        """URL upload (PUT) langsung ke storage — dipakai runner GitHub Actions.
+
+        Kredensial storage tidak pernah dikirim ke runner; hanya URL sementara.
+        """
+        item, resolved = self._handle()
+        if not resolved:
+            return ""
+        try:
+            return resolved.client.generate_presigned_url(
+                "put_object",
+                Params={
+                    "Bucket": resolved.bucket,
+                    "Key": self._key(resolved, object_key),
+                    "ContentType": content_type,
+                },
+                ExpiresIn=expiration,
+            )
+        except Exception:
+            return ""
+
     def generate_object_key(self, user_id: str, filename: str, folder: str = "outputs") -> str:
         from datetime import datetime, timezone
         from uuid import uuid4

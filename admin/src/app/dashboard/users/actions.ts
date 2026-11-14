@@ -118,3 +118,25 @@ export async function resetUserPassword(formData: FormData) {
   refreshUserPaths(uid);
   redirect(`/dashboard/users/${uid}?temp=${encodeURIComponent(result?.temporary_password || '')}`);
 }
+
+/** Hapus satu user permanen (backend melindungi akun admin). */
+export async function deleteUser(formData: FormData) {
+  const uid = String(formData.get('uid') || '');
+  if (!uid) return;
+  await adminFetch(`/api/admin/users/${uid}`, { method: 'DELETE' });
+  revalidatePath('/dashboard/users');
+  revalidatePath('/dashboard/overview');
+}
+
+/** Hapus banyak user sekaligus (checkbox). Backend memproses per-id. */
+export async function bulkDeleteUsers(formData: FormData) {
+  const ids = formData.getAll('ids').map((value) => String(value)).filter(Boolean);
+  if (!ids.length) return;
+  await adminFetch('/api/admin/users/bulk-delete', {
+    method: 'POST',
+    body: JSON.stringify({ ids })
+  });
+  revalidatePath('/dashboard/users');
+  revalidatePath('/dashboard/overview');
+}
+

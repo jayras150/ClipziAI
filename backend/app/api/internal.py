@@ -26,7 +26,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session
 from app.core.config import get_settings
+from app.models.task import Task, TaskStatus
 from app.models.worker_instance import WorkerInstance
+from app.services import runner_manager
 
 logger = logging.getLogger(__name__)
 
@@ -267,3 +269,63 @@ async def active_proxies(request: Request, db: AsyncSession = Depends(get_db_ses
     pool = await proxy_pool.get_pool(db)
     return PlainTextResponse(pool.get("active_txt") or "", media_type="text/plain; charset=utf-8")
 
+
+
+
+class DownloaderFallbackIn(BaseModel):
+    task_id: str
+
+
+class DownloaderContextIn(BaseModel):
+    job_token: str
+
+
+@router.post("/downloader/fallback")
+async def downloader_fallback(
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Dipanggil worker saat download Vast gagal (retryable)."""
+    body = await request.body()
+    _verify_signature(body, request.headers.get("x-clipzi-signature", ""))
+    payload = DownloaderFallbackIn(**json.loads(body or b"{}"))
+    try:
+        task_id = UUID(str(payload.task_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="task_id tidak valid") from exc
+
+    task = await db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task tidak ditemukan")
+    result = await runner_manager.request_fallback(db, task)
+    logger.info("Fallback downloader task %s: %s", task_id, result)
+    return result
+
+
+@router.post("/downloader/context")
+async def downloader_context(
+    payload: DownloaderContextIn,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Workflow mengambil cookies + presigned upload (one-time)."""
+    try:
+        return await runner_manager.job_context(db, payload.job_token)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+
+@router.post("/downloader/callback")
+async def downloader_callback(
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Callback idempotent dari workflow (upload selesai/gagal)."""
+    token = request.headers.get("x-clipzi-job-token", "")
+    try:
+        payload = json.loads(await request.body() or b"{}")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid payload: {exc}") from exc
+    try:
+        return await runner_manager.handle_callback(db, token, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc

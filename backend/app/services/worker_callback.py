@@ -77,3 +77,39 @@ async def report_worker_event(
             )
     except Exception as exc:  # tidak boleh mengganggu pipeline
         logger.debug("Callback worker gagal (%s): %s", event, str(exc)[:200])
+
+
+
+async def request_downloader_fallback(task_id: Any) -> bool:
+    """Minta API memindahkan download ke runner GitHub (HMAC worker token)."""
+    base = (settings.DOWNLOADER_CALLBACK_BASE_URL or "").strip().rstrip("/")
+    if not base:
+        raw = (settings.CLIPZI_CALLBACK_URL or "").strip()
+        if "/api/" in raw:
+            base = raw.split("/api/")[0].rstrip("/")
+    token = (settings.CLIPZI_WORKER_TOKEN or "").strip()
+    if not base or not token:
+        return False
+
+    payload = {"task_id": str(task_id)}
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    signature = hmac.new(token.encode(), body, hashlib.sha256).hexdigest()
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.post(
+                base + "/api/internal/downloader/fallback",
+                content=body,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Clipzi-Signature": f"sha256={signature}",
+                },
+            )
+        if response.status_code != 200:
+            logger.warning(
+                "Fallback runner ditolak (%s): %s", response.status_code, response.text[:200]
+            )
+            return False
+        return bool(response.json().get("queued"))
+    except Exception as exc:
+        logger.warning("Gagal meminta fallback runner: %s", str(exc)[:200])
+        return False

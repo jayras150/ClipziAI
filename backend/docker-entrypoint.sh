@@ -24,6 +24,14 @@ PORT_TO_USE="${PORT:-8000}"
 echo "[entrypoint] role=${ROLE} port=${PORT_TO_USE}"
 
 if [ "$ROLE" = "worker" ]; then
+    # PO-token provider (bgutil) WAJIB hidup: tanpa ini YouTube hanya memberi
+    # storyboard untuk banyak video (format video tidak tersedia).
+    if [ -f /opt/bgutil/server/build/main.js ]; then
+        mkdir -p /app/tmp 2>/dev/null || true
+        (cd /opt/bgutil/server && node build/main.js \
+            >"${POT_PROVIDER_LOG:-/app/tmp/pot-provider.log}" 2>&1 &) || true
+        echo "[entrypoint] PO token provider (bgutil) dijalankan di :4416"
+    fi
     if [ "${CLIPZI_WORKER_MODE:-pyworker}" = "api" ]; then
         PORT_TO_USE="${WORKER_PORT:-$PORT_TO_USE}"
         echo "[entrypoint] GPU worker (mode api, tanpa PyWorker) di port ${PORT_TO_USE}"

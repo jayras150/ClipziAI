@@ -59,6 +59,13 @@ export interface TaskData {
   progress: number
   total_clips: number | null
   error_message: string | null
+  download_status?: string | null
+  error_category?: string | null
+  user_message?: string | null
+  retry_count?: number
+  max_retries?: number
+  can_retry?: boolean
+  next_retry_at?: string | null
   auto_upload_youtube: boolean
   youtube_upload_status: string | null
   youtube_video_id: string | null
@@ -331,6 +338,19 @@ export class ApiClient {
     const response = await this.client.get<TaskData>(`/api/tasks/${taskId}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
+    return response.data
+  }
+
+  /**
+   * Coba ulang task yang gagal TANPA membuat task baru.
+   * Backend memakai lock + batas retry (idempotent bila task masih berjalan).
+   */
+  async retryTask(token: string, taskId: string): Promise<TaskData> {
+    const response = await this.client.post<TaskData>(
+      `/api/tasks/${taskId}/retry`,
+      {},
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
     return response.data
   }
 

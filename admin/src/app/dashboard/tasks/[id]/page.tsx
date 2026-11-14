@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { adminFetch } from '@/lib/clipzi';
 import { cancelTask, retryTask } from '../actions';
+import ErrorViewer, { type AttemptRow } from './error-viewer';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +19,10 @@ type TaskDetail = {
   source_url: string;
   source_type: string;
   status: string;
+  download_status: string | null;
+  error_category: string | null;
+  retry_count: number;
+  max_retries: number;
   progress: number;
   credits_spent: number;
   error_message: string | null;
@@ -45,6 +50,7 @@ function fmt(value: string | null): string {
 export default async function TaskDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const task = await adminFetch<TaskDetail>(`/api/admin/tasks/${id}`);
+  const attempts = await adminFetch<AttemptRow[]>(`/api/admin/tasks/${id}/attempts`);
 
   return (
     <PageContainer pageTitle='Detail task' pageDescription={task.source_url}>
@@ -110,9 +116,11 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
               <CardDescription>Pesan error dan opsi yang dipakai pipeline</CardDescription>
             </CardHeader>
             <CardContent>
-              <pre className='bg-muted max-h-40 overflow-auto rounded p-2 text-xs whitespace-pre-wrap'>
-                {task.error_message || 'Tidak ada error.'}
-              </pre>
+              <div className='text-muted-foreground mb-2 text-xs'>
+                download: {task.download_status || '-'} · kategori:{' '}
+                {task.error_category || '-'} · retry {task.retry_count}/{task.max_retries}
+              </div>
+              <ErrorViewer taskId={task.id} errorMessage={task.error_message} attempts={attempts} />
               <pre className='bg-muted mt-2 max-h-40 overflow-auto rounded p-2 text-xs whitespace-pre-wrap'>
                 {JSON.stringify(task.editing_options || {}, null, 2)}
               </pre>

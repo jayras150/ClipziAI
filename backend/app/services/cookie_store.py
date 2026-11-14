@@ -34,15 +34,19 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
-# Pesan error yt-dlp yang menandakan cookies sudah tidak berlaku.
-EXPIRY_MARKERS = (
-    "sign in to confirm",
-    "confirm you're not a bot",
+# Pesan error yt-dlp yang menandakan cookies benar-benar tidak berlaku lagi.
+COOKIE_INVALID_MARKERS = (
     "cookies are no longer valid",
     "login required",
     "please sign in",
     "account has been terminated",
-    "http error 403",
+)
+
+# Bot-check BUKAN bukti cookies invalid: bisa karena IP datacenter.
+BOT_CHECK_MARKERS = (
+    "sign in to confirm",
+    "confirm you're not a bot",
+    "not a bot",
 )
 
 
@@ -61,15 +65,31 @@ def _cache_path(cookie_id: UUID) -> Path:
 
 
 def looks_expired(error_text: Optional[str]) -> bool:
-    """True bila pesan error menandakan cookies perlu diganti."""
+    """True bila pesan error menandakan cookies perlu diganti.
+
+    Sengaja TIDAK memakai teks bot-check: IP datacenter sering diminta login
+    walau cookies masih valid. Menandai expired di kasus itu membuat pool
+    kosong dan semua task berikutnya berjalan tanpa cookies.
+    """
     if not error_text:
         return False
     lowered = error_text.lower()
-    return any(marker in lowered for marker in EXPIRY_MARKERS)
+    return any(marker in lowered for marker in COOKIE_INVALID_MARKERS)
+
+
+def looks_like_bot_check(error_text: Optional[str]) -> bool:
+    lowered = (error_text or "").lower()
+    return any(marker in lowered for marker in BOT_CHECK_MARKERS)
 
 
 def validate_cookies_text(text: str) -> None:
-    """Pastikan isi benar-benar cookies.txt format Netscape."""
+    """Pastikan isi benar-benar cookies.txt Netscape + lengkap untuk login.
+
+    Banyak ekspor "hanya cookie yang terlihat" menyertakan __Secure-3PSID saja.
+    Cookie seperti itu membuat yt-dlp mengira sudah login (bot-check hilang)
+    tetapi YouTube hanya memberi storyboard (tanpa format video). Validasi ini
+    menolak ekspor tidak lengkap lebih awal dengan pesan yang jelas.
+    """
     if not text.strip():
         raise ValueError("Isi cookies kosong.")
     if "Netscape HTTP Cookie File" not in text and "\t" not in text:
@@ -79,6 +99,23 @@ def validate_cookies_text(text: str) -> None:
         )
     if "youtube.com" not in text:
         raise ValueError("Cookies tidak berisi domain youtube.com.")
+
+    names: set[str] = set()
+    for line in text.splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) >= 6 and "youtube" in parts[0].lower():
+            names.add(parts[5])
+
+    # Minimal satu cookie auth utama harus ada. Tanpa ini, sesi tidak lengkap.
+    required_any = {"SID", "__Secure-1PSID", "SAPISID", "__Secure-1PAPISID"}
+    if names and not (names & required_any):
+        raise ValueError(
+            "Cookie YouTube tidak lengkap (hanya cookie __Secure-3PSID*). "
+            "Ekspor ulang cookies youtube.com dari browser yang benar-benar login "
+            "dan pastikan SID/HSID/SSID/APISID/SAPISID ikut tersimpan."
+        )
 
 
 async def add_cookie(db: AsyncSession, label: str, cookies_text: str) -> YtdlpCookie:
@@ -126,12 +163,16 @@ async def delete_cookie(db: AsyncSession, cookie_id: UUID) -> bool:
     return True
 
 
-async def acquire(db: AsyncSession) -> Optional[tuple[YtdlpCookie, str]]:
+async def acquire(
+    db: AsyncSession, dest_dir: Optional[Path] = None
+) -> Optional[tuple[YtdlpCookie, str]]:
     """Ambil cookies aktif yang paling lama tidak dipakai (round-robin).
 
     Mengembalikan (cookie, path_file) atau None bila tidak ada cookies aktif.
     File cache ditulis 0600 dan writable agar yt-dlp bisa menulis balik token
-    yang sudah dirotasi.
+    yang sudah dirotasi. Bila `dest_dir` diberikan, cookies DISALIN ke folder
+    task (file unik per task) supaya dua task paralel tidak berebut file yang
+    sama saat yt-dlp menulis balik cookie jar.
     """
     result = await db.execute(
         select(YtdlpCookie)
@@ -159,18 +200,35 @@ async def acquire(db: AsyncSession) -> Optional[tuple[YtdlpCookie, str]]:
     except OSError:  # Windows tidak mendukung chmod penuh
         pass
 
+    task_path = path
+    if dest_dir is not None:
+        try:
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            task_path = dest_dir / f"cookies_{cookie.id}.txt"
+            task_path.write_text(plaintext, encoding="utf-8")
+            try:
+                task_path.chmod(0o600)
+            except OSError:
+                pass
+        except OSError as exc:
+            logger.warning("Gagal menyalin cookies ke folder task: %s", exc)
+            task_path = path
+
     cookie.last_used_at = _now()
     await db.commit()
     await db.refresh(cookie)
-    return cookie, str(path)
+    return cookie, str(task_path)
 
 
-async def sync_back(db: AsyncSession, cookie: YtdlpCookie) -> bool:
+async def sync_back(
+    db: AsyncSession, cookie: YtdlpCookie, cookie_path: Optional[str] = None
+) -> bool:
     """Simpan balik isi cache -> DB bila yt-dlp sudah merotasi token.
 
+    `cookie_path` = file yang benar-benar dipakai yt-dlp (salinan per-task).
     Return True bila ada perubahan yang tersimpan.
     """
-    path = _cache_path(cookie.id)
+    path = Path(cookie_path) if cookie_path else _cache_path(cookie.id)
     if not path.exists():
         return False
 
@@ -211,16 +269,23 @@ async def report_failure(
     cookie.last_checked_at = _now()
     cookie.last_error = (error_text or "")[:2000]
 
-    expired = (
-        looks_expired(error_text)
-        or cookie.fail_count >= settings.YTDLP_COOKIE_MAX_FAILURES
+    bot_check = looks_like_bot_check(error_text)
+    expired = looks_expired(error_text) or (
+        not bot_check and cookie.fail_count >= settings.YTDLP_COOKIE_MAX_FAILURES
     )
     if expired:
         cookie.status = COOKIE_STATUS_EXPIRED
         logger.warning(
-            "Cookies '%s' ditandai EXPIRED (fail_count=%s): %s",
+            "Cookies '%s' ditandai EXPIRED (fail_count=%s, bot_check=%s): %s",
             cookie.label,
             cookie.fail_count,
+            bot_check,
+            (error_text or "")[:200],
+        )
+    elif bot_check:
+        logger.warning(
+            "Cookies '%s' gagal karena bot-check IP (bukan cookies invalid): %s",
+            cookie.label,
             (error_text or "")[:200],
         )
     await db.commit()

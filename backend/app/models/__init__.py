@@ -15,6 +15,8 @@ from app.models.clip_template import ClipTemplate
 from app.models.content_moderation import ContentModeration, ModerationStatus
 from app.models.copyright_check import CopyrightAction, CopyrightCheck, CopyrightStatus
 from app.models.credit_transaction import CreditTransaction, CreditTransactionType
+from app.models.download_log import DownloadAttempt, TaskLog
+from app.models.download_runner import DownloadRunner, RunnerJob
 from app.models.encrypted_secret import EncryptedSecret
 from app.models.gdpr_request import GDPRRequest, GDPRRequestStatus, GDPRRequestType
 from app.models.invoice import Invoice, InvoiceStatus
@@ -23,6 +25,7 @@ from app.models.pricing_plan import PricingPlan
 from app.models.platform_setting import PlatformSetting
 from app.models.security_event import EventType, RiskLevel, SecurityEvent
 from app.models.task import Task, TaskStatus
+from app.models.task_asset import TaskAsset
 from app.models.transaction import Transaction, TransactionStatus
 from app.models.user import AuthProvider, User
 from app.models.user_api_key import UserAPIKey
@@ -53,4 +56,5 @@ __all__ = [
     "YouTubeCredential",
     "WorkerInstance",
     "YtdlpCookie", "COOKIE_STATUS_ACTIVE", "COOKIE_STATUS_EXPIRED", "COOKIE_STATUS_DISABLED",
+    "DownloadAttempt", "TaskLog", "DownloadRunner", "RunnerJob", "TaskAsset",
 ]

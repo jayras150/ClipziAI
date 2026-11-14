@@ -125,6 +125,14 @@ export const navGroups: NavGroup[] = [
         items: []
       },
       {
+        title: 'Download Runner',
+        url: '/dashboard/settings/runners',
+        icon: 'settings',
+        shortcut: ['r', 'n'],
+        isActive: false,
+        items: []
+      },
+      {
         title: 'Branding',
         url: '/dashboard/settings/branding',
         icon: 'palette',

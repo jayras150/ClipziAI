@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/table';
 import { adminFetch, type Paged } from '@/lib/clipzi';
 import { SubmitButton } from '@/components/ui/submit-button';
-import { banUser, unbanUser } from './actions';
+import { banUser, unbanUser, deleteUser, bulkDeleteUsers } from './actions';
 
 export const metadata = { title: 'Admin: Users' };
 export const dynamic = 'force-dynamic';
@@ -29,6 +29,7 @@ type UserRow = {
   is_banned: boolean;
   ban_reason: string | null;
   email_verified: boolean;
+  is_admin: boolean;
   plan: string;
   credits_balance: number;
   last_login_at: string | null;
@@ -137,9 +138,21 @@ export default async function UsersPage({
 
         <Card>
           <CardContent className='pt-6'>
+            {/* Form bulk terpisah; checkbox memakai atribut form=... supaya
+                tidak menyarangkan form per-baris (HTML tidak mengizinkan). */}
+            <form id='bulk-users-form' action={bulkDeleteUsers} />
+            <div className='mb-3 flex items-center justify-end gap-2'>
+              <span className='text-muted-foreground text-xs'>
+                Centang user lalu hapus sekaligus (akun admin otomatis dilindungi).
+              </span>
+              <Button type='submit' form='bulk-users-form' size='sm' variant='destructive'>
+                Hapus terpilih
+              </Button>
+            </div>
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className='w-8'>Pilih</TableHead>
                   <TableHead>User</TableHead>
                   <TableHead>Plan</TableHead>
                   <TableHead>Kredit</TableHead>
@@ -153,6 +166,17 @@ export default async function UsersPage({
                 {data.items.length ? (
                   data.items.map((user) => (
                     <TableRow key={user.id}>
+                      <TableCell>
+                        <input
+                          type='checkbox'
+                          name='ids'
+                          value={user.id}
+                          form='bulk-users-form'
+                          disabled={user.is_admin}
+                          aria-label={`Pilih ${user.email || user.id}`}
+                          title={user.is_admin ? 'Akun admin dilindungi' : 'Pilih untuk dihapus'}
+                        />
+                      </TableCell>
                       <TableCell>
                         <Link
                           href={`/dashboard/users/${user.id}`}
@@ -174,6 +198,11 @@ export default async function UsersPage({
                         ) : (
                           <Badge variant='outline'>nonaktif</Badge>
                         )}
+                        {user.is_admin ? (
+                          <Badge variant='outline' className='ml-1'>
+                            ADMIN
+                          </Badge>
+                        ) : null}
                         {user.ban_reason ? (
                           <div className='text-muted-foreground max-w-[160px] truncate text-xs'>
                             {user.ban_reason}
@@ -187,17 +216,31 @@ export default async function UsersPage({
                         {fmt(user.created_at)}
                       </TableCell>
                       <TableCell className='text-right'>
-                        <div className='flex justify-end gap-1'>
-                          <form action={user.is_banned ? unbanUser : banUser}>
-                            <input type='hidden' name='uid' value={user.id} />
-                            <SubmitButton
-                              size='sm'
-                              pendingLabel='Proses…'
-                              variant={user.is_banned ? 'outline' : 'destructive'}
-                            >
-                              {user.is_banned ? 'Buka blokir' : 'Blokir'}
-                            </SubmitButton>
-                          </form>
+                        <div className='flex flex-wrap justify-end gap-1'>
+                          {user.is_admin ? (
+                            <Badge variant='outline' title='Akun admin tidak dapat diblokir/diubah/dihapus'>
+                              dilindungi
+                            </Badge>
+                          ) : (
+                            <>
+                              <form action={user.is_banned ? unbanUser : banUser}>
+                                <input type='hidden' name='uid' value={user.id} />
+                                <SubmitButton
+                                  size='sm'
+                                  pendingLabel='Proses…'
+                                  variant={user.is_banned ? 'outline' : 'destructive'}
+                                >
+                                  {user.is_banned ? 'Buka blokir' : 'Blokir'}
+                                </SubmitButton>
+                              </form>
+                              <form action={deleteUser}>
+                                <input type='hidden' name='uid' value={user.id} />
+                                <SubmitButton size='sm' pendingLabel='Hapus…' variant='destructive'>
+                                  Hapus
+                                </SubmitButton>
+                              </form>
+                            </>
+                          )}
                           <Button
                             size='sm'
                             variant='secondary'
@@ -211,7 +254,7 @@ export default async function UsersPage({
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={7} className='text-muted-foreground text-center'>
+                    <TableCell colSpan={8} className='text-muted-foreground text-center'>
                       Tidak ada user yang cocok dengan filter.
                     </TableCell>
                   </TableRow>

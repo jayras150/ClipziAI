@@ -1,0 +1,206 @@
+name: Downloader Video (fallback runner)
+
+# Workflow ini HANYA dipakai sebagai fallback ketika download di Vast gagal.
+# Cookies diambil dari backend (tidak disimpan di repo/secrets workflow ini)
+# lalu dihapus setelah job selesai.
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_id:
+        description: 'Unique Task ID'
+        required: true
+        type: string
+      video_url:
+        description: 'YouTube Video URL'
+        required: true
+        type: string
+      callback_url:
+        description: 'Backend Callback URL'
+        required: true
+        type: string
+      job_token:
+        description: 'One-time job token (dikirim backend)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: downloader-${{ inputs.task_id }}
+  cancel-in-progress: false
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Mask token
+        run: echo "::add-mask::${{ inputs.job_token }}"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install yt-dlp (pinned) & ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg curl
+          python -m pip install --quiet --upgrade "yt-dlp==2026.10.26"
+
+      - name: Ambil konteks (cookies + presigned upload)
+        env:
+          JOB_TOKEN: ${{ inputs.job_token }}
+          CALLBACK_URL: ${{ inputs.callback_url }}
+        run: |
+          set -euo pipefail
+          API_BASE="${CALLBACK_URL%/api/internal/downloader/callback}"
+          echo "API_BASE=$API_BASE" >> "$GITHUB_ENV"
+          python - "$API_BASE" <<'PY'
+          import json, os, sys, urllib.request
+          base = sys.argv[1]
+          token = os.environ["JOB_TOKEN"]
+          req = urllib.request.Request(
+              base + "/api/internal/downloader/context",
+              data=json.dumps({"job_token": token}).encode(),
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          with urllib.request.urlopen(req, timeout=60) as resp:
+              data = json.loads(resp.read())
+          with open("/tmp/ctx.json", "w", encoding="utf-8") as fh:
+              json.dump(data, fh)
+          cookies = data.get("cookies") or ""
+          if cookies:
+              with open("/tmp/cookies.txt", "w", encoding="utf-8") as fh:
+                  fh.write(cookies)
+              os.chmod("/tmp/cookies.txt", 0o600)
+          print("cookies_present=", bool(cookies))
+          print("upload_ready=", bool(data.get("upload_url")))
+          PY
+
+      - name: Validasi cookies
+        run: |
+          set -euo pipefail
+          if [ -s /tmp/cookies.txt ]; then
+            if ! grep -q "youtube.com" /tmp/cookies.txt; then
+              echo "::error::cookies tidak berisi domain youtube.com"
+              exit 1
+            fi
+            echo "cookies_format=valid"
+          else
+            echo "cookies_format=absent"
+          fi
+
+      - name: Download video
+        env:
+          VIDEO_URL: ${{ inputs.video_url }}
+        run: |
+          set -euo pipefail
+          COOKIE_ARGS=()
+          if [ -s /tmp/cookies.txt ]; then
+            COOKIE_ARGS=(--cookies /tmp/cookies.txt)
+          fi
+          max_mb=$(python -c "import json;print(json.load(open('/tmp/ctx.json')).get('max_file_mb') or 2048)")
+          yt-dlp \
+            "${COOKIE_ARGS[@]}" \
+            --no-warnings \
+            --no-playlist \
+            --retries 3 \
+            --fragment-retries 3 \
+            --format "bv*+ba/b" \
+            --merge-output-format mp4 \
+            --max-filesize "${max_mb}M" \
+            --output "/tmp/source.%(ext)s" \
+            "$VIDEO_URL"
+          ls -l /tmp/source.*
+
+      - name: Upload ke cloud storage
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, glob
+          ctx = json.load(open("/tmp/ctx.json"))
+          files = glob.glob("/tmp/source.*")
+          if not files:
+              raise SystemExit("file hasil download tidak ditemukan")
+          path = files[0]
+          print("upload_path=", path, "size=", os.path.getsize(path))
+          open("/tmp/upload_path.txt", "w").write(path)
+          open("/tmp/upload_url.txt", "w").write(ctx["upload_url"])
+          PY
+          curl -sS -X PUT \
+            -H "Content-Type: video/mp4" \
+            --upload-file "$(cat /tmp/upload_path.txt)" \
+            "$(cat /tmp/upload_url.txt)" \
+            -o /tmp/upload_resp.txt -w "upload_http=%{http_code}\n"
+
+      - name: Callback sukses
+        if: success()
+        env:
+          JOB_TOKEN: ${{ inputs.job_token }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, glob, urllib.request
+          ctx = json.load(open("/tmp/ctx.json"))
+          files = glob.glob("/tmp/source.*")
+          size = os.path.getsize(files[0]) if files else None
+          base = os.environ["API_BASE"]
+          body = json.dumps({
+              "status": "completed",
+              "object_key": ctx.get("object_key"),
+              "size_bytes": size,
+          }).encode()
+          req = urllib.request.Request(
+              base + "/api/internal/downloader/callback",
+              data=body,
+              headers={
+                  "Content-Type": "application/json",
+                  "X-Clipzi-Job-Token": os.environ["JOB_TOKEN"],
+              },
+              method="POST",
+          )
+          with urllib.request.urlopen(req, timeout=60) as resp:
+              print(resp.read().decode()[:500])
+          PY
+
+      - name: Callback gagal
+        if: failure()
+        env:
+          JOB_TOKEN: ${{ inputs.job_token }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, urllib.request
+          base = os.environ.get("API_BASE", "")
+          if not base:
+              raise SystemExit(0)
+          body = json.dumps({
+              "status": "failed",
+              "error": "downloader workflow gagal (lihat log job GitHub Actions)",
+              "error_category": "unknown",
+          }).encode()
+          req = urllib.request.Request(
+              base + "/api/internal/downloader/callback",
+              data=body,
+              headers={
+                  "Content-Type": "application/json",
+                  "X-Clipzi-Job-Token": os.environ["JOB_TOKEN"],
+              },
+              method="POST",
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  print(resp.read().decode()[:300])
+          except Exception as exc:
+              print("callback gagal:", exc)
+          PY
+
+      - name: Bersihkan file sensitif
+        if: always()
+        run: |
+          rm -f /tmp/cookies.txt /tmp/ctx.json /tmp/source.* /tmp/upload_path.txt /tmp/upload_url.txt /tmp/upload_resp.txt
+

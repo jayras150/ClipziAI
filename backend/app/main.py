@@ -26,6 +26,7 @@ from app.api.admin import ai as admin_ai
 from app.api.admin import branding as admin_branding
 from app.api.admin import platform as admin_platform
 from app.api.admin import proxies as admin_proxies
+from app.api.admin import runners as admin_runners
 from app.api.admin import storage as admin_storage
 from app.api import branding as public_branding
 from app.api.admin import youtube as admin_youtube
@@ -64,6 +65,10 @@ async def lifespan(app: FastAPI):
             logger.warning("Pemeliharaan instance Vast gagal/dilewati: %s", exc)
 
     asyncio.create_task(_run_vast_maintenance())
+    # Cleanup storage berkala (source/audio/temp; klip tidak pernah dihapus).
+    from app.services.cleanup_manager import cleanup_scheduler
+
+    cleanup_task = asyncio.create_task(cleanup_scheduler())
     # Setelan AI tersimpan di DB -> inject ke env/settings saat startup supaya
     # kredensial dari dashboard langsung dipakai tanpa menunggu request admin.
     try:
@@ -97,6 +102,7 @@ async def lifespan(app: FastAPI):
         logger.warning("Gagal memuat pool proxy dari database: %s", exc)
     yield
     # Shutdown
+    cleanup_task.cancel()
     await engine.dispose()
 
 
@@ -204,6 +210,9 @@ app.include_router(
 )
 app.include_router(
     admin_storage.router, prefix="/api/admin/settings/storage", tags=["Admin Storage"]
+)
+app.include_router(
+    admin_runners.router, prefix="/api/admin/settings/runners", tags=["Admin Download Runners"]
 )
 app.include_router(
     admin_branding.router, prefix="/api/admin/settings", tags=["Admin Branding"]

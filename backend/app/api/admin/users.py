@@ -16,7 +16,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.admin.deps import get_current_admin
+from app.api.admin.deps import get_current_admin, is_admin_email
 from app.api.deps import get_db_session
 from app.core.security import hash_password
 from app.models.audit_log import ActorType, AuditLog
@@ -58,11 +58,28 @@ class PlanIn(BaseModel):
     reset_credits: Optional[int] = Field(default=None, ge=0)
 
 
+class BulkDeleteIn(BaseModel):
+    ids: list[UUID] = Field(min_length=1, max_length=200)
+
+
 async def _get_user_or_404(db: AsyncSession, user_id: UUID) -> User:
     user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User tidak ditemukan")
     return user
+
+
+def _ensure_mutable(user: User, actor: User) -> None:
+    """Akun admin (ADMIN_EMAILS) & akun sendiri tidak boleh diubah/dihapus.
+
+    Proteksi ini di server (bukan hanya UI) supaya tidak bisa dilewati lewat
+    pemanggilan API langsung.
+    """
+    if user.id == actor.id or is_admin_email(user.email):
+        raise HTTPException(
+            status_code=403,
+            detail="Akun admin dilindungi dan tidak dapat diblokir, diubah, atau dihapus.",
+        )
 
 
 async def _get_profile(db: AsyncSession, user_id: UUID) -> Optional[UserProfile]:
@@ -158,6 +175,7 @@ async def list_users(
             "is_banned": user.is_banned,
             "ban_reason": user.ban_reason,
             "email_verified": user.email_verified,
+            "is_admin": is_admin_email(user.email),
             "plan": _plan_value(profile),
             "credits_balance": profile.credits_balance if profile else 0,
             "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
@@ -253,6 +271,7 @@ async def update_user(
     db: AsyncSession = Depends(get_db_session),
 ):
     user = await _get_user_or_404(db, user_id)
+    _ensure_mutable(user, current_admin)
     before = {
         "name": user.name,
         "email": user.email,
@@ -302,6 +321,7 @@ async def ban_user(
     db: AsyncSession = Depends(get_db_session),
 ):
     user = await _get_user_or_404(db, user_id)
+    _ensure_mutable(user, current_admin)
     user.is_banned = True
     user.ban_reason = payload.reason
     await db.commit()
@@ -336,6 +356,7 @@ async def suspend_user(
     db: AsyncSession = Depends(get_db_session),
 ):
     user = await _get_user_or_404(db, user_id)
+    _ensure_mutable(user, current_admin)
     user.is_active = False
     user.ban_reason = payload.reason
     await db.commit()
@@ -378,7 +399,8 @@ async def adjust_user_credits(
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db_session),
 ):
-    await _get_user_or_404(db, user_id)
+    target = await _get_user_or_404(db, user_id)
+    _ensure_mutable(target, current_admin)
     profile = await _get_profile(db, user_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Profil user tidak ditemukan")
@@ -423,7 +445,8 @@ async def set_user_plan(
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db_session),
 ):
-    await _get_user_or_404(db, user_id)
+    target = await _get_user_or_404(db, user_id)
+    _ensure_mutable(target, current_admin)
     profile = await _get_profile(db, user_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Profil user tidak ditemukan")
@@ -471,6 +494,7 @@ async def reset_user_password(
     import string
 
     user = await _get_user_or_404(db, user_id)
+    _ensure_mutable(user, current_admin)
     alphabet = string.ascii_letters + string.digits
     temp_password = "".join(secrets.choice(alphabet) for _ in range(12))
     user.password_hash = hash_password(temp_password)
@@ -492,7 +516,8 @@ async def force_logout_user(
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db_session),
 ):
-    await _get_user_or_404(db, user_id)
+    user = await _get_user_or_404(db, user_id)
+    _ensure_mutable(user, current_admin)
     revoked_before = await revoke_sessions(db, user_id, reason="admin_force_logout")
     await _audit(
         db,
@@ -631,4 +656,83 @@ async def list_user_timeline(
         }
         for log in rows
     ]
+
+
+
+def _user_snapshot(user: User) -> dict:
+    """Snapshot sebelum hard delete (jejak audit tetap tersimpan)."""
+    return {
+        "id": str(user.id),
+        "email": user.email,
+        "name": user.name,
+        "provider": getattr(user.provider, "value", str(user.provider)),
+        "is_active": user.is_active,
+        "is_banned": user.is_banned,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+    }
+
+
+@router.delete("/{user_id}")
+async def delete_user(
+    user_id: UUID,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Hapus user permanen dari database (akun admin dilindungi)."""
+    user = await _get_user_or_404(db, user_id)
+    _ensure_mutable(user, current_admin)
+
+    snapshot = _user_snapshot(user)
+    await db.delete(user)
+    await db.commit()
+    await _audit(
+        db,
+        request,
+        current_admin,
+        "user_deleted",
+        str(user_id),
+        old=snapshot,
+    )
+    return {"message": f"User {snapshot.get('email') or user_id} dihapus permanen", "id": str(user_id)}
+
+
+@router.post("/bulk-delete")
+async def bulk_delete_users(
+    payload: BulkDeleteIn,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Hapus banyak user sekaligus; hasil per-id (tidak all-or-nothing)."""
+    results: list[dict] = []
+    deleted = 0
+    for uid in payload.ids:
+        user = (
+            await db.execute(select(User).where(User.id == uid))
+        ).scalar_one_or_none()
+        if not user:
+            results.append({"id": str(uid), "ok": False, "error": "User tidak ditemukan"})
+            continue
+        if user.id == current_admin.id or is_admin_email(user.email):
+            results.append(
+                {"id": str(uid), "ok": False, "error": "Akun admin dilindungi"}
+            )
+            continue
+
+        snapshot = _user_snapshot(user)
+        await db.delete(user)
+        await db.commit()
+        await _audit(
+            db,
+            request,
+            current_admin,
+            "user_deleted",
+            str(uid),
+            old=snapshot,
+        )
+        deleted += 1
+        results.append({"id": str(uid), "ok": True})
+
+    return {"deleted": deleted, "requested": len(payload.ids), "results": results}
 

@@ -39,6 +39,20 @@ class Task(Base):
     original_duration: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     total_clips: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # --- Download observability & retry (Batch X) ---------------------------
+    # Status granular fase download (queued/downloading/download_failed/
+    # downloaded/processing/completed/failed/cancelled) tanpa mengubah ENUM DB.
+    download_status: Mapped[Optional[str]] = mapped_column(String(24), nullable=True, index=True)
+    error_category: Mapped[Optional[str]] = mapped_column(String(40), nullable=True, index=True)
+    # Pesan aman untuk user (tanpa detail teknis). error_message tetap teknis.
+    user_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    max_retries: Mapped[int] = mapped_column(Integer, default=3)
+    next_retry_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # URL objek hasil download oleh runner eksternal (GitHub Actions).
+    source_asset_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     auto_upload_youtube: Mapped[bool] = mapped_column(Boolean, default=False)
     youtube_upload_status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     youtube_video_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
@@ -52,6 +66,14 @@ class Task(Base):
 
     user: Mapped["User"] = relationship(back_populates="tasks")
     clips: Mapped[list["Clip"]] = relationship(back_populates="task", cascade="all, delete-orphan")
+
+    @property
+    def can_retry(self) -> bool:
+        """User boleh mencoba lagi selama belum melewati batas retry."""
+        status = getattr(self.status, "value", str(self.status))
+        return status in ("error", "cancelled") and (self.retry_count or 0) < (
+            self.max_retries or 0
+        )
 if TYPE_CHECKING:  # hanya untuk type checker (hindari circular import)
     from app.models.clip import Clip
     from app.models.user import User

@@ -26,6 +26,9 @@ from app.services import cookie_store
 from app.services.clip_planner import plan_clip_quota, plan_clips
 from app.services.credit_service import CreditService
 from app.services.downloader import VideoDownloader, ytdlp_version
+from app.services.download_errors import DownloadError, RunnerFallbackQueued, user_message_for
+from app.services.worker_callback import request_downloader_fallback
+from app.models.download_log import DownloadAttempt
 from app.services.processor import VideoProcessor, get_caption_style
 from app.services.speech_boundaries import detect_silences
 from app.services.storage_registry import get_storage
@@ -260,32 +263,92 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
         try:
             # 1) Unduh sumber (memakai cookie pool bila ada)
             await _set_progress(db, task, 5)
-            acquired = await cookie_store.acquire(db)
-            cookie, cookiefile = acquired if acquired else (None, None)
-            download_height = _download_height(task)
-            logger.info(
-                "unduh sumber: quality=%s cookies=%s yt-dlp=%s",
-                download_height,
-                "yes" if cookiefile else "no",
-                ytdlp_version(),
-            )
-            try:
-                video_path = await downloader.download_video(
-                    task.source_url,
-                    "source",
-                    cookies_path=cookiefile,
-                    quality=download_height,
+            if task.source_asset_url:
+                # Download sudah dilakukan runner fallback (GitHub Actions):
+                # ambil objek dari storage, lalu lanjut clipping seperti biasa.
+                task.download_status = "downloading"
+                source_dir = work_dir / "input"
+                source_dir.mkdir(parents=True, exist_ok=True)
+                video_path = str(source_dir / "source.mp4")
+                await _download_asset(task.source_asset_url, video_path)
+                task.download_status = "downloaded"
+            else:
+                task.download_status = "downloading"
+                acquired = await cookie_store.acquire(db, dest_dir=work_dir / "input")
+                cookie, cookiefile = acquired if acquired else (None, None)
+                download_height = _download_height(task)
+                logger.info(
+                    "unduh sumber: quality=%s cookies=%s cookie_id=%s yt-dlp=%s",
+                    download_height,
+                    "yes" if cookiefile else "no",
+                    str(cookie.id) if cookie else "-",
+                    ytdlp_version(),
                 )
-                if cookie is not None:
-                    await cookie_store.report_success(db, cookie)
-            except Exception as exc:
-                if cookie is not None:
-                    await cookie_store.report_failure(db, cookie, str(exc))
-                raise
-            finally:
-                # Simpan balik token yang mungkin sudah dirotasi yt-dlp
-                if cookie is not None:
-                    await cookie_store.sync_back(db, cookie)
+                require_cookies = bool(settings.YOUTUBE_COOKIES_REQUIRED) and "youtube" in (
+                    task.source_type or ""
+                ).lower()
+                try:
+                    video_path = await downloader.download_video(
+                        task.source_url,
+                        "source",
+                        cookies_path=cookiefile,
+                        quality=download_height,
+                        require_cookies=require_cookies,
+                    )
+                    if cookie is not None:
+                        await cookie_store.report_success(db, cookie)
+                    task.download_status = "downloaded"
+                except Exception as exc:
+                    if cookie is not None:
+                        await cookie_store.report_failure(db, cookie, str(exc))
+                    if isinstance(exc, DownloadError):
+                        task.error_category = exc.category
+                        task.user_message = exc.user_message
+                        task.download_status = "download_failed"
+                        # Simpan setiap percobaan untuk viewer log admin.
+                        for index, attempt in enumerate(exc.attempts, start=1):
+                            db.add(
+                                DownloadAttempt(
+                                    task_id=task.id,
+                                    user_id=task.user_id,
+                                    attempt_no=index,
+                                    runner_type="vast",
+                                    yt_dlp_version=exc.ytdlp_version,
+                                    extractor_client=",".join(attempt.get("clients") or [])
+                                    or None,
+                                    format_selector=str(attempt.get("format") or "")[:120]
+                                    or None,
+                                    cookie_id=exc.cookie_id,
+                                    cookie_status="used"
+                                    if attempt.get("cookies")
+                                    else "not_used",
+                                    error_category=attempt.get("category") or exc.category,
+                                    error_message=str(attempt.get("error") or "")[:8000],
+                                    stack_trace=str(exc),
+                                )
+                            )
+                        await db.commit()
+
+                        # Vast tetap downloader utama; GitHub hanya fallback.
+                        if exc.retryable and settings.RUNNER_FALLBACK_ENABLED:
+                            logger.warning(
+                                "Download Vast gagal (task %s, kategori %s) — coba runner fallback.",
+                                task.id,
+                                exc.category,
+                            )
+                            if await request_downloader_fallback(task.id):
+                                task.status = TaskStatus.QUEUED
+                                task.download_status = "downloading"
+                                task.error_message = None
+                                task.user_message = None
+                                task.error_category = None
+                                await db.commit()
+                                raise RunnerFallbackQueued() from exc
+                    raise
+                finally:
+                    # Simpan balik token yang mungkin sudah dirotasi yt-dlp
+                    if cookie is not None:
+                        await cookie_store.sync_back(db, cookie, cookiefile)
 
             # 2) Probe metadata
             info = await processor.get_video_info(video_path)
@@ -310,6 +373,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                         "lalu ulangi task."
                     )
             task.original_duration = info.get("duration")
+            task.download_status = "processing"
             await db.commit()
             await _set_progress(db, task, 15)
             _lap("downloaded")
@@ -953,8 +1017,19 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
             task.total_clips = len(rendered)
             task.status = TaskStatus.COMPLETED
             task.progress = 100
+            task.download_status = "completed"
             task.completed_at = _now()
             await db.commit()
+            # Semua klip sudah tersimpan & diverifikasi: hapus file sementara
+            # (source/audio). Klip & thumbnail tidak pernah dihapus di sini.
+            try:
+                from app.services.cleanup_manager import cleanup_task_temp
+
+                cleanup = await cleanup_task_temp(db, task.id)
+                if cleanup.get("deleted") or cleanup.get("failed"):
+                    logger.info("Cleanup task %s: %s", task.id, cleanup)
+            except Exception as exc:
+                logger.warning("Cleanup temp task %s gagal: %s", task.id, exc)
             _lap("saved")
 
             # Ringkasan durasi per stage — dipakai untuk analisa worker lambat.
@@ -995,10 +1070,22 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                 pass
             return {"ok": True, "clips": len(rendered), "error": None}
 
+        except RunnerFallbackQueued:
+            logger.info(
+                "Task %s dipindahkan ke runner fallback; pipeline berhenti rapi.", task.id
+            )
+            return
         except Exception as exc:
             logger.exception("Pipeline gagal untuk task %s", task.id)
             task.status = TaskStatus.ERROR
             task.error_message = str(exc)[:2000]
+            if not task.user_message:
+                category = getattr(exc, "category", None)
+                task.user_message = user_message_for(category)
+                if category:
+                    task.error_category = category
+            if not task.download_status:
+                task.download_status = "failed"
             await db.commit()
             try:
                 from app.services.worker_callback import report_worker_event
