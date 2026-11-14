@@ -157,7 +157,7 @@ class Settings(BaseSettings):
     # Berapa kali gagal sebelum cookies ditandai expired
     YTDLP_COOKIE_MAX_FAILURES: int = 3
     # Video probe untuk uji validitas cookies (harus video publik)
-    YTDLP_COOKIE_PROBE_URL: str = "https://www.youtube.com/watch?v=BaW_jenozKc"
+    YTDLP_COOKIE_PROBE_URL: str = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
     # Folder cache file cookies (hasil decrypt). Kosong = ./.cache/ytdlp_cookies
     YTDLP_COOKIE_CACHE_DIR: Optional[str] = None
 
