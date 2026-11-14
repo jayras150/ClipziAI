@@ -468,6 +468,29 @@ curl -s -H "Authorization: Bearer $TOKEN" \
   https://admin.<domain>/api/admin/ytdlp-cookies/<id>/base64 | jq -r .base64
 ```
 
+## Runner fallback downloader (GitHub Actions)
+
+Vast tetap downloader utama. Bila download gagal dengan error **retryable** (bot-check,
+rate limit, jaringan, format), backend otomatis memilih runner sehat dan memanggil
+`workflow_dispatch` di repo GitHub yang terdaftar.
+
+Setup di admin: **Settings › Download Runner** → isi `owner`, `repo`, nama file workflow
+(`downloader_video.yml`), branch (`main`), dan **PAT fine-grained** dengan izin
+**Actions**, **Contents**, dan **Workflows** (read & write) serta akses ke repo tersebut.
+
+- Tombol **Cek workflow** menampilkan preflight: repo, default branch, file workflow,
+  status terdaftar di Actions, dan rate limit.
+- Tombol **Pasang workflow** menulis `.github/workflows/downloader_video.yml` langsung ke
+  default branch (repo kosong → dibuatkan commit pertama). Bila file sudah ada dan
+  isinya berbeda, sistem tidak menimpa kecuali opsi **Timpa** dicentang.
+- Cookies **tidak** disimpan di repo/secrets. Workflow mengambil cookies + presigned
+  upload dari backend memakai job token one-time, lalu menghapus file sementara.
+- Setelah upload selesai, workflow memanggil callback; backend menyimpan
+  `source_asset_url` dan meneruskan task ke Vast untuk clipping.
+
+Semua teks yang tampil di **UI user** (frontend) dan pesan error API untuk user
+berbahasa **Inggris**. UI admin internal tetap berbahasa Indonesia.
+
 ## Setelan ekosistem & ganti domain (1 klik)
 
 Semua nilai disimpan di `platform_settings` key `platform`:
