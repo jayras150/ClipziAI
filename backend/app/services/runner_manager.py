@@ -366,7 +366,8 @@ async def install_workflow(
     branch = str(status.get("default_branch") or runner.git_ref or "main")
     exists = bool(status.get("exists"))
 
-    if exists and status.get("up_to_date") and not force:
+    if exists and status.get("up_to_date"):
+        # Konten sudah sama: tidak perlu commit baru, walau tombol Timpa diklik.
         return {
             "action": "unchanged",
             "path": path,
