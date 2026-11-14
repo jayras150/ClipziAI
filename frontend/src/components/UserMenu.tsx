@@ -2,10 +2,30 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { CircleUserRound, CreditCard, LayoutDashboard, LogOut } from "lucide-react"
+import { CreditCard, LayoutDashboard, LogOut } from "lucide-react"
 
 import { api, UserProfileData } from "@/lib/api"
 import { AUTH_EVENT, clearSession, hasSession } from "@/lib/auth"
+
+/** Ikon profil (SVG yang diminta): kepala + bahu, mengikuti gaya Lucide. */
+function ProfileIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      aria-hidden="true"
+    >
+      <g fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}>
+        <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+        <circle cx="12" cy="7" r="4" />
+      </g>
+    </svg>
+  )
+}
 
 /** Inisial untuk avatar: "Alex Carter" -> "AC", fallback ke huruf pertama email. */
 function initials(name?: string | null, email?: string | null): string {
@@ -107,7 +127,7 @@ export default function UserMenu() {
             )}
           </div>
           <Link className="ui-dropdown-item" href="/profile" role="menuitem" onClick={() => setOpen(false)}>
-            <CircleUserRound size={15} /> My Profile
+            <ProfileIcon size={15} /> My Profile
           </Link>
           <Link className="ui-dropdown-item" href="/dashboard" role="menuitem" onClick={() => setOpen(false)}>
             <LayoutDashboard size={15} /> Dashboard

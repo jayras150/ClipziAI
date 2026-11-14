@@ -201,13 +201,46 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 
 @media (max-width: 920px) {
+  /* Mobile/tablet: 2 kolom (brand | aksi) + baris kedua berisi menu yang bisa
+     di-scroll horizontal. Menu TIDAK pernah disembunyikan. */
   .ui-nav {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 10px;
+    row-gap: 8px;
+    padding: 8px 12px;
+  }
+  .ui-nav > .ui-brand {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+  }
+  .ui-nav-actions {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    margin-left: 0;
   }
   .ui-nav > .ui-nav-links {
     grid-column: 1 / -1;
-    justify-self: center;
-    gap: 16px;
+    grid-row: 2;
+    justify-self: stretch;
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    gap: 4px;
+    width: 100%;
+    margin-left: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+  }
+  .ui-nav > .ui-nav-links::-webkit-scrollbar { display: none; }
+  .ui-nav > .ui-nav-links a {
+    flex: 0 0 auto;
+    padding: 7px 10px;
+    font-size: 13.5px;
   }
 }
 
@@ -1542,22 +1575,19 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
 @media (max-width: 860px) {
   .ui-container,
   .ui-container-wide { width: min(100% - 28px, 100%); }
-  /* Menu header TIDAK boleh hilang: di layar kecil link turun ke baris kedua
-     (sebelumnya `display:none` membuat seluruh menu lenyap, termasuk Dashboard). */
-  .ui-nav-links {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 4px;
-    width: 100%;
-    margin-left: 0;
-    font-size: 14px;
-  }
   .ui-title { font-size: clamp(23px, 5vw, 30px); }
   .ui-card { padding: 16px; }
 }
 @media (max-width: 560px) {
   body { font-size: 14px; }
+  .ui-nav { padding: 8px 10px; row-gap: 6px; }
+  .ui-nav > .ui-nav-links a { padding: 6px 9px; font-size: 13px; }
+  .ui-avatar { width: 34px; height: 34px; }
+  /* Nama channel dipotong supaya tombol YouTube + avatar tetap satu baris. */
+  .ui-btn-yt { max-width: 150px; padding: 8px 10px; font-size: 12.5px; }
+  .ui-btn-yt .ui-yt-name { max-width: 78px; }
+  .ui-nav-actions { gap: 8px; }
+  .ui-nav-actions .ui-btn { padding: 8px 11px; font-size: 12.5px; }
   .ui-nav-actions { margin-left: auto; }
   .ui-btn { min-height: 40px; padding: 9px 14px; font-size: 13px; }
   .ui-opt-grid { grid-template-columns: 1fr; }
