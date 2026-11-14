@@ -2308,6 +2308,15 @@ body.drawer-open { overflow: hidden; }
   .landing .menu-toggle { display: none; }
 }
 
+/* Tablet (≤1100px): menu horizontal 7 tautan tidak cukup, pakai drawer juga. */
+@media (max-width: 1100px) {
+  .ui-nav-toggle { display: inline-flex; }
+  .ui-nav > .ui-nav-links { display: none; }
+  .ui-nav { grid-template-columns: 1fr auto 1fr; }
+  .ui-nav > .ui-brand { grid-column: 2; justify-self: center; }
+  .ui-nav .ui-nav-actions { grid-column: 3; justify-self: end; }
+}
+
 /* Skor viral: hanya angka di pojok kanan atas kartu (tanpa teks). */
 .viral-bubble { padding: 3px; gap: 0; }
 .viral-ring { width: 34px; height: 34px; }
