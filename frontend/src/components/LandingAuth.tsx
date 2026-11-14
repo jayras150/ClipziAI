@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { ArrowRight } from "lucide-react"
 import { useEffect, useState } from "react"
 
 import UserMenu from "@/components/UserMenu"
@@ -36,7 +37,7 @@ export default function LandingAuth() {
         Sign in
       </Link>
       <Link className="btn btn-gold" href="/register">
-        Start free <span>→</span>
+        Start free <ArrowRight size={16} />
       </Link>
     </>
   )

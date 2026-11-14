@@ -24,6 +24,7 @@ import {
   Zap,
   RotateCcw,
   Droplets,
+  ChevronDown,
 } from "lucide-react"
 
 import { api, ClipData, MusicTrackData, TaskData } from "@/lib/api"
@@ -140,6 +141,28 @@ export default function DashboardPage() {
   const [planType, setPlanType] = useState("")
   // Konfirmasi wajib sebelum memutus koneksi YouTube (menghapus token tersimpan).
   const [confirmDisconnect, setConfirmDisconnect] = useState(false)
+  // Dropdown kecil di tombol channel YouTube (isi: Disconnect).
+  const [ytMenuOpen, setYtMenuOpen] = useState(false)
+  const ytMenuRef = useRef<HTMLDivElement>(null)
+
+  // Tutup dropdown channel YouTube saat klik di luar atau tekan Escape.
+  useEffect(() => {
+    if (!ytMenuOpen) return
+    const onPointerDown = (event: MouseEvent) => {
+      if (ytMenuRef.current && !ytMenuRef.current.contains(event.target as Node)) {
+        setYtMenuOpen(false)
+      }
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setYtMenuOpen(false)
+    }
+    document.addEventListener("mousedown", onPointerDown)
+    document.addEventListener("keydown", onKey)
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown)
+      document.removeEventListener("keydown", onKey)
+    }
+  }, [ytMenuOpen])
 
   const [tasks, setTasks] = useState<TaskData[]>([])
   const [tasksLoading, setTasksLoading] = useState(true)
@@ -656,25 +679,44 @@ export default function DashboardPage() {
         </nav>
         <div className="ui-nav-actions">
           {youtube.connected ? (
-            <>
-              <span
-                className="ui-chip ui-chip-success"
-                title={`YouTube: ${youtube.channel_name || "connected"}`}
-              >
-                <Youtube size={14} />
-                {youtube.channel_name || "YouTube connected"}
-              </span>
-              {/* Tombol ini TIDAK langsung memutus koneksi: buka konfirmasi dulu. */}
+            <div className="ui-yt" ref={ytMenuRef}>
               <button
                 type="button"
-                onClick={() => setConfirmDisconnect(true)}
+                className="ui-btn-yt"
+                onClick={() => setYtMenuOpen((open) => !open)}
+                aria-haspopup="menu"
+                aria-expanded={ytMenuOpen}
+                title={`YouTube: ${youtube.channel_name || "connected"}`}
                 disabled={youtubeLoading}
-                className="ui-btn ui-btn-ghost"
               >
-                {youtubeLoading ? <ClipzySpinner size="xs" /> : <Unlink size={15} />}
-                Disconnect
+                {youtubeLoading ? (
+                  <ClipzySpinner size="xs" />
+                ) : (
+                  <Youtube className="yt-icon" size={18} fill="#ff2d2d" strokeWidth={0} />
+                )}
+                <span className="ui-yt-name">{youtube.channel_name || "YouTube connected"}</span>
+                <ChevronDown size={14} />
               </button>
-            </>
+              {ytMenuOpen && (
+                <div className="ui-dropdown ui-dropdown-sm" role="menu">
+                  <div className="ui-dropdown-note">
+                    Connected as {youtube.channel_name || "YouTube"}
+                  </div>
+                  <button
+                    type="button"
+                    className="ui-dropdown-item danger"
+                    role="menuitem"
+                    disabled={youtubeLoading}
+                    onClick={() => {
+                      setYtMenuOpen(false)
+                      setConfirmDisconnect(true)
+                    }}
+                  >
+                    <Unlink size={15} /> Disconnect
+                  </button>
+                </div>
+              )}
+            </div>
           ) : (
             <button
               type="button"

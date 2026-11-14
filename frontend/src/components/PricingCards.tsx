@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { Check } from "lucide-react"
 
 const PLANS = [
   {
@@ -103,7 +104,9 @@ export default function PricingCards() {
             <ul style={{ listStyle: "none", padding: 0, margin: "0 0 22px", display: "grid", gap: 8 }}>
               {plan.features.map((feature) => (
                 <li key={feature} style={{ display: "flex", gap: 8, fontSize: 13, color: "#c9cbd3" }}>
-                  <span className="ui-gold">✓</span>
+                  <span className="ui-gold">
+                    <Check size={14} strokeWidth={2.5} />
+                  </span>
                   {feature}
                 </li>
               ))}

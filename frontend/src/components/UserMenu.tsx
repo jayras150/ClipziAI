@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { CreditCard, LayoutDashboard, LogOut, UserRound } from "lucide-react"
+import { CircleUserRound, CreditCard, LayoutDashboard, LogOut } from "lucide-react"
 
 import { api, UserProfileData } from "@/lib/api"
 import { AUTH_EVENT, clearSession, hasSession } from "@/lib/auth"
@@ -107,7 +107,7 @@ export default function UserMenu() {
             )}
           </div>
           <Link className="ui-dropdown-item" href="/profile" role="menuitem" onClick={() => setOpen(false)}>
-            <UserRound size={15} /> My Profile
+            <CircleUserRound size={15} /> My Profile
           </Link>
           <Link className="ui-dropdown-item" href="/dashboard" role="menuitem" onClick={() => setOpen(false)}>
             <LayoutDashboard size={15} /> Dashboard

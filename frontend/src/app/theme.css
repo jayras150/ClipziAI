@@ -149,7 +149,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* ---------- Navbar ---------- */
 .ui-nav {
   position: sticky;
-  top: 0;
+  top: 10px;
   z-index: 40;
   /* Grid 3 kolom: brand | menu | aksi. Kolom kiri/kanan sama lebar (1fr)
      supaya menu benar-benar center, bukan hanya "di tengah sisa ruang". */
@@ -159,12 +159,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
   column-gap: 20px;
   row-gap: 10px;
   min-height: 66px;
-  /* Transparan: navbar tidak punya panel/gradient sendiri supaya menyatu
-     dengan latar body (halo + grid ambient tetap terlihat menembus). */
-  background: transparent;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  border-bottom: 1px solid var(--ui-line);
+  margin-top: 10px;
+  border-radius: 15px;
+  /* Glass drop: latar tipis + blur sangat tebal supaya ambient body tetap
+     terlihat menembus, tapi teks header tetap kebaca saat konten lewat. */
+  background: rgba(10, 12, 18, 0.38);
+  backdrop-filter: blur(30px) saturate(170%);
+  -webkit-backdrop-filter: blur(30px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 -1px 0 rgba(244, 199, 107, 0.16);
 }
 .ui-brand-logo {
   height: 30px;
@@ -207,13 +211,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
   }
 }
 
-.ui-nav::after {
-  content: "";
-  position: absolute;
-  left: 0; right: 0; bottom: -1px;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(244, 199, 107, 0.45), transparent);
-}
+/* Garis emas lama diganti border+shadow glass (garis lurus akan memotong sudut). */
+.ui-nav::after { display: none; }
 .ui-nav .ui-container-wide,
 .ui-nav .ui-container,
 .ui-nav > .ui-container-wide,
@@ -250,7 +249,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
   align-items: center;
   gap: 6px;
   margin-left: 8px;
-  font-size: 13px;
+  font-size: 15px;
+  font-weight: 500;
   color: #b9bfcd;
 }
 .ui-nav-links a {
@@ -366,6 +366,49 @@ button, input, select, textarea { font: inherit; color: inherit; }
   transition: 0.15s;
 }
 .ui-dropdown-item:hover { background: rgba(255, 255, 255, 0.06); color: #fff; }
+
+/* ---------- Tombol YouTube (nama channel + dropdown Disconnect) ---------- */
+.ui-yt {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.ui-btn-yt {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 250px;
+  min-height: 38px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 45, 45, 0.35);
+  background: rgba(255, 45, 45, 0.1);
+  color: #ffd9d9;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.18s;
+}
+.ui-btn-yt:hover { background: rgba(255, 45, 45, 0.16); border-color: rgba(255, 45, 45, 0.55); }
+.ui-btn-yt[aria-expanded="true"] { background: rgba(255, 45, 45, 0.2); border-color: rgba(255, 45, 45, 0.7); }
+.ui-btn-yt .ui-yt-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-btn-yt .yt-icon { flex: none; color: #ff2d2d; }
+.ui-dropdown-sm { min-width: 232px; }
+.ui-dropdown-note {
+  padding: 4px 6px 10px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--ui-line);
+  font-size: 11.5px;
+  color: var(--ui-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ui-dropdown-item.danger { color: #ff9188; }
+.ui-dropdown-item.danger:hover { background: rgba(255, 96, 96, 0.12); color: #ffb3ad; }
 .ui-drop-formats {
   margin-top: 8px;
   padding: 9px 10px;
@@ -757,6 +800,10 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
   gap: 12px;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   margin-top: 14px;
+  /* Kartu tidak ikut melar saat tetangganya bertambah tinggi (mis. setelah
+     watermark diunggah) — ukuran tiap kartu tetap seperti semula. */
+  align-items: start;
+  grid-auto-rows: min-content;
 }
 .ui-opt {
   display: grid;
@@ -1447,12 +1494,13 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
   pointer-events: none;
 }
 .wm-file { padding: 8px 10px; font-size: 12px; border-radius: 10px; }
-.wm-logo-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+.wm-logo-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: nowrap; min-height: 46px; }
 .wm-logo-row img {
-  max-height: 58px;
-  max-width: 160px;
+  height: 46px;
+  width: auto;
+  max-width: 132px;
   object-fit: contain;
-  padding: 5px;
+  padding: 4px;
   border-radius: 10px;
   border: 1px solid rgba(244, 199, 107, 0.28);
   background: rgba(6, 8, 12, 0.85);
@@ -1494,7 +1542,17 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
 @media (max-width: 860px) {
   .ui-container,
   .ui-container-wide { width: min(100% - 28px, 100%); }
-  .ui-nav-links { display: none; }
+  /* Menu header TIDAK boleh hilang: di layar kecil link turun ke baris kedua
+     (sebelumnya `display:none` membuat seluruh menu lenyap, termasuk Dashboard). */
+  .ui-nav-links {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 4px;
+    width: 100%;
+    margin-left: 0;
+    font-size: 14px;
+  }
   .ui-title { font-size: clamp(23px, 5vw, 30px); }
   .ui-card { padding: 16px; }
 }

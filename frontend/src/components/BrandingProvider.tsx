@@ -11,6 +11,7 @@
  * sumbernya satu: `/api/branding` (server-side initial + refresh client).
  */
 import Link from "next/link"
+import { Play } from "lucide-react"
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
 
 import { getApiBaseUrl } from "@/lib/env"
@@ -149,7 +150,9 @@ export function BrandLogo({
           alt={name}
         />
       ) : (
-        <span className={markClass}>▶</span>
+        <span className={markClass}>
+          <Play size={16} fill="currentColor" strokeWidth={0} />
+        </span>
       )}
       {withName ? <span>{name}</span> : null}
     </Link>
@@ -181,7 +184,7 @@ export function BrandMark({ size = 32 }: { size?: number }) {
       className="ui-brand-mark"
       style={{ width: size, height: size, fontSize: Math.round(size * 0.42) }}
     >
-      ▶
+      <Play size={Math.round(size * 0.45)} fill="currentColor" strokeWidth={0} />
     </span>
   )
 }

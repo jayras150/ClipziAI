@@ -4,35 +4,56 @@ import Link from "next/link"
 import { BrandLogo, BrandName } from "@/components/BrandingProvider"
 import LandingAuth from "@/components/LandingAuth"
 import { useEffect, useRef, useState } from "react"
+import {
+  ArrowRight,
+  Captions,
+  Check,
+  CloudUpload,
+  Download,
+  Ellipsis,
+  Link2,
+  Menu,
+  Play,
+  ScanFace,
+  ScanSearch,
+  Scissors,
+  Send,
+  Smartphone,
+  Sparkles,
+  Upload,
+  X,
+  Zap,
+} from "lucide-react"
+import { AUTH_EVENT, hasSession } from "@/lib/auth"
 
 const FEATURES = [
   {
-    icon: "✦",
+    icon: Sparkles,
     title: "AI Moment Detection",
     desc: "Scans the transcript to surface hooks, punchlines, and the most engaging moments — no need to rewatch the whole video.",
   },
   {
-    icon: "▤",
+    icon: Captions,
     title: "Smart Subtitles",
     desc: "Whisper transcribes the audio and burns accurate, timed captions straight into the video.",
   },
   {
-    icon: "▣",
+    icon: Smartphone,
     title: "Vertical Reframing",
     desc: "Automatically reframes the main subject to 9:16, ready for Shorts, Reels, and TikTok.",
   },
   {
-    icon: "◉",
+    icon: ScanFace,
     title: "AI Speaker Focus",
     desc: "Keeps the speaker centred while the frame is cropped to vertical, so nobody is cut off.",
   },
   {
-    icon: "⌁",
+    icon: Zap,
     title: "Fast Video Workflow",
     desc: "Moment selection, cutting, subtitles, and rendering run in a single automated pipeline.",
   },
   {
-    icon: "↗",
+    icon: Send,
     title: "Export & Share",
     desc: "Publish clips straight to YouTube with AI-suggested titles, descriptions, and tags.",
   },
@@ -40,34 +61,42 @@ const FEATURES = [
 
 const STEPS = [
   {
-    num: "01 / INPUT",
+    icon: Upload,
+    no: "01",
+    label: "INPUT",
     title: "Add your video",
     desc: "Paste a YouTube, TikTok, or Instagram link — or upload a file directly.",
   },
   {
-    num: "02 / ANALYZE",
+    icon: ScanSearch,
+    no: "02",
+    label: "ANALYZE",
     title: "AI analyses it",
     desc: "Audio is transcribed and the timeline is scored to find the strongest segments.",
   },
   {
-    num: "03 / CREATE",
+    icon: Scissors,
+    no: "03",
+    label: "CREATE",
     title: "Clips are rendered",
     desc: "Highlights are cut, reframed to 9:16, and captions are burned in.",
   },
   {
-    num: "04 / EXPORT",
+    icon: Download,
+    no: "04",
+    label: "EXPORT",
     title: "Download or publish",
     desc: "Grab the MP4 and SRT files, or push them to YouTube in one click.",
   },
 ]
 
 const STUDIO_PILLS = [
-  "✂ AI clipping",
-  "▤ AI captioning",
-  "▣ AI reframe 9:16",
-  "◉ Speaker focus",
-  "⌁ AI hook titles",
-  "↗ One-click export",
+  { icon: Scissors, label: "AI clipping" },
+  { icon: Captions, label: "AI captioning" },
+  { icon: Smartphone, label: "AI reframe 9:16" },
+  { icon: ScanFace, label: "Speaker focus" },
+  { icon: Sparkles, label: "AI hook titles" },
+  { icon: Send, label: "One-click export" },
 ]
 
 export default function LandingPage() {
@@ -75,10 +104,81 @@ export default function LandingPage() {
   const [fileName, setFileName] = useState("")
   const [videoUrl, setVideoUrl] = useState("")
   const [year, setYear] = useState<number | null>(null)
+  // Status login dibaca setelah mount (localStorage tidak ada di server).
+  const [signedIn, setSignedIn] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const heroVideoRef = useRef<HTMLVideoElement>(null)
 
   // Year is computed on the client to avoid hydration mismatch.
   useEffect(() => setYear(new Date().getFullYear()), [])
+
+  // Menu DASHBOARD wajib tetap ada selama sesi aktif (termasuk setelah pindah tab).
+  useEffect(() => {
+    const sync = () => setSignedIn(hasSession())
+    sync()
+    window.addEventListener("storage", sync)
+    window.addEventListener(AUTH_EVENT, sync)
+    return () => {
+      window.removeEventListener("storage", sync)
+      window.removeEventListener(AUTH_EVENT, sync)
+    }
+  }, [])
+
+  /**
+   * Autoplay preview hero.
+   *
+   * `autoPlay` saja tidak cukup: saat reload browser kadang menahan pemutaran
+   * sampai elemen benar-benar punya data, dan sebagian browser memblokir
+   * autoplay tanpa interaksi. Jadi kita panggil `play()` berulang pada event
+   * media (loadeddata/canplay), saat tab kembali aktif, dan pada interaksi
+   * pertama pengguna. Overlay bulatan ▶ tetap dipertahankan sebagai hiasan.
+   */
+  useEffect(() => {
+    const video = heroVideoRef.current
+    if (!video) return
+
+    video.muted = true
+    video.defaultMuted = true
+    video.loop = true
+    video.playsInline = true
+
+    let stopped = false
+    const tryPlay = () => {
+      if (stopped) return
+      const attempt = video.play()
+      if (attempt && typeof attempt.catch === "function") attempt.catch(() => {})
+    }
+
+    tryPlay()
+
+    const mediaEvents = ["loadeddata", "loadedmetadata", "canplay", "canplaythrough"] as const
+    mediaEvents.forEach((name) => video.addEventListener(name, tryPlay))
+    document.addEventListener("visibilitychange", tryPlay)
+    window.addEventListener("pageshow", tryPlay)
+
+    const onFirstInteraction = () => {
+      tryPlay()
+      window.removeEventListener("pointerdown", onFirstInteraction)
+      window.removeEventListener("keydown", onFirstInteraction)
+      window.removeEventListener("touchstart", onFirstInteraction)
+      window.removeEventListener("scroll", onFirstInteraction)
+    }
+    window.addEventListener("pointerdown", onFirstInteraction, { passive: true })
+    window.addEventListener("touchstart", onFirstInteraction, { passive: true })
+    window.addEventListener("scroll", onFirstInteraction, { passive: true })
+    window.addEventListener("keydown", onFirstInteraction)
+
+    return () => {
+      stopped = true
+      mediaEvents.forEach((name) => video.removeEventListener(name, tryPlay))
+      document.removeEventListener("visibilitychange", tryPlay)
+      window.removeEventListener("pageshow", tryPlay)
+      window.removeEventListener("pointerdown", onFirstInteraction)
+      window.removeEventListener("touchstart", onFirstInteraction)
+      window.removeEventListener("scroll", onFirstInteraction)
+      window.removeEventListener("keydown", onFirstInteraction)
+    }
+  }, [])
 
   const onPickFile = (file: File | null) => {
     if (!file) {
@@ -86,7 +186,7 @@ export default function LandingPage() {
       return
     }
     const size = (file.size / (1024 * 1024)).toFixed(2)
-    setFileName(`✓ ${file.name} · ${size} MB`)
+    setFileName(`${file.name} · ${size} MB`)
   }
 
   const closeMenu = () => setMenuOpen(false)
@@ -107,6 +207,11 @@ export default function LandingPage() {
       <header className="container navbar">
         <BrandLogo variant="landing" href="#home" onClick={closeMenu} />
         <nav className={`nav-links${menuOpen ? " open" : ""}`}>
+          {signedIn && (
+            <Link href="/dashboard" onClick={closeMenu}>
+              Dashboard
+            </Link>
+          )}
           <a href="#features" onClick={closeMenu}>Features</a>
           <a href="#how" onClick={closeMenu}>How it works</a>
           <a href="#demo" onClick={closeMenu}>Demo</a>
@@ -119,7 +224,7 @@ export default function LandingPage() {
             aria-label="Toggle menu"
             onClick={() => setMenuOpen((open) => !open)}
           >
-            {menuOpen ? "✕" : "☰"}
+            {menuOpen ? <X size={18} /> : <Menu size={18} />}
           </button>
         </div>
       </header>
@@ -137,12 +242,13 @@ export default function LandingPage() {
                 </span>
                 <span className="studio-window-title">CLIPZY STUDIO / PREVIEW</span>
                 <span className="studio-window-more" aria-hidden="true">
-                  •••
+                  <Ellipsis size={15} />
                 </span>
               </div>
 
               <div className="studio-video-frame">
                 <video
+                  ref={heroVideoRef}
                   className="studio-video"
                   src="/media/hook.mp4"
                   autoPlay
@@ -153,7 +259,7 @@ export default function LandingPage() {
                   aria-label="Clipzy AI preview clip"
                 />
                 <span className="studio-play" aria-hidden="true">
-                  ▶
+                  <Play size={19} fill="currentColor" strokeWidth={0} />
                 </span>
                 <div className="studio-video-label">
                   <strong>Your next viral moment</strong>
@@ -181,7 +287,7 @@ export default function LandingPage() {
 
             <form className="studio-bar" onSubmit={submitVideo}>
               <span className="studio-bar-icon" aria-hidden="true">
-                🔗
+                <Link2 size={16} />
               </span>
               <input
                 className="studio-bar-input"
@@ -191,7 +297,7 @@ export default function LandingPage() {
                 aria-label="Video link"
               />
               <button type="submit" className="btn btn-gold studio-cta">
-                Get clips <span>→</span>
+                Get clips <ArrowRight size={16} />
               </button>
             </form>
             <p className="studio-bar-help">
@@ -200,11 +306,15 @@ export default function LandingPage() {
             </p>
 
             <div className="studio-pills">
-              {STUDIO_PILLS.map((pill) => (
-                <span className="studio-pill" key={pill}>
-                  {pill}
-                </span>
-              ))}
+              {STUDIO_PILLS.map((pill) => {
+                const PillIcon = pill.icon
+                return (
+                  <span className="studio-pill" key={pill.label}>
+                    <PillIcon size={12} strokeWidth={2} />
+                    {pill.label}
+                  </span>
+                )
+              })}
             </div>
           </div>
 
@@ -221,7 +331,7 @@ export default function LandingPage() {
             </p>
             <div className="hero-buttons">
               <Link href="/register" className="btn btn-gold">
-                Start free <span>→</span>
+                Start free <ArrowRight size={16} />
               </Link>
               <a href="#how" className="btn btn-ghost">
                 See how it works
@@ -249,13 +359,18 @@ export default function LandingPage() {
             <p>Focus on the story. Clipzy AI handles the repetitive editing work.</p>
           </div>
           <div className="feature-grid">
-            {FEATURES.map((feature) => (
-              <article className="feature" key={feature.title}>
-                <div className="feature-icon">{feature.icon}</div>
-                <h3>{feature.title}</h3>
-                <p>{feature.desc}</p>
-              </article>
-            ))}
+            {FEATURES.map((feature) => {
+              const FeatureIcon = feature.icon
+              return (
+                <article className="feature" key={feature.title}>
+                  <div className="feature-icon">
+                    <FeatureIcon size={20} strokeWidth={1.8} />
+                  </div>
+                  <h3>{feature.title}</h3>
+                  <p>{feature.desc}</p>
+                </article>
+              )
+            })}
           </div>
         </section>
 
@@ -274,13 +389,22 @@ export default function LandingPage() {
             <p>Four automated steps. No editing skills needed.</p>
           </div>
           <div className="steps">
-            {STEPS.map((step) => (
-              <div className="step" key={step.num}>
-                <div className="step-num">{step.num}</div>
-                <h4>{step.title}</h4>
-                <p>{step.desc}</p>
-              </div>
-            ))}
+            {STEPS.map((step) => {
+              const Icon = step.icon
+              return (
+                <div className="step" key={step.no}>
+                  <div className="step-top">
+                    <div className="step-num">{step.no}</div>
+                    <div className="step-icon" aria-hidden="true">
+                      <Icon size={18} strokeWidth={1.8} />
+                    </div>
+                  </div>
+                  <div className="step-label">{step.label}</div>
+                  <h4>{step.title}</h4>
+                  <p>{step.desc}</p>
+                </div>
+              )
+            })}
           </div>
         </section>
 
@@ -301,7 +425,9 @@ export default function LandingPage() {
             </div>
             <div>
               <div className="dropzone" onClick={() => inputRef.current?.click()}>
-                <div className="drop-icon">⇪</div>
+                <div className="drop-icon">
+                  <CloudUpload size={22} strokeWidth={1.8} />
+                </div>
                 <strong>Drop your video here</strong>
                 <span>MP4, MOV, or paste a YouTube link</span>
                 <button
@@ -322,7 +448,11 @@ export default function LandingPage() {
                   onChange={(event) => onPickFile(event.target.files?.[0] ?? null)}
                 />
               </div>
-              {fileName && <div className="file-name">{fileName}</div>}
+              {fileName && (
+                <div className="file-name">
+                  <Check size={13} /> {fileName}
+                </div>
+              )}
               <p className="drop-help">
                 Max 2 GB per file. Uploading requires an account —{" "}
                 <Link href="/register">create one free</Link>.
@@ -366,7 +496,7 @@ export default function LandingPage() {
             <p>Create an account and get 5 free credits. No credit card required.</p>
             <div className="hero-buttons">
               <Link href="/register" className="btn btn-gold">
-                Create free account <span>→</span>
+                Create free account <ArrowRight size={16} />
               </Link>
               <Link href="/pricing" className="btn btn-ghost">
                 View pricing
