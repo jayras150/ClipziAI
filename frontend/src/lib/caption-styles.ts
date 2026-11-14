@@ -35,7 +35,69 @@ export function captionAnchor(style: string): "top" | "center" | "bottom" {
   return "bottom"
 }
 
-export function subtitlePreviewStyle(style: string): React.CSSProperties {
+export function subtitlePreviewStyle(style: string, scale = 1): React.CSSProperties {
+  const base = subtitlePreviewStyleBase(style)
+  if (scale === 1) return base
+
+  const scaled: React.CSSProperties = { ...base }
+  if (typeof scaled.fontSize === "number") {
+    scaled.fontSize = Math.round(scaled.fontSize * scale * 10) / 10
+  }
+  if (typeof scaled.padding === "string") {
+    scaled.padding = scaled.padding
+      .split(" ")
+      .map((part) =>
+        part.endsWith("px") ? `${Math.round(parseFloat(part) * scale * 10) / 10}px` : part,
+      )
+      .join(" ")
+  }
+  if (typeof scaled.borderRadius === "number") {
+    scaled.borderRadius = Math.round(scaled.borderRadius * scale * 10) / 10
+  }
+  if (typeof scaled.letterSpacing === "string" && scaled.letterSpacing.endsWith("px")) {
+    scaled.letterSpacing = `${Math.round(parseFloat(scaled.letterSpacing) * scale * 10) / 10}px`
+  }
+  return scaled
+}
+
+/** Filter CSS yang meniru preset ffmpeg (untuk preview kecil di dashboard). */
+export function filterPreviewStyle(preset: string): React.CSSProperties {
+  switch (preset) {
+    case "warm":
+      return { filter: "sepia(0.32) saturate(1.35) contrast(1.05) brightness(1.03)" }
+    case "cool":
+      return { filter: "hue-rotate(-12deg) saturate(1.18) brightness(1.02)" }
+    case "cinematic":
+      return { filter: "contrast(1.18) saturate(0.9) brightness(0.95)" }
+    case "bw":
+      return { filter: "grayscale(1) contrast(1.12)" }
+    case "vibrant":
+      return { filter: "saturate(1.55) contrast(1.1)" }
+    case "vintage":
+      return { filter: "sepia(0.45) contrast(0.95) brightness(1.05) saturate(0.85)" }
+    default:
+      return {}
+  }
+}
+
+/** Posisi watermark di dalam frame preview (mengikuti posisi overlay ffmpeg). */
+export function watermarkAnchorStyle(position: string): React.CSSProperties {
+  switch (position) {
+    case "top-left":
+      return { top: 6, left: 6 }
+    case "top-right":
+      return { top: 6, right: 6 }
+    case "bottom-left":
+      return { bottom: 26, left: 6 }
+    case "center":
+      return { top: "50%", left: "50%", transform: "translate(-50%, -50%)" }
+    case "bottom-right":
+    default:
+      return { bottom: 26, right: 6 }
+  }
+}
+
+function subtitlePreviewStyleBase(style: string): React.CSSProperties {
   switch (style) {
     case "gold":
       return { color: "#f4c76b", fontSize: 17, fontWeight: 800, textShadow: OUTLINE_THICK }

@@ -1565,6 +1565,277 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
 }
 
 /* =============================================================================
+   BATCH S — Rail gaya subtitle + floating preview + kartu ringkas
+   ============================================================================= */
+
+/* --- Rail horizontal (geser kiri/kanan) --- */
+.style-rail-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.style-rail {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  padding: 2px 2px 4px;
+  cursor: grab;
+}
+.style-rail::-webkit-scrollbar { display: none; }
+.style-rail.dragging { cursor: grabbing; scroll-snap-type: none; }
+.style-rail:focus-visible { outline: 2px solid rgba(244, 199, 107, 0.55); outline-offset: 2px; }
+.style-rail .style-card {
+  flex: 0 0 124px;
+  width: 124px;
+  min-width: 124px;
+  height: 92px;
+  padding: 7px 8px;
+  gap: 5px;
+  border-radius: 12px;
+  scroll-snap-align: start;
+  overflow: hidden;
+}
+.style-rail .style-card:hover { transform: none; }
+.style-rail .style-card-preview { min-height: 44px; padding: 4px; }
+.style-rail .style-card-preview > span { transform: scale(0.7); }
+.style-rail .style-card-label {
+  font-size: 8px;
+  letter-spacing: 1.1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.style-rail-nav {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: 1px solid var(--ui-line);
+  background: rgba(255, 255, 255, 0.045);
+  color: #cfd4e0;
+  cursor: pointer;
+  transition: 0.18s;
+}
+.style-rail-nav:hover {
+  border-color: rgba(244, 199, 107, 0.5);
+  background: rgba(244, 199, 107, 0.1);
+  color: var(--ui-gold);
+}
+
+/* --- Kartu opsi lebih ringkas, tidak ada yang terpotong --- */
+.ui-opt-grid {
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 10px;
+}
+.ui-opt { padding: 11px; gap: 5px; min-width: 0; }
+.ui-opt-label { font-size: 9px; letter-spacing: 1.2px; }
+.ui-opt .ui-input { min-height: 36px; width: 100%; min-width: 0; }
+.ui-opt .ui-hint { font-size: 11px; }
+.ui-opt .ui-file-btn { min-height: 36px; padding: 8px 11px; font-size: 12px; }
+
+/* --- Floating preview dock (kanan bawah) --- */
+.preview-dock {
+  position: fixed;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 45;
+  display: flex;
+  justify-content: flex-end;
+  transition: opacity 0.18s;
+}
+/* Sembunyikan saat popup klip / dialog konfirmasi terbuka. */
+body:has(.ui-modal-backdrop) .preview-dock {
+  opacity: 0;
+  pointer-events: none;
+}
+.preview-dock-card {
+  width: 172px;
+  padding: 8px;
+  border-radius: 16px;
+  border: 1px solid rgba(244, 199, 107, 0.3);
+  background: linear-gradient(170deg, rgba(19, 23, 34, 0.96), rgba(10, 13, 19, 0.96));
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+  animation: uiDrop 0.18s ease-out;
+}
+.preview-dock-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.preview-dock-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--ui-mono);
+  font-size: 9px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--ui-gold);
+}
+.preview-dock-btn {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  border: 1px solid var(--ui-line);
+  background: rgba(255, 255, 255, 0.05);
+  color: #cfd4e0;
+  cursor: pointer;
+}
+.preview-dock-btn:hover { border-color: rgba(244, 199, 107, 0.5); color: var(--ui-gold); }
+.preview-dock-fab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 13px;
+  border-radius: 999px;
+  border: 1px solid rgba(244, 199, 107, 0.42);
+  background: rgba(16, 20, 28, 0.94);
+  color: #ffe6b0;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.45);
+}
+.preview-dock-fab:hover {
+  background: rgba(244, 199, 107, 0.14);
+  border-color: rgba(244, 199, 107, 0.7);
+}
+
+/* --- Isi preview --- */
+.edit-preview { display: grid; gap: 7px; }
+.edit-preview-stage {
+  position: relative;
+  height: 196px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  border: 1px solid var(--ui-line);
+  background: radial-gradient(120% 120% at 50% 0%, #1a1f2c, #07090d);
+  overflow: hidden;
+}
+.edit-preview-frame {
+  position: relative;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  border-radius: 9px;
+  background: #05070b;
+}
+.edit-preview-frame[data-ratio="9:16"] { height: 100%; aspect-ratio: 9 / 16; }
+.edit-preview-frame[data-ratio="1:1"] { width: 100%; aspect-ratio: 1 / 1; }
+.edit-preview-frame[data-ratio="16:9"] { width: 100%; aspect-ratio: 16 / 9; }
+.edit-preview-media,
+.edit-preview-blur {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+}
+.edit-preview-media { background: linear-gradient(160deg, #2a2213, #141821); }
+.edit-preview-blur { inset: -12%; filter: blur(16px) brightness(0.5); opacity: 0.9; }
+.edit-preview-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(4, 6, 10, 0.12), rgba(4, 6, 10, 0.5));
+  pointer-events: none;
+}
+.edit-preview-wm {
+  position: absolute;
+  max-width: 28%;
+  max-height: 20%;
+  object-fit: contain;
+  opacity: 0.9;
+  z-index: 2;
+}
+.edit-preview-wm-mark {
+  font-family: var(--ui-mono);
+  font-size: 7px;
+  letter-spacing: 1px;
+  color: rgba(255, 255, 255, 0.78);
+  background: rgba(0, 0, 0, 0.35);
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.edit-preview-caption {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  z-index: 2;
+  text-align: center;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.edit-preview-caption.bottom { bottom: 8px; }
+.edit-preview-caption.center { top: 50%; transform: translateY(-50%); }
+.edit-preview-caption.top { top: 20px; }
+
+.edit-preview-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.edit-preview-chip {
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--ui-line);
+  background: rgba(255, 255, 255, 0.04);
+  font-family: var(--ui-mono);
+  font-size: 8px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #aeb6c6;
+  white-space: nowrap;
+}
+.edit-preview-chip.strong {
+  border-color: rgba(244, 199, 107, 0.35);
+  background: rgba(244, 199, 107, 0.1);
+  color: var(--ui-gold);
+}
+.edit-preview-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 9px;
+  color: #9aa3b2;
+}
+.edit-preview-music { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.edit-preview-music > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 96px;
+}
+.edit-preview-flags {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #cfd6e2;
+  flex: 0 0 auto;
+}
+.edit-preview-flags svg { opacity: 0.85; }
+
+@media (max-width: 560px) {
+  .preview-dock { right: 10px; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+  .preview-dock-card { width: 152px; }
+  .edit-preview-stage { height: 168px; }
+  .style-rail .style-card { flex-basis: 112px; width: 112px; height: 86px; }
+  .style-rail-nav { width: 26px; height: 26px; }
+}
+
+/* =============================================================================
    UTILITAS & RESPONSIF
    ============================================================================= */
 .animate-spin { animation: uiSpin 1s linear infinite; }

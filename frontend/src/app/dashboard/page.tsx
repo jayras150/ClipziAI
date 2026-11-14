@@ -29,8 +29,9 @@ import {
 
 import { api, ClipData, MusicTrackData, TaskData } from "@/lib/api"
 import { ensureSession } from "@/lib/auth"
-import { SUBTITLE_STYLE_OPTIONS, subtitlePreviewStyle } from "@/lib/caption-styles"
-import SubtitlePreview from "@/components/SubtitlePreview"
+import { SUBTITLE_STYLE_OPTIONS } from "@/lib/caption-styles"
+import StyleRail from "@/components/StyleRail"
+import PreviewDock from "@/components/PreviewDock"
 import { readApiError } from "@/lib/api-errors"
 import { requestYouTubeAccessToken } from "@/lib/social"
 import ConfirmDialog from "@/components/ConfirmDialog"
@@ -649,6 +650,11 @@ export default function DashboardPage() {
   const openTaskData = tasks.find((task) => task.id === openTaskId) || null
   // Contoh teks pratinjau: pakai caption yang diketik user agar terasa nyata.
   const subtitlePreviewText = (captionTextValue.trim() || "Sample caption").slice(0, 24)
+  // Nama track musik terpilih untuk badge di kartu preview.
+  const selectedMusic = musicLibrary.find((track) => track.url === musicUrl)
+  const previewMusicName = selectedMusic
+    ? `${selectedMusic.name}${selectedMusic.mood ? ` · ${selectedMusic.mood}` : ""}`
+    : ""
   // Estimasi kasar untuk user; kalau trim diisi, hitung dari durasi potongan.
   const trimSeconds = (() => {
     const start = parseFloat(startTimeValue)
@@ -924,36 +930,14 @@ export default function DashboardPage() {
                     className="ui-input"
                   />
                 </div>
-                {/* Subtitle style: kartu berjejer (bukan dropdown) supaya setiap
-                    gaya langsung terlihat sebelum render. */}
+                {/* Subtitle style: rail horizontal yang bisa digeser kiri/kanan. */}
                 <div className="ui-opt ui-opt-wide">
                   <span className="ui-opt-label">Subtitle style</span>
-                  <div className="style-card-grid" role="radiogroup" aria-label="Subtitle style">
-                    {SUBTITLE_STYLE_OPTIONS.map((option) => {
-                      const selected = captionStyle === option.value
-                      return (
-                        <button
-                          key={option.value || "default"}
-                          type="button"
-                          role="radio"
-                          aria-checked={selected}
-                          className={`style-card${selected ? " selected" : ""}`}
-                          onClick={() => setCaptionStyle(option.value)}
-                        >
-                          <span className="style-card-label">{option.label}</span>
-                          <span className="style-card-preview" aria-hidden="true">
-                            <span style={subtitlePreviewStyle(option.value)}>
-                              {subtitlePreviewText}
-                            </span>
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                  <SubtitlePreview
-                    style={captionStyle}
-                    caption={subtitlePreviewText}
-                    poster={clips[0]?.thumbnail_url || null}
+                  <StyleRail
+                    options={SUBTITLE_STYLE_OPTIONS}
+                    value={captionStyle}
+                    previewText={subtitlePreviewText}
+                    onChange={setCaptionStyle}
                   />
                 </div>
                 <div className="ui-opt">
@@ -1669,6 +1653,25 @@ export default function DashboardPage() {
         )}
       </main>
       <SiteFooter />
+
+      <PreviewDock
+        poster={clips[0]?.thumbnail_url || null}
+        caption={subtitlePreviewText}
+        captionStyle={captionStyle}
+        aspectRatio={aspectRatioValue}
+        filterPreset={filterPreset}
+        blurFill={blurFill}
+        watermarkUrl={watermarkUrl}
+        watermarkPosition={watermarkPosition}
+        speed={speedValue}
+        musicName={previewMusicName}
+        musicDucking={musicDucking}
+        removeSilence={trimSilence}
+        cleanAudio={cleanAudio}
+        autoZoom={autoZoom}
+        introUrl={introUrl}
+        outroUrl={outroUrl}
+      />
 
       <ConfirmDialog
         open={confirmDisconnect}
