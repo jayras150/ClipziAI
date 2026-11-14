@@ -84,11 +84,15 @@ class AudioTranscriber:
     def _map_gpu_model(name: str) -> str:
         """Petakan nama model HuggingFace ke nama model faster-whisper.
 
-        Contoh: 'openai/whisper-large-v3'        -> 'large-v3'
-                'openai/whisper-large-v3-turbo'  -> 'turbo'
-                'large-v3'                       -> 'large-v3'
+        Path filesystem (mis. `/workspace/whisper_model`) dipakai apa adanya —
+        dipakai saat restore model dari Google Drive.
         """
-        short = (name or "large-v3").split("/")[-1]
+        import os
+
+        text = (name or "large-v3").strip()
+        if os.path.isdir(text):
+            return text
+        short = text.split("/")[-1]
         short = short.replace("whisper-", "")
         if short.endswith("turbo"):
             return "turbo"

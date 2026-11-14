@@ -106,6 +106,15 @@ def test_normalize_restore_fields():
     assert cfg["restore_model_path"] == "/workspace/whisper_model"
 
 
+def test_map_gpu_model_accepts_filesystem_path(tmp_path):
+    from app.services.transcriber import AudioTranscriber
+
+    model_dir = tmp_path / "whisper_model"
+    model_dir.mkdir()
+    assert AudioTranscriber._map_gpu_model(str(model_dir)) == str(model_dir)
+    assert AudioTranscriber._map_gpu_model("openai/whisper-large-v3") == "large-v3"
+
+
 def test_worker_env_uses_restored_model(monkeypatch):
     from app.core.config import get_settings
     from app.services.vast_worker import build_worker_env
