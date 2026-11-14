@@ -9,15 +9,16 @@
 # =============================================================================
 set -eu
 
-mkdir -p /workspace/whisper
+OUTPUT_DIR="${WHISPER_BACKUP_DIR:-/workspace/whisper_model}"
+mkdir -p "$OUTPUT_DIR"
 PYTHON_BIN="${PYTHON_BIN:-/opt/venv/bin/python}"
 [ -x "$PYTHON_BIN" ] || PYTHON_BIN="python"
 
-echo "[whisper-backup] mengunduh model ke /workspace/whisper"
-"$PYTHON_BIN" - <<'PY'
+echo "[whisper-backup] mengunduh model ke $OUTPUT_DIR"
+"$PYTHON_BIN" - <<PY
 from faster_whisper.utils import download_model
 
-path = download_model("large-v3", cache_dir="/workspace/whisper")
+path = download_model("large-v3", output_dir="$OUTPUT_DIR")
 print(f"[whisper-backup] selesai: {path}", flush=True)
 PY
 
