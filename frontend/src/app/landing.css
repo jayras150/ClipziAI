@@ -828,7 +828,7 @@
   .landing .nav-actions .ui-avatar { width: 34px; height: 34px; }
 }
 /* Layar sangat kecil: sisakan satu CTA utama agar logo tidak bertabrakan. */
-@media (max-width: 400px) {
+@media (max-width: 360px) {
   .landing .brand-logo-img { height: 26px; max-width: 106px; }
   .landing .nav-actions .btn-ghost { display: none; }
   .landing .nav-actions .btn { padding: 8px 11px; font-size: 12.5px; }
