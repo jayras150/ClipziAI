@@ -317,8 +317,10 @@ async def save_vast_config(db, payload: Dict[str, Any]) -> Dict[str, Any]:
     if not new_key and not clear_key and current.get("_api_key_source") != "db":
         stored["api_key_enc"] = ""
     await ps.set_setting(db, VAST_SETTING_KEY, stored)
-    apply_vast_config(merged)
-    return await get_vast_config(db)
+    # Resolve ulang agar tombol "hapus key" kembali memakai ENV (bukan kosong).
+    fresh = await get_vast_config(db)
+    apply_vast_config(fresh)
+    return fresh
 
 
 async def reset_vast_config(db) -> Dict[str, Any]:
