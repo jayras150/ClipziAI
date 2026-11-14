@@ -1570,7 +1570,9 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
 .animate-spin { animation: uiSpin 1s linear infinite; }
 @keyframes uiSpin { to { transform: rotate(360deg); } }
 
-.ui-shell .ui-container > * + * { margin-top: 16px; }
+/* Jarak antar-blok konten; navbar dikecualikan supaya brand/aksi/menu tidak
+   terdorong 16px (penyebab navbar mobile tampak tinggi & berantakan). */
+.ui-shell .ui-container:not(.ui-nav) > * + * { margin-top: 16px; }
 
 @media (max-width: 860px) {
   .ui-container,
