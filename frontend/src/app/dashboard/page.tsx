@@ -316,8 +316,11 @@ export default function DashboardPage() {
 
       const params = new URLSearchParams(window.location.search)
       const prefill = params.get("video_url")
-      if (prefill) setUrlValue(prefill)
-      changeTab("upload")
+      if (prefill) {
+        setUrlValue(prefill)
+        // Hanya paksa tab Upload kalau user datang dengan link video.
+        changeTab("upload")
+      }
 
       const status = params.get("youtube")
       if (status === "connected") setYoutubeMessage("YouTube connected successfully.")
