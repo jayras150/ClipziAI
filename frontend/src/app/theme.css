@@ -1836,7 +1836,7 @@ body:has(.ui-modal-backdrop) .preview-dock {
   .preview-dock { right: 10px; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
   .preview-dock-card { width: 142px; }
   .edit-preview-stage { height: 150px; }
-  .style-rail .style-card { flex-basis: 112px; width: 112px; height: 86px; }
+  .style-rail .style-card { flex-basis: 112px; width: 112px; min-width: 112px; height: 86px; }
   .style-rail-nav { width: 26px; height: 26px; }
 }
 
