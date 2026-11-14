@@ -19,6 +19,7 @@ from app.api.deps import get_db_session
 from app.core.config import get_settings
 from app.models.user import User
 from app.models.worker_instance import WorkerInstance
+from app.services import vast_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -58,6 +59,50 @@ async def list_worker_instances(
         query = query.where(WorkerInstance.state != "destroyed")
     rows = (await db.execute(query)).scalars().all()
     return {"items": [_serialize(row) for row in rows], "count": len(rows)}
+
+
+@router.get("/live")
+async def live_worker_instances(
+    current_user: User = Depends(get_current_admin),
+) -> Dict[str, Any]:
+    """Instance yang benar-benar ada di akun Vast (live), termasuk disk/GPU util."""
+    try:
+        items = await vast_admin.live_instances()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"items": items, "count": len(items)}
+
+
+@router.get("/instances/{instance_id}/logs")
+async def worker_instance_logs(
+    instance_id: int,
+    tail: int = 300,
+    daemon: bool = False,
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+) -> Dict[str, Any]:
+    """Log container instance (fallback ke log_tail lokal bila instance sudah hilang)."""
+    row = (
+        await db.execute(
+            select(WorkerInstance)
+            .where(WorkerInstance.instance_id == instance_id)
+            .order_by(WorkerInstance.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    local_tail = (row.log_tail or "") if row else ""
+    try:
+        text = await vast_admin.instance_logs(instance_id, tail=tail, daemon=daemon)
+    except RuntimeError as exc:
+        if local_tail:
+            return {
+                "source": "local",
+                "text": local_tail,
+                "local_tail": local_tail,
+                "warning": str(exc),
+            }
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"source": "vast", "text": text, "local_tail": local_tail or None}
 
 
 @router.post("/instances/{instance_id}/destroy")

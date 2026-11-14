@@ -27,6 +27,7 @@ from app.api.admin import branding as admin_branding
 from app.api.admin import platform as admin_platform
 from app.api.admin import proxies as admin_proxies
 from app.api.admin import runners as admin_runners
+from app.api.admin import vast as admin_vast
 from app.api.admin import storage as admin_storage
 from app.api import branding as public_branding
 from app.api.admin import youtube as admin_youtube
@@ -85,6 +86,13 @@ async def lifespan(app: FastAPI):
         await load_and_apply_platform_config()
     except Exception as exc:
         logger.warning("Gagal memuat setelan platform dari database: %s", exc)
+    # Setelan Vast.ai dari DB (limit storage/GPU/harga) -> berlaku saat startup.
+    try:
+        from app.services.vast_config import load_and_apply_vast_config
+
+        await load_and_apply_vast_config()
+    except Exception as exc:
+        logger.warning("Gagal memuat setelan Vast.ai dari database: %s", exc)
     # Registry storage multi-provider (R2/B2/S3/...). Bila belum ada, otomatis
     # dibuat dari env R2_* agar deployment lama tetap jalan.
     try:
@@ -222,6 +230,9 @@ app.include_router(
 )
 app.include_router(
     admin_runners.router, prefix="/api/admin/settings/runners", tags=["Admin Download Runners"]
+)
+app.include_router(
+    admin_vast.router, prefix="/api/admin/settings/vast", tags=["Admin Vast.ai"]
 )
 app.include_router(
     admin_branding.router, prefix="/api/admin/settings", tags=["Admin Branding"]

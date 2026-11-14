@@ -50,6 +50,13 @@ _sdk_client: Optional[Any] = None
 _vast_client: Optional[Any] = None
 
 
+def _gpu_key(name: Any) -> str:
+    """Normalisasi nama GPU untuk pencocokan allowlist ('RTX 4090' == 'RTX_4090')."""
+    import re
+
+    return re.sub(r"[^a-z0-9]", "", str(name or "").lower())
+
+
 def dispatch_mode() -> str:
     """Tentukan mode dispatch yang aktif."""
     forced = (settings.VAST_DISPATCH_MODE or "").strip().lower()
@@ -198,6 +205,18 @@ async def _pick_offer(
         and (hard_cap <= 0 or _price(offer) <= hard_cap)
         and int(offer.get("machine_id") or 0) not in blocked
     ]
+    # Allowlist GPU (opsional) difilter di sini agar tidak bergantung sintaks query.
+    from app.services.vast_config import normalize_allowlist
+
+    allowlist = normalize_allowlist(settings.VAST_GPU_ALLOWLIST)
+    if allowlist:
+        allowed = {_gpu_key(name) for name in allowlist}
+        usable = [offer for offer in usable if _gpu_key(offer.get("gpu_name")) in allowed]
+        if not usable:
+            raise RuntimeError(
+                "tidak ada offer GPU yang diizinkan "
+                f"({', '.join(allowlist)}); filter: {query}"
+            )
     if not usable:
         raise RuntimeError(
             f"tidak ada offer di bawah ${hard_cap or 'tanpa batas'}/jam "
@@ -289,6 +308,41 @@ async def _supervise_safely(supervisor: "InstanceSupervisor") -> None:
         logger.exception("Supervisor instance gagal untuk task %s", supervisor.task_id)
 
 
+WORKER_ENV_REQUIRED = (
+    "CLIPZI_CALLBACK_URL",
+    "CLIPZI_WORKER_TOKEN",
+    "DATABASE_URL",
+    "ENCRYPTION_KEY",
+    "SECRET_KEY",
+)
+
+WORKER_ENV_OPTIONAL = (
+    "SUPABASE_URL",
+    "SUPABASE_KEY",
+    "REDIS_URL",
+    "R2_ACCESS_KEY_ID",
+    "R2_SECRET_ACCESS_KEY",
+    "R2_ENDPOINT_URL",
+    "R2_BUCKET_NAME",
+    "R2_PUBLIC_DOMAIN",
+    "YTDLP_PROXY",
+    "YTDLP_COOKIES_BASE64",
+    "YTDLP_EXTRACTOR_ARGS",
+)
+
+
+def build_worker_env(task_id: Optional[UUID] = None) -> Dict[str, str]:
+    """Env yang dibutuhkan instance worker — SATU sumber untuk dispatch & export admin."""
+    env: Dict[str, str] = {"CLIPZI_ROLE": "worker"}
+    if task_id is not None:
+        env["CLIPZI_TASK_ID"] = str(task_id)
+    for name in WORKER_ENV_REQUIRED + WORKER_ENV_OPTIONAL:
+        value = getattr(settings, name, None)
+        if value:
+            env[name] = str(value)
+    return env
+
+
 def _make_create_instance(task_id: UUID, client: Any):
     """Factory pembuat instance (dipakai dispatch DAN resume setelah restart).
 
@@ -309,31 +363,7 @@ def _make_create_instance(task_id: UUID, client: Any):
         if not offer_id:
             raise RuntimeError(f"offer tidak punya id: {selected}")
 
-        worker_env = {"CLIPZI_ROLE": "worker", "CLIPZI_TASK_ID": str(task_id)}
-        if settings.CLIPZI_CALLBACK_URL:
-            worker_env["CLIPZI_CALLBACK_URL"] = settings.CLIPZI_CALLBACK_URL
-        if settings.CLIPZI_WORKER_TOKEN:
-            worker_env["CLIPZI_WORKER_TOKEN"] = settings.CLIPZI_WORKER_TOKEN
-        # Worker menulis progres + klip langsung ke database dan membaca
-        # konfigurasi storage dari `platform_settings`. Kredensial di sana
-        # terenkripsi, jadi ENCRYPTION_KEY wajib sama dengan API. Tanpa ini
-        # upload gagal dengan "storage belum dikonfigurasi".
-        worker_env["DATABASE_URL"] = settings.DATABASE_URL
-        worker_env["ENCRYPTION_KEY"] = settings.ENCRYPTION_KEY
-        worker_env["SECRET_KEY"] = settings.SECRET_KEY
-        for optional in (
-            "SUPABASE_URL",
-            "SUPABASE_KEY",
-            "REDIS_URL",
-            "R2_ACCESS_KEY_ID",
-            "R2_SECRET_ACCESS_KEY",
-            "R2_ENDPOINT_URL",
-            "R2_BUCKET_NAME",
-            "R2_PUBLIC_DOMAIN",
-        ):
-            value = getattr(settings, optional, None)
-            if value:
-                worker_env[optional] = value
+        worker_env = build_worker_env(task_id)
 
         kwargs: Dict[str, Any] = {
             "disk": settings.VAST_WORKER_DISK,

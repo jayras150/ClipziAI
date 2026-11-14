@@ -117,6 +117,14 @@ export const navGroups: NavGroup[] = [
         items: []
       },
       {
+        title: 'Vast.ai',
+        url: '/dashboard/settings/vast',
+        icon: 'settings',
+        shortcut: ['v', 'a'],
+        isActive: false,
+        items: []
+      },
+      {
         title: 'Storage',
         url: '/dashboard/settings/storage',
         icon: 'billing',

@@ -206,6 +206,9 @@ class Settings(BaseSettings):
     VAST_WORKER_DISK: int = 40
     VAST_WORKER_ONSTART: Optional[str] = None
     VAST_GPU_FILTER: str = "gpu_ram>=16 disk_space>=40 inet_down>200"
+    # Daftar GPU yang diizinkan (dipisah koma, kosong = semua). Difilter setelah
+    # search_offers supaya tidak bergantung sintaks query Vast.
+    VAST_GPU_ALLOWLIST: str = ""
     VAST_MIN_WORKERS: int = 0
     VAST_MAX_WORKERS: int = 4
     VAST_TARGET_UTIL: float = 0.9

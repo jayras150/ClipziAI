@@ -13,3 +13,28 @@ export async function destroyInstance(formData: FormData) {
     revalidatePath('/dashboard/workers');
   }
 }
+
+export type WorkerLogsResult = {
+  source?: string;
+  text?: string;
+  warning?: string;
+  error?: string;
+};
+
+export async function getInstanceLogs(
+  instanceId: number,
+  tail = 300,
+  daemon = false
+): Promise<WorkerLogsResult> {
+  try {
+    return await adminFetch<WorkerLogsResult>(
+      `/api/admin/workers/instances/${instanceId}/logs?tail=${tail}&daemon=${
+        daemon ? 'true' : 'false'
+      }`
+    );
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message.replace(/^\d{3}\s+/, '') : 'Gagal memuat log.'
+    };
+  }
+}
