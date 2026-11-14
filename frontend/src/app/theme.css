@@ -1575,12 +1575,15 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
   align-items: center;
   gap: 6px;
   margin-top: 8px;
+  min-width: 0;
+  width: 100%;
 }
 .style-rail {
   display: flex;
   align-items: stretch;
   gap: 8px;
   flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
@@ -1637,8 +1640,10 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
 .ui-opt-grid {
   grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
   gap: 10px;
+  min-width: 0;
 }
 .ui-opt { padding: 11px; gap: 5px; min-width: 0; }
+.ui-opt-wide { grid-column: 1 / -1; min-width: 0; }
 .ui-opt-label { font-size: 9px; letter-spacing: 1.2px; }
 .ui-opt .ui-input { min-height: 36px; width: 100%; min-width: 0; }
 .ui-opt .ui-hint { font-size: 11px; }
@@ -1660,7 +1665,7 @@ body:has(.ui-modal-backdrop) .preview-dock {
   pointer-events: none;
 }
 .preview-dock-card {
-  width: 172px;
+  width: 162px;
   padding: 8px;
   border-radius: 16px;
   border: 1px solid rgba(244, 199, 107, 0.3);
@@ -1721,7 +1726,7 @@ body:has(.ui-modal-backdrop) .preview-dock {
 .edit-preview { display: grid; gap: 7px; }
 .edit-preview-stage {
   position: relative;
-  height: 196px;
+  height: 170px;
   display: grid;
   place-items: center;
   border-radius: 12px;
@@ -1829,8 +1834,8 @@ body:has(.ui-modal-backdrop) .preview-dock {
 
 @media (max-width: 560px) {
   .preview-dock { right: 10px; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
-  .preview-dock-card { width: 152px; }
-  .edit-preview-stage { height: 168px; }
+  .preview-dock-card { width: 142px; }
+  .edit-preview-stage { height: 150px; }
   .style-rail .style-card { flex-basis: 112px; width: 112px; height: 86px; }
   .style-rail-nav { width: 26px; height: 26px; }
 }
