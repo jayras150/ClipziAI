@@ -16,6 +16,7 @@ from app.models.clip import Clip
 from app.models.download_log import DownloadAttempt, TaskLog
 from app.models.task import Task, TaskStatus
 from app.models.user import User
+from app.services.download_errors import user_message_for
 from app.services.vast_worker import dispatch_mode, submit_task
 
 router = APIRouter(dependencies=[Depends(get_current_admin)])
@@ -302,10 +303,12 @@ async def retry_task(
     dispatch = await submit_task(task.id)
     if not dispatch.get("queued"):
         task.status = TaskStatus.ERROR
+        task.download_status = "failed"
         task.error_message = (
             f"Gagal mengirim ulang task ke worker (mode {dispatch_mode()}): "
             f"{dispatch.get('error') or 'tanpa keterangan'}"
         )
+        task.user_message = user_message_for(None)
         await db.commit()
 
     await _audit(

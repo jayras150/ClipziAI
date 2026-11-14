@@ -218,6 +218,10 @@ async def _select_runner(
             continue
         if runner.status == "disabled":
             continue
+        if runner.status == "error":
+            # Biarkan admin menjalankan Test koneksi dulu; jangan pakai runner
+            # yang diketahui bermasalah.
+            continue
         if runner.cooldown_until and runner.cooldown_until > now:
             continue
         total = (runner.success_count or 0) + (runner.failure_count or 0)
@@ -376,6 +380,19 @@ async def handle_callback(
         job.status = "failed"
         job.error = str(payload.get("error") or "")[:2000]
         job.finished_at = _now()
+        from app.models.download_log import DownloadAttempt
+
+        db.add(
+            DownloadAttempt(
+                task_id=task.id,
+                user_id=task.user_id,
+                attempt_no=1,
+                runner_type="github",
+                runner_id=str(job.runner_id) if job.runner_id else None,
+                error_category=str(payload.get("error_category") or "unknown")[:40],
+                error_message=str(payload.get("error") or "")[:8000],
+            )
+        )
         if runner:
             runner.failure_count = (runner.failure_count or 0) + 1
             runner.last_error = job.error[:400]

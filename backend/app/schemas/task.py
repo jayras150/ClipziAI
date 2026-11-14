@@ -110,8 +110,20 @@ class TaskResponse(BaseModel):
         teknis tetap tersimpan di DB dan hanya dibuka lewat endpoint admin.
         """
         if hasattr(data, "user_message"):
+            from app.services.download_errors import is_retryable
+
             values = {name: getattr(data, name, None) for name in cls.model_fields}
             values["error_message"] = getattr(data, "user_message", None)
+            category = getattr(data, "error_category", None)
+            status = getattr(getattr(data, "status", None), "value", None) or str(
+                getattr(data, "status", "")
+            )
+            values["can_retry"] = (
+                status in ("error", "cancelled")
+                and (getattr(data, "retry_count", 0) or 0)
+                < (getattr(data, "max_retries", 0) or 0)
+                and (category is None or is_retryable(category))
+            )
             return values
         return data
 

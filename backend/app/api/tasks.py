@@ -149,6 +149,7 @@ async def create_task(
         source_url=str(task_data.source_url),
         source_type=task_data.source_type,
         status=TaskStatus.QUEUED,
+        download_status="queued",
         target_duration_min=task_data.target_duration_min,
         target_duration_max=task_data.target_duration_max,
         whisper_model=task_data.whisper_model,
@@ -172,10 +173,12 @@ async def create_task(
         # menampilkan "queued" selamanya (tidak ada scheduler yang me-retry
         # otomatis), dan pesan penyebabnya tersimpan untuk ditampilkan.
         task.status = TaskStatus.ERROR
+        task.download_status = "failed"
         task.error_message = (
             f"Gagal mengirim task ke worker (mode {dispatch_mode()}): "
             f"{dispatch.get('error') or 'tanpa keterangan'}"
         )
+        task.user_message = user_message_for(None)
         await db.commit()
         await db.refresh(task)
         logger.error("Task %s gagal didispatch: %s", task.id, task.error_message)
