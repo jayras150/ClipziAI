@@ -160,6 +160,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
   row-gap: 10px;
   min-height: 66px;
   margin-top: 10px;
+  /* Beri jarak dari tepi: logo & aksi tidak menempel pinggir kiri/kanan. */
+  padding: 0 22px;
   border-radius: 15px;
   /* Glass drop: latar tipis + blur sangat tebal supaya ambient body tetap
      terlihat menembus, tapi teks header tetap kebaca saat konten lewat. */
@@ -207,7 +209,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
     grid-template-columns: minmax(0, 1fr) auto;
     column-gap: 10px;
     row-gap: 8px;
-    padding: 8px 12px;
+    padding: 8px 16px;
   }
   .ui-nav > .ui-brand {
     grid-column: 1;
@@ -1858,7 +1860,7 @@ body:has(.ui-modal-backdrop) .preview-dock {
 }
 @media (max-width: 560px) {
   body { font-size: 14px; }
-  .ui-nav { padding: 8px 10px; row-gap: 6px; }
+  .ui-nav { padding: 8px 14px; row-gap: 6px; }
   .ui-nav > .ui-nav-links a { padding: 6px 9px; font-size: 13px; }
   .ui-avatar { width: 34px; height: 34px; }
   /* Nama channel dipotong supaya tombol YouTube + avatar tetap satu baris. */

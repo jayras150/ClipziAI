@@ -4,10 +4,11 @@ import pytest
 from app.services.processor import CAPTION_STYLES, get_caption_style
 
 EXPECTED_PRESETS = {
-    "classic", "gold", "boxed", "neon", "top", "center",
-    # tambahan variasi (Batch UI): karaoke, minimal, impact, boxed gold, pink,
-    # headline top, dan caption bar.
-    "karaoke", "minimal", "impact", "boxed_gold", "pink", "top_clean", "subtitle_bar",
+    "classic", "gold", "boxed", "neon", "top", "center", "karaoke", "minimal",
+    "impact", "boxed_gold", "pink", "top_clean", "subtitle_bar",
+    # variasi warna tambahan (total 24 preset + Auto di UI = 25 kartu)
+    "mint", "sunset", "violet", "lemon", "ice", "crimson", "mono", "shadow",
+    "teal_box", "amber_top", "magenta_center",
 }
 
 

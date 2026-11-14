@@ -20,8 +20,8 @@ export default function PreviewDock(props: EditingPreviewProps) {
   // Preferensi dibaca setelah mount (localStorage tidak ada di server).
   useEffect(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY)
-    // Default: terbuka di desktop, tertutup di ponsel agar tidak menutupi CTA.
-    setOpen(saved === null ? window.innerWidth > 560 : saved === "1")
+    // Default terbuka supaya user melihat hasil setting sebelum mulai render.
+    setOpen(saved === null ? true : saved === "1")
     setReady(true)
   }, [])
 

@@ -7,9 +7,9 @@
 export type SubtitleStyleOption = { value: string; label: string }
 
 export const SUBTITLE_STYLE_OPTIONS: SubtitleStyleOption[] = [
-  { value: "", label: "Default" },
+  { value: "", label: "Auto" },
   { value: "classic", label: "Classic white" },
-  { value: "gold", label: "Bold gold" },
+  { value: "gold", label: "Gold bold" },
   { value: "boxed", label: "Black box" },
   { value: "neon", label: "Neon cyan" },
   { value: "top", label: "Clean top" },
@@ -21,6 +21,17 @@ export const SUBTITLE_STYLE_OPTIONS: SubtitleStyleOption[] = [
   { value: "pink", label: "Neon pink" },
   { value: "top_clean", label: "Headline top" },
   { value: "subtitle_bar", label: "Caption bar" },
+  { value: "mint", label: "Mint pop" },
+  { value: "sunset", label: "Sunset glow" },
+  { value: "violet", label: "Violet glow" },
+  { value: "lemon", label: "Lemon pop" },
+  { value: "ice", label: "Ice blue box" },
+  { value: "crimson", label: "Crimson bold" },
+  { value: "mono", label: "Mono tag" },
+  { value: "shadow", label: "Soft shadow" },
+  { value: "teal_box", label: "Teal box" },
+  { value: "amber_top", label: "Amber top" },
+  { value: "magenta_center", label: "Magenta center" },
 ]
 
 const OUTLINE_DARK =
@@ -30,8 +41,8 @@ const OUTLINE_THICK =
 
 /** Posisi vertikal caption (mengikuti Alignment di force_style backend). */
 export function captionAnchor(style: string): "top" | "center" | "bottom" {
-  if (style === "top" || style === "top_clean") return "top"
-  if (style === "center") return "center"
+  if (style === "top" || style === "top_clean" || style === "amber_top") return "top"
+  if (style === "center" || style === "magenta_center") return "center"
   return "bottom"
 }
 
@@ -169,6 +180,71 @@ function subtitlePreviewStyleBase(style: string): React.CSSProperties {
         padding: "4px 12px",
         borderRadius: 8,
         width: "100%",
+      }
+    case "mint":
+      return { color: "#7cffc4", fontSize: 17, fontWeight: 800, textShadow: OUTLINE_DARK }
+    case "sunset":
+      return {
+        color: "#ffa46b",
+        fontSize: 16,
+        fontWeight: 800,
+        textShadow: "0 2px 0 #3a1a08, 0 0 8px rgba(255,164,107,.5)",
+      }
+    case "violet":
+      return {
+        color: "#c79bff",
+        fontSize: 17,
+        fontWeight: 800,
+        textShadow: "0 0 9px rgba(199,155,255,.75), 1px 1px 0 #140a1c",
+      }
+    case "lemon":
+      return { color: "#ffe86b", fontSize: 16, fontWeight: 800, textShadow: OUTLINE_DARK }
+    case "ice":
+      return {
+        color: "#9fd8ff",
+        fontSize: 12,
+        fontWeight: 700,
+        background: "rgba(6,18,32,.8)",
+        padding: "3px 8px",
+        borderRadius: 4,
+      }
+    case "crimson":
+      return { color: "#ff6b6b", fontSize: 17, fontWeight: 800, textShadow: OUTLINE_DARK }
+    case "mono":
+      return {
+        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+        color: "#ededed",
+        fontSize: 11,
+        fontWeight: 600,
+        letterSpacing: "0.5px",
+        background: "rgba(0,0,0,.72)",
+        padding: "3px 7px",
+        borderRadius: 3,
+      }
+    case "shadow":
+      return {
+        color: "#ffffff",
+        fontSize: 15,
+        fontWeight: 700,
+        textShadow: "0 3px 8px rgba(0,0,0,.95), 0 0 2px #000",
+      }
+    case "teal_box":
+      return {
+        color: "#6ee7d7",
+        fontSize: 12,
+        fontWeight: 800,
+        background: "rgba(0,0,0,.68)",
+        padding: "3px 8px",
+        borderRadius: 4,
+      }
+    case "amber_top":
+      return { color: "#ffc46b", fontSize: 15, fontWeight: 800, textShadow: OUTLINE_DARK }
+    case "magenta_center":
+      return {
+        color: "#ff8bd1",
+        fontSize: 19,
+        fontWeight: 900,
+        textShadow: "0 0 10px rgba(255,139,209,.7), 2px 2px 0 #240f1c",
       }
     default:
       return { color: "#e8e9ee", fontSize: 13, fontWeight: 600 }

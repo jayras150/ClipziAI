@@ -240,6 +240,186 @@ CAPTION_STYLES: Dict[str, Dict[str, Any]] = {
             "y": "bottom",
         },
     },
+    # --- Variasi warna tambahan (25 kartu di dashboard) ---------------------
+    "mint": {
+        "label": "Mint pop",
+        "force_style": (
+            "FontName=DejaVu Sans,FontSize=18,PrimaryColour=&H00C4FF7C,"
+            "OutlineColour=&H00000000,Outline=2.4,Shadow=0,Bold=1,Alignment=2,MarginV=24"
+        ),
+        "overlay": {
+            "size_ratio": 0.060,
+            "color": "0x7CFFC4",
+            "border_width": 5,
+            "border_color": "black",
+            "box": False,
+            "box_color": "black@0.6",
+            "y": "bottom",
+        },
+    },
+    "sunset": {
+        "label": "Sunset",
+        "force_style": (
+            "FontName=DejaVu Sans,FontSize=17,PrimaryColour=&H006BA4FF,"
+            "OutlineColour=&H00000000,Outline=2.2,Shadow=1,Bold=1,Alignment=2,MarginV=24"
+        ),
+        "overlay": {
+            "size_ratio": 0.056,
+            "color": "0xFFA46B",
+            "border_width": 4,
+            "border_color": "0x3A1A08",
+            "box": False,
+            "box_color": "black@0.6",
+            "y": "bottom",
+        },
+    },
+    "violet": {
+        "label": "Violet glow",
+        "force_style": (
+            "FontName=DejaVu Sans,FontSize=18,PrimaryColour=&H00FF9BC7,"
+            "OutlineColour=&H00140A1C,Outline=2.4,Shadow=1,Bold=1,Alignment=2,MarginV=24"
+        ),
+        "overlay": {
+            "size_ratio": 0.058,
+            "color": "0xC79BFF",
+            "border_width": 4,
+            "border_color": "0x140A1C",
+            "box": False,
+            "box_color": "black@0.6",
+            "y": "bottom",
+        },
+    },
+    "lemon": {
+        "label": "Lemon pop",
+        "force_style": (
+            "FontName=DejaVu Sans,FontSize=17,PrimaryColour=&H006BE8FF,"
+            "OutlineColour=&H00000000,Outline=2.6,Shadow=0,Bold=1,Alignment=2,MarginV=24"
+        ),
+        "overlay": {
+            "size_ratio": 0.056,
+            "color": "0xFFE86B",
+            "border_width": 5,
+            "border_color": "black",
+            "box": False,
+            "box_color": "black@0.6",
+            "y": "bottom",
+        },
+    },
+    "ice": {
+        "label": "Ice blue box",
+        "force_style": (
+            "FontName=DejaVu Sans,FontSize=14,PrimaryColour=&H00FFD89F,"
+            "OutlineColour=&H00000000,Outline=1,Bold=1,BorderStyle=3,"
+            "BackColour=&H80061220,Alignment=2,MarginV=22"
+        ),
+        "overlay": {
+            "size_ratio": 0.046,
+            "color": "0x9FD8FF",
+            "border_width": 1,
+            "border_color": "black",
+            "box": True,
+            "box_color": "0x061220@0.8",
+            "y": "bottom",
+        },
+    },
+    "crimson": {
+        "label": "Crimson bold",
+        "force_style": (
+            "FontName=DejaVu Sans,FontSize=18,PrimaryColour=&H006B6BFF,"
+            "OutlineColour=&H00000000,Outline=2.6,Shadow=0,Bold=1,Alignment=2,MarginV=24"
+        ),
+        "overlay": {
+            "size_ratio": 0.060,
+            "color": "0xFF6B6B",
+            "border_width": 5,
+            "border_color": "black",
+            "box": False,
+            "box_color": "black@0.6",
+            "y": "bottom",
+        },
+    },
+    "mono": {
+        "label": "Mono tag",
+        "force_style": (
+            "FontName=DejaVu Sans Mono,FontSize=14,PrimaryColour=&H00EDEDED,"
+            "OutlineColour=&H00000000,Outline=1,Shadow=0,BorderStyle=3,"
+            "BackColour=&H90000000,Alignment=2,MarginV=20"
+        ),
+        "overlay": {
+            "size_ratio": 0.044,
+            "color": "0xEDEDED",
+            "border_width": 1,
+            "border_color": "black",
+            "box": True,
+            "box_color": "black@0.72",
+            "y": "bottom",
+        },
+    },
+    "shadow": {
+        "label": "Soft shadow",
+        "force_style": (
+            "FontName=DejaVu Sans,FontSize=16,PrimaryColour=&H00FFFFFF,"
+            "OutlineColour=&H00000000,Outline=1,Shadow=3,Bold=1,Alignment=2,MarginV=24"
+        ),
+        "overlay": {
+            "size_ratio": 0.052,
+            "color": "white",
+            "border_width": 2,
+            "border_color": "black",
+            "box": False,
+            "box_color": "black@0.6",
+            "y": "bottom",
+        },
+    },
+    "teal_box": {
+        "label": "Teal box",
+        "force_style": (
+            "FontName=DejaVu Sans,FontSize=15,PrimaryColour=&H00D7E76E,"
+            "OutlineColour=&H00000000,Outline=1,Bold=1,BorderStyle=3,"
+            "BackColour=&H80000000,Alignment=2,MarginV=22"
+        ),
+        "overlay": {
+            "size_ratio": 0.048,
+            "color": "0x6EE7D7",
+            "border_width": 1,
+            "border_color": "black",
+            "box": True,
+            "box_color": "black@0.68",
+            "y": "bottom",
+        },
+    },
+    "amber_top": {
+        "label": "Amber top",
+        "force_style": (
+            "FontName=DejaVu Sans,FontSize=16,PrimaryColour=&H006BC4FF,"
+            "OutlineColour=&H00000000,Outline=2.2,Shadow=0,Bold=1,Alignment=8,MarginV=26"
+        ),
+        "overlay": {
+            "size_ratio": 0.052,
+            "color": "0xFFC46B",
+            "border_width": 4,
+            "border_color": "black",
+            "box": False,
+            "box_color": "black@0.6",
+            "y": "top",
+        },
+    },
+    "magenta_center": {
+        "label": "Magenta center",
+        "force_style": (
+            "FontName=DejaVu Sans,FontSize=20,PrimaryColour=&H00D18BFF,"
+            "OutlineColour=&H00240F1C,Outline=3,Shadow=1,Bold=1,Alignment=5,MarginV=0"
+        ),
+        "overlay": {
+            "size_ratio": 0.070,
+            "color": "0xFF8BD1",
+            "border_width": 6,
+            "border_color": "0x240F1C",
+            "box": False,
+            "box_color": "black@0.6",
+            "y": "center",
+        },
+    },
 }
 
 

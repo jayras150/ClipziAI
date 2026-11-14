@@ -35,46 +35,63 @@ export default function StyleRail({
     rail.scrollTo({ left: Math.max(0, left), behavior: "smooth" })
   }, [value])
 
+  /**
+   * Drag-to-scroll memakai listener native di `window`.
+   *
+   * Penting: JANGAN memakai `setPointerCapture` — capture membuat event `click`
+   * berikutnya diarahkan ke rail (bukan ke tombol kartu), sehingga kartu tidak
+   * bisa dipilih sama sekali. Dengan listener window, klik tetap sampai ke
+   * tombol dan drag tetap jalan walau kursor keluar dari rail.
+   */
+  useEffect(() => {
+    const rail = railRef.current
+    if (!rail) return
+    const state = drag.current
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.pointerType === "touch" || event.button !== 0) return
+      state.active = true
+      state.startX = event.clientX
+      state.startLeft = rail.scrollLeft
+      state.moved = false
+      rail.classList.add("dragging")
+    }
+
+    const onPointerMove = (event: PointerEvent) => {
+      if (!state.active) return
+      const dx = event.clientX - state.startX
+      if (!state.moved && Math.abs(dx) > 6) state.moved = true
+      if (state.moved) rail.scrollLeft = state.startLeft - dx
+    }
+
+    const finishDrag = () => {
+      if (!state.active) return
+      state.active = false
+      rail.classList.remove("dragging")
+      if (state.moved) {
+        // Blokir klik yang menyusul setelah drag, lalu reset.
+        window.setTimeout(() => {
+          state.moved = false
+        }, 0)
+      }
+    }
+
+    rail.addEventListener("pointerdown", onPointerDown)
+    window.addEventListener("pointermove", onPointerMove)
+    window.addEventListener("pointerup", finishDrag)
+    window.addEventListener("pointercancel", finishDrag)
+    return () => {
+      rail.removeEventListener("pointerdown", onPointerDown)
+      window.removeEventListener("pointermove", onPointerMove)
+      window.removeEventListener("pointerup", finishDrag)
+      window.removeEventListener("pointercancel", finishDrag)
+    }
+  }, [])
+
   const scrollByPage = (direction: number) => {
     const rail = railRef.current
     if (!rail) return
     rail.scrollBy({ left: direction * Math.max(180, rail.clientWidth * 0.8), behavior: "smooth" })
-  }
-
-  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    const rail = railRef.current
-    if (!rail || event.pointerType === "touch") return
-    drag.current = { active: true, startX: event.clientX, startLeft: rail.scrollLeft, moved: false }
-    rail.classList.add("dragging")
-    rail.setPointerCapture(event.pointerId)
-  }
-
-  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    const rail = railRef.current
-    if (!rail || !drag.current.active) return
-    const dx = event.clientX - drag.current.startX
-    if (Math.abs(dx) > 6) drag.current.moved = true
-    rail.scrollLeft = drag.current.startLeft - dx
-  }
-
-  const endDrag = (event: React.PointerEvent<HTMLDivElement>) => {
-    const rail = railRef.current
-    if (!rail) return
-    if (drag.current.active) {
-      try {
-        rail.releasePointerCapture(event.pointerId)
-      } catch {
-        /* pointer sudah lepas */
-      }
-    }
-    drag.current.active = false
-    rail.classList.remove("dragging")
-    if (drag.current.moved) {
-      // Biarkan click yang menyusul tetap diblokir, lalu reset.
-      window.setTimeout(() => {
-        drag.current.moved = false
-      }, 0)
-    }
   }
 
   const onClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -116,10 +133,6 @@ export default function StyleRail({
         role="radiogroup"
         aria-label="Subtitle style"
         tabIndex={0}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
         onClickCapture={onClickCapture}
         onKeyDown={onKeyDown}
       >

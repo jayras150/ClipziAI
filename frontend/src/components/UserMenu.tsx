@@ -27,20 +27,6 @@ function ProfileIcon({ size = 15 }: { size?: number }) {
   )
 }
 
-/** Inisial untuk avatar: "Alex Carter" -> "AC", fallback ke huruf pertama email. */
-function initials(name?: string | null, email?: string | null): string {
-  const trimmed = (name || "").trim()
-  if (trimmed) {
-    return trimmed
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((part) => part.charAt(0))
-      .join("")
-      .toUpperCase()
-  }
-  return (email || "?").charAt(0).toUpperCase()
-}
-
 /**
  * Avatar + dropdown card akun.
  *
@@ -112,7 +98,7 @@ export default function UserMenu() {
         aria-label="Account menu"
         title={profile?.name || profile?.email || "Account"}
       >
-        {initials(profile?.name, profile?.email)}
+        <ProfileIcon size={18} />
       </button>
 
       {open && (
