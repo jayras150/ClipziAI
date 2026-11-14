@@ -369,10 +369,12 @@ async def _restore_workspace(instance_id: int) -> None:
                 instance=str(instance_id),
                 connection=connection,
                 transfer="Cloud to Instance",
-                update=True,
-                ignore_existing=True,
             )
         except Exception as exc:
+            text = str(exc)
+            if "copy_in_progress" in text or "409" in text:
+                logger.info("Restore sudah berjalan di instance %s", instance_id)
+                return
             logger.warning("cloud_copy restore gagal (coba lagi): %s", exc)
             await asyncio.sleep(15)
             continue
