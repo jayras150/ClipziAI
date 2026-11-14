@@ -1858,7 +1858,7 @@ body:has(.ui-modal-backdrop) .preview-dock {
   left: 0;
   bottom: 0;
   width: 50vw;
-  min-width: 210px;
+  min-width: 180px;
   max-width: 320px;
   padding: 14px;
   display: flex;
