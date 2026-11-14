@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session
-from app.core.security import decrypt_field
+from app.core.security import decrypt_field, encrypt_field
 from app.models.ytdlp_cookie import YtdlpCookie
 from app.services import cookie_store
 
@@ -42,6 +42,10 @@ class CookieCreate(BaseModel):
     )
     cookies_base64: Optional[str] = Field(
         default=None, description="Alternatif: isi cookies.txt yang di-encode base64"
+    )
+    store_base64: bool = Field(
+        default=True,
+        description="Simpan juga base64 terenkripsi untuk ENV worker (fallback)",
     )
 
 
@@ -106,6 +110,37 @@ def summarize_cookies(text: str) -> dict:
 
 
 
+async def _save_global_base64(
+    db: AsyncSession, label: str, plain: str, *, mode: Optional[str] = None
+) -> str:
+    """Simpan base64 terenkripsi di platform_settings + inject ke ENV runtime.
+
+    Ini adalah base64 global (satu yang aktif) untuk fallback worker ketika pool
+    DB kosong. Nilai per akun tetap bisa diambil kapan saja lewat endpoint
+    `GET /{id}/base64` (tidak disimpan duplikat di baris cookie).
+    """
+    from datetime import datetime, timezone
+
+    from app.core.config import get_settings
+    from app.services import platform_settings as ps
+
+    encoded = encode_cookies_base64(plain)
+    stored = await ps.get_setting(db, "youtube", {}) or {}
+    value = dict(stored) if isinstance(stored, dict) else {}
+    value.update(
+        {
+            "mode": mode or value.get("mode") or "db",
+            "label": label,
+            "cookies_base64_enc": encrypt_field(encoded),
+            "summary": summarize_cookies(plain),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    await ps.set_setting(db, "youtube", value)
+    get_settings().YTDLP_COOKIES_BASE64 = encoded
+    return encoded
+
+
 class CookieItem(BaseModel):
     id: UUID
     label: str
@@ -116,6 +151,7 @@ class CookieItem(BaseModel):
     last_used_at: Optional[str] = None
     last_checked_at: Optional[str] = None
     last_error: Optional[str] = None
+    base64_saved: bool = False
 
 
 def _to_item(cookie: YtdlpCookie) -> CookieItem:
@@ -169,7 +205,11 @@ async def create_cookie(
         cookie = await cookie_store.add_cookie(db, payload.label, text)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return _to_item(cookie)
+    item = _to_item(cookie)
+    if payload.store_base64:
+        await _save_global_base64(db, payload.label, text)
+        item.base64_saved = True
+    return item
 
 
 @router.post("/validate")
@@ -213,6 +253,27 @@ async def import_base64(
     return _to_item(cookie)
 
 
+@router.post("/encode")
+async def encode_cookie_text(payload: dict):
+    """Encode cookies.txt (Netscape) → base64 TANPA menyimpan.
+
+    Dipakai tombol "Encode → Base64" di admin. Base64 hanya dikembalikan ke
+    admin; tidak ditulis ke log.
+    """
+    raw = str(payload.get("cookies") or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Isi cookies kosong.")
+    try:
+        cookie_store.validate_cookies_text(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "valid": True,
+        "base64": encode_cookies_base64(raw),
+        "summary": summarize_cookies(raw),
+    }
+
+
 @router.get("/settings")
 async def read_youtube_settings(db: AsyncSession = Depends(get_db_session)):
     """Mode cookies yang aktif: rotasi DB (disarankan) atau base64 env."""
@@ -242,10 +303,6 @@ async def update_youtube_settings(
     Mode `base64` menyimpan base64 terenkripsi di platform_settings dan langsung
     meng-inject ke `settings.YTDLP_COOKIES_BASE64` (tanpa rebuild image).
     """
-    from datetime import datetime, timezone
-
-    from app.core.config import get_settings
-    from app.core.security import encrypt_field
     from app.services import platform_settings as ps
 
     mode = str(payload.get("mode") or "db").lower()
@@ -257,7 +314,9 @@ async def update_youtube_settings(
     stored = await ps.get_setting(db, "youtube", {}) or {}
     value = dict(stored) if isinstance(stored, dict) else {}
     value["mode"] = mode
+    await ps.set_setting(db, "youtube", value)
 
+    env_injected = False
     if base64_text:
         try:
             plain = decode_cookies_base64(base64_text)
@@ -265,24 +324,20 @@ async def update_youtube_settings(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-        # Simpan sebagai baris rotasi DB (primary) + simpan base64 (untuk worker
-        # yang masih membaca env) dalam bentuk terenkripsi.
+        # Simpan sebagai baris rotasi DB (primary) + base64 global terenkripsi
+        # untuk worker yang masih membaca ENV.
         await cookie_store.add_cookie(db, label, plain)
-        value["cookies_base64_enc"] = encrypt_field(base64_text)
-        value["label"] = label
-        value["summary"] = summarize_cookies(plain)
-        value["updated_at"] = datetime.now(timezone.utc).isoformat()
-        get_settings().YTDLP_COOKIES_BASE64 = base64_text
+        await _save_global_base64(db, label, plain, mode=mode)
+        env_injected = True
 
-    await ps.set_setting(db, "youtube", value)
-
+    fresh = await ps.get_setting(db, "youtube", {}) or {}
     return {
-        "mode": value.get("mode"),
-        "label": value.get("label"),
-        "base64_set": bool(value.get("cookies_base64_enc")),
-        "updated_at": value.get("updated_at"),
-        "summary": value.get("summary"),
-        "env_injected": bool(base64_text),
+        "mode": fresh.get("mode") or mode,
+        "label": fresh.get("label"),
+        "base64_set": bool(fresh.get("cookies_base64_enc")),
+        "updated_at": fresh.get("updated_at"),
+        "summary": fresh.get("summary"),
+        "env_injected": env_injected,
     }
 
 
@@ -300,6 +355,28 @@ async def export_base64(cookie_id: UUID, db: AsyncSession = Depends(get_db_sessi
     return {
         "label": cookie.label,
         "base64": encode_cookies_base64(plain),
+        "summary": summarize_cookies(plain),
+    }
+
+
+@router.post("/{cookie_id}/base64/store")
+async def store_base64_for_env(cookie_id: UUID, db: AsyncSession = Depends(get_db_session)):
+    """Jadikan base64 akun ini sebagai base64 global untuk ENV worker."""
+    cookie = await _get_or_404(db, cookie_id)
+    try:
+        plain = decrypt_field(cookie.encrypted_cookies)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Gagal dekripsi: {exc}") from exc
+    try:
+        cookie_store.validate_cookies_text(plain)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    encoded = await _save_global_base64(db, cookie.label, plain)
+    return {
+        "ok": True,
+        "label": cookie.label,
+        "base64_set": True,
+        "base64_chars": len(encoded),
         "summary": summarize_cookies(plain),
     }
 

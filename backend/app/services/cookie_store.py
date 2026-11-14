@@ -12,6 +12,7 @@ dicabut/kedaluwarsa, cookies baru harus diekspor manual lewat endpoint admin.
 """
 import asyncio
 import logging
+import random
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -163,24 +164,32 @@ async def delete_cookie(db: AsyncSession, cookie_id: UUID) -> bool:
     return True
 
 
+def pick_cookie(candidates: Sequence[YtdlpCookie]) -> Optional[YtdlpCookie]:
+    """Pilih cookies aktif secara acak supaya beban merata antar akun.
+
+    Dipisah dari `acquire()` agar mudah dites tanpa database. Kandidat yang
+    masuk ke sini WAJIB sudah difilter `status == active`.
+    """
+    items = list(candidates)
+    return random.choice(items) if items else None
+
+
 async def acquire(
     db: AsyncSession, dest_dir: Optional[Path] = None
 ) -> Optional[tuple[YtdlpCookie, str]]:
-    """Ambil cookies aktif yang paling lama tidak dipakai (round-robin).
+    """Ambil cookies aktif secara ACAK (bukan selalu satu akun yang sama).
 
-    Mengembalikan (cookie, path_file) atau None bila tidak ada cookies aktif.
+    Semua cookies `active` menjadi kandidat. Pemilihan acak membuat beberapa
+    akun terpakai bergantian; `last_used_at` tetap diperbarui untuk monitoring.
     File cache ditulis 0600 dan writable agar yt-dlp bisa menulis balik token
     yang sudah dirotasi. Bila `dest_dir` diberikan, cookies DISALIN ke folder
     task (file unik per task) supaya dua task paralel tidak berebut file yang
     sama saat yt-dlp menulis balik cookie jar.
     """
     result = await db.execute(
-        select(YtdlpCookie)
-        .where(YtdlpCookie.status == COOKIE_STATUS_ACTIVE)
-        .order_by(YtdlpCookie.last_used_at.asc().nullsfirst())
-        .limit(1)
+        select(YtdlpCookie).where(YtdlpCookie.status == COOKIE_STATUS_ACTIVE)
     )
-    cookie = result.scalar_one_or_none()
+    cookie = pick_cookie(result.scalars().all())
     if not cookie:
         return None
 

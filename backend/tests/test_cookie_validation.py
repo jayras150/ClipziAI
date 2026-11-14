@@ -36,3 +36,21 @@ def test_bot_check_does_not_look_expired():
 
 def test_cookie_invalid_marker_looks_expired():
     assert cookie_store.looks_expired("Cookies are no longer valid") is True
+
+
+def test_pick_cookie_is_random_and_empty_safe(monkeypatch):
+    """Pool memilih acak (bukan selalu indeks pertama) dan aman saat kosong."""
+    first, second, third = object(), object(), object()
+    monkeypatch.setattr(cookie_store.random, "choice", lambda seq: seq[2])
+    assert cookie_store.pick_cookie([first, second, third]) is third
+    assert cookie_store.pick_cookie([]) is None
+
+
+def test_encode_decode_base64_roundtrip():
+    """Base64 dari menu admin harus bisa didecode kembali persis."""
+    from app.api.admin.ytdlp_cookies import decode_cookies_base64, encode_cookies_base64
+
+    text = HEADER + _line("SID") + _line("HSID") + _line("SAPISID")
+    encoded = encode_cookies_base64(text)
+    assert decode_cookies_base64(encoded) == text
+    assert decode_cookies_base64(f"data:text/plain;base64,{encoded}") == text

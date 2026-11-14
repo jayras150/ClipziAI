@@ -3,16 +3,16 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ProxyManager } from '@/features/settings/components/proxy-manager';
+import CookieImporter from '@/features/settings/components/cookie-importer';
+import CookieBase64Actions from '@/features/settings/components/cookie-base64-actions';
 import type { ProxyPoolView } from '../proxy-actions';
 import { adminFetch } from '@/lib/clipzi';
 import {
   deleteCookie,
   probeAllCookies,
   probeCookie,
-  saveYoutubeCookies,
   setCookieStatus
 } from '../youtube-actions';
 
@@ -66,53 +66,13 @@ export default async function YoutubeCookiesPage() {
           <CardHeader>
             <CardTitle>Tambah / perbarui cookies</CardTitle>
             <CardDescription>
-              Tempel isi cookies.txt (Netscape) atau hasil base64-nya. Disimpan terenkripsi
-              AES-256-GCM dan dipakai rotasi otomatis.
+              Tempel cookies.txt (Netscape) atau base64. Tombol Encode membuat base64;
+              centang “Simpan base64 untuk ENV worker” agar fallback ENV ikut diperbarui.
+              Pemilihan cookies di pool dilakukan acak antar akun.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form action={saveYoutubeCookies} className='space-y-3'>
-              <div className='flex flex-wrap items-end gap-2'>
-                <div>
-                  <label className='text-muted-foreground mb-1 block text-xs'>Label akun</label>
-                  <Input name='label' placeholder='akun-1' className='h-9 w-40' />
-                </div>
-                <div>
-                  <label className='text-muted-foreground mb-1 block text-xs'>Mode</label>
-                  <select
-                    name='mode'
-                    defaultValue={settings.mode || 'db'}
-                    className='border-input bg-background h-9 rounded-md border px-3 text-sm'
-                  >
-                    <option value='db'>Rotasi DB (disarankan)</option>
-                    <option value='base64'>Base64 env (worker)</option>
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className='text-muted-foreground mb-1 block text-xs'>Base64 cookies.txt</label>
-                <textarea
-                  name='cookies_base64'
-                  rows={4}
-                  placeholder='Tempel base64 di sini (boleh dengan prefix data:text/plain;base64,)'
-                  className='border-input bg-background w-full rounded-md border p-2 font-mono text-xs'
-                />
-              </div>
-              <div>
-                <label className='text-muted-foreground mb-1 block text-xs'>
-                  atau isi cookies.txt (Netscape)
-                </label>
-                <textarea
-                  name='cookies'
-                  rows={4}
-                  placeholder='# Netscape HTTP Cookie File ...'
-                  className='border-input bg-background w-full rounded-md border p-2 font-mono text-xs'
-                />
-              </div>
-              <SubmitButton size='sm'>
-                Simpan cookies
-              </SubmitButton>
-            </form>
+            <CookieImporter />
           </CardContent>
         </Card>
 
@@ -164,6 +124,7 @@ export default async function YoutubeCookiesPage() {
                       </TableCell>
                       <TableCell className='text-right'>
                         <div className='flex flex-wrap justify-end gap-1'>
+                          <CookieBase64Actions id={row.id} />
                           <form action={probeCookie}>
                             <input type='hidden' name='cid' value={row.id} />
                             <SubmitButton size='sm' variant='outline'>
