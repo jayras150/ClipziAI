@@ -333,6 +333,18 @@ async def job_context(db: AsyncSession, token: str) -> Dict[str, Any]:
             cookie_text = open(path, "r", encoding="utf-8", errors="replace").read()
         except OSError:
             cookie_text = ""
+    if not cookie_text:
+        # Pool kosong: pakai cookies ENV (base64) supaya runner tidak download
+        # tanpa autentikasi (yang berujung bot-check).
+        try:
+            from app.services.downloader import VideoDownloader
+
+            env_path = VideoDownloader()._resolve_cookiefile(None)
+            if env_path:
+                cookie_text = open(env_path, "r", encoding="utf-8", errors="replace").read()
+                cookie_id = "env"
+        except Exception as exc:
+            logger.warning("Gagal memuat cookies ENV untuk runner: %s", exc)
 
     storage = get_storage()
     object_key = f"downloads/{task.id}/source.mp4"

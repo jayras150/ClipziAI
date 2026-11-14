@@ -131,7 +131,7 @@ jobs:
           open("/tmp/upload_path.txt", "w").write(path)
           open("/tmp/upload_url.txt", "w").write(ctx["upload_url"])
           PY
-          curl -sS -X PUT \
+          curl -sS --fail -X PUT \
             -H "Content-Type: video/mp4" \
             --upload-file "$(cat /tmp/upload_path.txt)" \
             "$(cat /tmp/upload_url.txt)" \
