@@ -2288,11 +2288,91 @@ body.drawer-open { overflow: hidden; }
 }
 
 /* ---------------------------------------------------------------------------
-   Override terakhir: aturan mobile harus menang atas definisi base di atas
-   (menu ikon tampil, menu horizontal + tombol YouTube disembunyikan).
+   Batch W: logo center di mobile, kartu klip lebih pendek, skor viral ringkas,
+   checkbox merge custom, dan navbar landing memakai drawer.
    --------------------------------------------------------------------------- */
 @media (max-width: 920px) {
   .ui-nav-toggle { display: inline-flex; }
   .ui-yt { display: none; }
   .ui-nav > .ui-nav-links { display: none; }
+  .ui-nav { grid-template-columns: 1fr auto 1fr; }
+  .ui-nav > .ui-brand { grid-column: 2; justify-self: center; }
+  .ui-nav > .ui-nav-toggle { grid-column: 1; justify-self: start; }
+  .ui-nav .ui-nav-actions { grid-column: 3; justify-self: end; }
+
+  .landing .navbar { grid-template-columns: 1fr auto 1fr; }
+  .landing .navbar > .ui-nav-toggle { grid-column: 1; justify-self: start; }
+  .landing .navbar > .brand { grid-column: 2; justify-self: center; }
+  .landing .nav-actions { grid-column: 3; justify-self: end; }
+  .landing .nav-links { display: none; }
+  .landing .menu-toggle { display: none; }
+}
+
+/* Skor viral: hanya angka di pojok kanan atas kartu (tanpa teks). */
+.viral-bubble { padding: 3px; gap: 0; }
+.viral-ring { width: 34px; height: 34px; }
+.viral-num { font-size: 12px; }
+.viral-meta { display: none; }
+
+/* Checkbox merge bergaya chip (bukan checkbox native polos). */
+.clip-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--ui-line);
+  background: rgba(255, 255, 255, 0.04);
+  color: #cfd4e0;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.18s;
+}
+.clip-pick:hover { border-color: rgba(244, 199, 107, 0.45); color: #ffe6b0; }
+.clip-pick:has(input:checked) {
+  border-color: rgba(244, 199, 107, 0.6);
+  background: rgba(244, 199, 107, 0.12);
+  color: #ffe6b0;
+}
+.clip-pick input,
+.clip-select {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border-radius: 5px;
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.35);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.clip-pick input::after,
+.clip-select::after {
+  content: "";
+  width: 8px;
+  height: 5px;
+  border-left: 2px solid #211807;
+  border-bottom: 2px solid #211807;
+  transform: rotate(-45deg) scale(0);
+  transition: transform 0.15s;
+}
+.clip-pick input:checked,
+.clip-select:checked {
+  background: linear-gradient(135deg, #ffe3a6, #d9a43f);
+  border-color: rgba(244, 199, 107, 0.8);
+}
+.clip-pick input:checked::after,
+.clip-select:checked::after { transform: rotate(-45deg) scale(1); }
+
+/* Mobile: kartu klip lebih pendek, video tetap utuh (object-fit: contain). */
+@media (max-width: 560px) {
+  .clip-media { height: 290px; aspect-ratio: auto; }
+  .clip-video { object-fit: contain; }
+  .viral-bubble { top: 8px; right: 8px; padding: 2px; }
+  .viral-ring { width: 28px; height: 28px; }
+  .viral-num { font-size: 10.5px; }
 }

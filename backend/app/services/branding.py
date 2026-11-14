@@ -17,6 +17,7 @@ DEFAULT_BRANDING: Dict[str, Any] = {
     "logo_url": None,
     "favicon_url": None,
     "og_image_url": None,
+    "hero_video_url": None,
     "accent_color": "#f4c76b",
     "support_email": None,
     "footer_note": None,
@@ -54,7 +55,7 @@ def normalize_branding(value: Optional[dict]) -> Dict[str, Any]:
     merged["tagline"] = _clean_text(merged.get("tagline"), 120)
     merged["footer_note"] = _clean_text(merged.get("footer_note"), 160)
     merged["support_email"] = _clean_text(merged.get("support_email"), 120)
-    for field in ("logo_url", "favicon_url", "og_image_url"):
+    for field in ("logo_url", "favicon_url", "og_image_url", "hero_video_url"):
         merged[field] = _clean_url(merged.get(field))
 
     color = str(merged.get("accent_color") or DEFAULT_BRANDING["accent_color"]).strip()

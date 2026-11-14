@@ -6,7 +6,6 @@ import { BrandLogo } from "@/components/BrandingProvider"
 import {
   Upload,
   Play,
-  Youtube,
   Unlink,
   Link2,
   Trash2,
@@ -40,6 +39,7 @@ import ClipModal from "@/components/ClipModal"
 import SiteFooter from "@/components/SiteFooter"
 import UserMenu from "@/components/UserMenu"
 import NavDrawer from "@/components/NavDrawer"
+import YouTubeIcon from "@/components/YouTubeIcon"
 import { APP_NAV_LINKS } from "@/lib/nav"
 
 const ACTIVE_STATUSES = ["queued", "processing"]
@@ -137,6 +137,32 @@ function viralTooltip(factors: Record<string, any> | null | undefined): string {
 export default function DashboardPage() {
   const [token, setToken] = useState("")
   const [activeTab, setActiveTab] = useState<"upload" | "projects">("upload")
+
+  /** Pindah tab + simpan ke URL (?tab=) dan localStorage. */
+  const changeTab = (tab: "upload" | "projects") => {
+    setActiveTab(tab)
+    try {
+      window.localStorage.setItem("clipzi.dashboard.tab", tab)
+      const url = new URL(window.location.href)
+      url.searchParams.set("tab", tab)
+      window.history.replaceState(null, "", url.toString())
+    } catch {
+      /* localStorage/URL tidak tersedia — abaikan */
+    }
+  }
+
+  // Saat halaman di-refresh, kembalikan tab terakhir (kecuali URL menentukan).
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const fromUrl = params.get("tab")
+      const saved = window.localStorage.getItem("clipzi.dashboard.tab")
+      const next = fromUrl === "projects" || fromUrl === "upload" ? fromUrl : saved
+      if (next === "projects") setActiveTab("projects")
+    } catch {
+      /* abaikan */
+    }
+  }, [])
   const [youtube, setYoutube] = useState<{ connected: boolean; channel_name?: string }>({ connected: false })
   const [youtubeLoading, setYoutubeLoading] = useState(false)
   const [youtubeMessage, setYoutubeMessage] = useState("")
@@ -291,7 +317,7 @@ export default function DashboardPage() {
       const params = new URLSearchParams(window.location.search)
       const prefill = params.get("video_url")
       if (prefill) setUrlValue(prefill)
-      setActiveTab("upload")
+      changeTab("upload")
 
       const status = params.get("youtube")
       if (status === "connected") setYoutubeMessage("YouTube connected successfully.")
@@ -459,7 +485,7 @@ export default function DashboardPage() {
         setNotice("Task created — Clipzy AI is processing your video.")
       }
       await refreshTasks(stored)
-      setActiveTab("projects")
+      changeTab("projects")
       setOpenTaskId(task.id)
       loadClips(stored, task.id)
     } catch (error: any) {
@@ -605,7 +631,7 @@ export default function DashboardPage() {
       )
       setSelectedClips([])
       await refreshTasks(token)
-      setActiveTab("projects")
+      changeTab("projects")
     } catch (error: any) {
       setTaskError(readApiError(error.response?.data, "Could not merge the selected clips."))
     } finally {
@@ -631,7 +657,7 @@ export default function DashboardPage() {
           : `Clip #${clip.clip_index} split at ${value.toFixed(1)} seconds.`,
       )
       await refreshTasks(token)
-      setActiveTab("projects")
+      changeTab("projects")
     } catch (error: any) {
       setTaskError(readApiError(error.response?.data, "Could not split this clip."))
     } finally {
@@ -700,7 +726,7 @@ export default function DashboardPage() {
                 {youtubeLoading ? (
                   <ClipzySpinner size="xs" />
                 ) : (
-                  <Youtube className="yt-icon" size={18} fill="#ff2d2d" strokeWidth={0} />
+                  <YouTubeIcon size={18} className="yt-icon" />
                 )}
                 <span className="ui-yt-name">{youtube.channel_name || "YouTube connected"}</span>
                 <ChevronDown size={14} className="ui-yt-chevron" />
@@ -732,7 +758,7 @@ export default function DashboardPage() {
               disabled={youtubeLoading}
               className="ui-btn ui-btn-ghost"
             >
-              {youtubeLoading ? <ClipzySpinner size="xs" /> : <Youtube size={15} />}
+              {youtubeLoading ? <ClipzySpinner size="xs" /> : <YouTubeIcon size={15} />}
               Connect YouTube
             </button>
           )}
@@ -774,13 +800,13 @@ export default function DashboardPage() {
           <div className="ui-tabs">
             <button
               className={`ui-tab${activeTab === "upload" ? " active" : ""}`}
-              onClick={() => setActiveTab("upload")}
+              onClick={() => changeTab("upload")}
             >
               Upload
             </button>
             <button
               className={`ui-tab${activeTab === "projects" ? " active" : ""}`}
-              onClick={() => setActiveTab("projects")}
+              onClick={() => changeTab("projects")}
             >
               Projects{tasks.length ? ` (${tasks.length})` : ""}
             </button>
@@ -1277,7 +1303,7 @@ export default function DashboardPage() {
               <div className="ui-card" style={{ textAlign: "center" }}>
                 <FileVideo size={32} className="ui-gold" style={{ margin: "0 auto 10px" }} />
                 <p className="ui-muted">No projects yet.</p>
-                <button className="ui-btn ui-btn-gold" style={{ marginTop: 14 }} onClick={() => setActiveTab("upload")}>
+                <button className="ui-btn ui-btn-gold" style={{ marginTop: 14 }} onClick={() => changeTab("upload")}>
                   <Play size={15} /> Add your first video
                 </button>
               </div>
@@ -1478,8 +1504,6 @@ export default function DashboardPage() {
                       {clips.map((clip, clipIndex) => {
                         const score = typeof clip.viral_score === "number" ? clip.viral_score : null
                         const band = viralBand(score ?? 0)
-                        const factorLabel =
-                          typeof clip.viral_factors?.label === "string" ? clip.viral_factors.label : ""
                         const estimated = Boolean(clip.viral_factors?.estimated)
                         // Judul kartu: judul AI → kalimat pembuka klip (hasil
                         // planner) → judul lama; judul default "Clip N - ..." dibuang.
@@ -1559,12 +1583,6 @@ export default function DashboardPage() {
                                   <span className="viral-num">
                                     {score === null ? "—" : Math.round(score)}
                                     {estimated && score !== null ? <sup>≈</sup> : null}
-                                  </span>
-                                </span>
-                                <span className="viral-meta">
-                                  <span className="viral-cap">Viral</span>
-                                  <span className="viral-state">
-                                    {scoreBusy[clip.id] ? "Calculating…" : factorLabel || "Not scored"}
                                   </span>
                                 </span>
                               </button>
@@ -1664,24 +1682,26 @@ export default function DashboardPage() {
       </main>
       <SiteFooter />
 
-      <PreviewDock
-        poster={clips[0]?.thumbnail_url || null}
-        caption={subtitlePreviewText}
-        captionStyle={captionStyle}
-        aspectRatio={aspectRatioValue}
-        filterPreset={filterPreset}
-        blurFill={blurFill}
-        watermarkUrl={watermarkUrl}
-        watermarkPosition={watermarkPosition}
-        speed={speedValue}
-        musicName={previewMusicName}
-        musicDucking={musicDucking}
-        removeSilence={trimSilence}
-        cleanAudio={cleanAudio}
-        autoZoom={autoZoom}
-        introUrl={introUrl}
-        outroUrl={outroUrl}
-      />
+      {activeTab === "upload" && (
+        <PreviewDock
+          poster={clips[0]?.thumbnail_url || null}
+          caption={subtitlePreviewText}
+          captionStyle={captionStyle}
+          aspectRatio={aspectRatioValue}
+          filterPreset={filterPreset}
+          blurFill={blurFill}
+          watermarkUrl={watermarkUrl}
+          watermarkPosition={watermarkPosition}
+          speed={speedValue}
+          musicName={previewMusicName}
+          musicDucking={musicDucking}
+          removeSilence={trimSilence}
+          cleanAudio={cleanAudio}
+          autoZoom={autoZoom}
+          introUrl={introUrl}
+          outroUrl={outroUrl}
+        />
+      )}
 
       <ConfirmDialog
         open={confirmDisconnect}

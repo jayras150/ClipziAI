@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { adminFetch } from '@/lib/clipzi';
 
 export type UploadedAsset = {
-  kind: 'logo' | 'favicon' | 'og';
+  kind: 'logo' | 'favicon' | 'og' | 'hero';
   url: string;
   size_bytes?: number;
   width?: number | null;
@@ -112,7 +112,7 @@ export async function uploadBrandingAsset(formData: FormData): Promise<SaveResul
       return { ok: false, error: `${response.status} ${(await response.text()).slice(0, 200)}` };
     }
     const data = (await response.json()) as {
-      kind?: 'logo' | 'favicon' | 'og';
+      kind?: 'logo' | 'favicon' | 'og' | 'hero';
       url?: string;
       size_bytes?: number;
       width?: number | null;
@@ -123,7 +123,7 @@ export async function uploadBrandingAsset(formData: FormData): Promise<SaveResul
     return {
       ok: true,
       asset: {
-        kind: (data.kind || kind) as 'logo' | 'favicon' | 'og',
+        kind: (data.kind || kind) as 'logo' | 'favicon' | 'og' | 'hero',
         url: data.url || '',
         size_bytes: data.size_bytes,
         width: data.width ?? null,

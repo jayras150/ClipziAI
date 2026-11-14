@@ -790,37 +790,20 @@
   .landing .hero, .landing .hero-v2 { grid-template-columns: 1fr; padding-top: 42px; }
   .landing .hero-visual { order: -1; }
 }
-@media (max-width: 850px) {
-  /* Navbar mobile: baris 1 = brand + aksi, baris 2 = menu yang selalu tampil
-     dan bisa di-scroll horizontal (tidak ada menu yang hilang). */
+@media (max-width: 920px) {
+  /* Navbar landing mobile: ikon menu | logo (center) | aksi. Menu pindah ke drawer. */
   .landing .navbar {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: 1fr auto 1fr;
     gap: 8px 10px;
     padding: 8px 14px;
     min-height: 0;
   }
-  .landing .nav-actions { grid-column: 2; grid-row: 1; gap: 8px; }
+  .landing .navbar > .ui-nav-toggle { grid-column: 1; justify-self: start; }
+  .landing .navbar > .brand { grid-column: 2; justify-self: center; }
+  .landing .nav-actions { grid-column: 3; justify-self: end; gap: 8px; }
+  .landing .nav-links { display: none; }
   .landing .menu-toggle { display: none; }
-  .landing .nav-links {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    display: flex;
-    flex-wrap: nowrap;
-    justify-content: flex-start;
-    justify-self: stretch;
-    gap: 4px;
-    width: 100%;
-    margin: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: 2px;
-  }
-  .landing .nav-links::-webkit-scrollbar { display: none; }
-  .landing .nav-links a { flex: 0 0 auto; padding: 7px 10px; font-size: 14px; }
   .landing .section { padding: 54px 0; }
-  .landing .studio-play { width: 44px; height: 44px; font-size: 14px; }
 }
 @media (max-width: 600px) {
   .landing .brand-logo-img { height: 28px; max-width: 132px; }

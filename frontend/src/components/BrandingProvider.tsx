@@ -22,6 +22,7 @@ export type Branding = {
   logo_url?: string | null
   favicon_url?: string | null
   og_image_url?: string | null
+  hero_video_url?: string | null
   accent_color?: string | null
   support_email?: string | null
   footer_note?: string | null
@@ -34,6 +35,7 @@ export const DEFAULT_BRANDING: Branding = {
   logo_url: null,
   favicon_url: null,
   og_image_url: null,
+  hero_video_url: null,
   accent_color: "#f4c76b",
   support_email: null,
   footer_note: null,

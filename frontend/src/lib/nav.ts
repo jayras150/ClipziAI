@@ -3,6 +3,7 @@
  * Satu sumber supaya tidak ada menu yang hilang di halaman mana pun.
  */
 export const APP_NAV_LINKS = [
+  { href: "/", label: "Home" },
   { href: "/dashboard", label: "Dashboard" },
   { href: "/#features", label: "Features" },
   { href: "/#how", label: "How it works" },

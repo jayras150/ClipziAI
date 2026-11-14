@@ -8,11 +8,11 @@ import {
   Sparkles,
   Wand2,
   X,
-  Youtube,
 } from "lucide-react"
 
 import { api, ClipData } from "@/lib/api"
 import { ClipzySpinner } from "@/components/ClipzySpinner"
+import YouTubeIcon from "@/components/YouTubeIcon"
 import { readApiError } from "@/lib/api-errors"
 
 /**
@@ -500,7 +500,7 @@ export default function ClipModal({
                   {uploading ? (
                     <ClipzySpinner size="xs" />
                   ) : (
-                    <Youtube size={15} />
+                    <YouTubeIcon size={15} />
                   )}
                   {uploadUrl ? "Re-upload to YouTube" : "Upload to YouTube"}
                 </button>
@@ -510,7 +510,7 @@ export default function ClipModal({
                   className="ui-btn ui-btn-gold clip-modal-upload"
                   onClick={onConnectYouTube}
                 >
-                  <Youtube size={15} /> Connect YouTube first
+                  <YouTubeIcon size={15} /> Connect YouTube first
                 </button>
               )}
 

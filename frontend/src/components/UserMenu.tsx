@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { CreditCard, LayoutDashboard, LogOut, Unlink, Youtube } from "lucide-react"
+import { CreditCard, LayoutDashboard, LogOut, Unlink } from "lucide-react"
+import YouTubeIcon from "@/components/YouTubeIcon"
 
 import { api, UserProfileData } from "@/lib/api"
 import { AUTH_EVENT, clearSession, hasSession } from "@/lib/auth"
@@ -162,7 +163,7 @@ export default function UserMenu({
                     onConnectYouTube?.()
                   }}
                 >
-                  <Youtube size={15} className="yt-icon" fill="#ff2d2d" strokeWidth={0} /> Connect YouTube
+                  <YouTubeIcon size={15} className="yt-icon" /> Connect YouTube
                 </button>
               )}
             </>

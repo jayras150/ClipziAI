@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
-import { Mail, ShieldCheck, Youtube, Unlink, Save, LogOut, Check } from "lucide-react"
+import { Mail, ShieldCheck, Unlink, Save, LogOut, Check } from "lucide-react"
+import YouTubeIcon from "@/components/YouTubeIcon"
 
 import { ClipzySpinner } from "@/components/ClipzySpinner"
 import Navbar from "@/components/Navbar"
@@ -381,7 +382,7 @@ export default function ProfilePage() {
           <div className="ui-card" style={{ display: "grid", gap: 14 }}>
             <h2 className="ui-subtitle">Connected accounts</h2>
             <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
-              <Youtube size={17} className="ui-gold" />
+              <YouTubeIcon size={17} className="ui-gold" />
               <span>
                 {youtube.connected
                   ? `YouTube: ${youtube.channel_name || "connected"}`
@@ -399,7 +400,7 @@ export default function ProfilePage() {
               ) : youtube.connected ? (
                 <Unlink size={15} />
               ) : (
-                <Youtube size={15} />
+                <YouTubeIcon size={15} />
               )}
               {youtube.connected ? "Disconnect" : "Connect YouTube"}
             </button>

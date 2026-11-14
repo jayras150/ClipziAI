@@ -15,18 +15,20 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { BrandingConfig } from '@/lib/clipzi';
 
-type AssetKind = 'logo' | 'favicon' | 'og';
+type AssetKind = 'logo' | 'favicon' | 'og' | 'hero';
 
 const KIND_LABEL: Record<AssetKind, string> = {
   logo: 'Logo',
   favicon: 'Favicon',
-  og: 'OG Image'
+  og: 'OG Image',
+  hero: 'Video Hero Landing'
 };
 
 const KIND_HINT: Record<AssetKind, string> = {
   logo: 'PNG/SVG transparan, tinggi ideal 64–256 px. Muncul di navbar, header, dan footer.',
   favicon: 'PNG/ICO 32–512 px. Muncul di tab browser dan bookmark.',
-  og: 'PNG/JPG 1200×630 px. Muncul saat link dibagikan di sosial media.'
+  og: 'PNG/JPG 1200×630 px. Muncul saat link dibagikan di sosial media.',
+  hero: 'MP4/WEBM maksimal 30 MB. Animasi yang diputar di landing page (autoplay, tanpa ikon).'
 };
 
 function humanSize(bytes?: number): string {
@@ -88,7 +90,22 @@ function AssetCard({
         <CardDescription className='text-xs'>{KIND_HINT[kind]}</CardDescription>
       </CardHeader>
       <CardContent className='space-y-3'>
-        {kind === 'favicon' ? (
+        {kind === 'hero' ? (
+          <div className='bg-[#0b0d12] flex h-40 items-center justify-center overflow-hidden rounded-lg border'>
+            {preview ? (
+              <video
+                src={preview}
+                className='h-full w-full object-contain'
+                muted
+                loop
+                playsInline
+                controls
+              />
+            ) : (
+              <span className='text-muted-foreground text-xs'>Video hero (MP4/WEBM)</span>
+            )}
+          </div>
+        ) : kind === 'favicon' ? (
           <div className='bg-muted/40 flex items-center gap-2 rounded-lg border p-2'>
             <div className='bg-background flex items-center gap-2 rounded-t-md border-b px-3 py-1.5'>
               {preview ? (
@@ -169,7 +186,11 @@ function AssetCard({
           <input
             ref={inputRef}
             type='file'
-            accept='image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon,image/vnd.microsoft.icon'
+            accept={
+              kind === 'hero'
+                ? 'video/mp4,video/webm,video/quicktime'
+                : 'image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon,image/vnd.microsoft.icon'
+            }
             className='hidden'
             onChange={(event) => pick(event.target.files?.[0] || null)}
           />
@@ -202,7 +223,8 @@ export default function BrandingForm({ config }: { config: BrandingConfig }) {
     footer_note: config.footer_note || '',
     logo_url: config.logo_url || '',
     favicon_url: config.favicon_url || '',
-    og_image_url: config.og_image_url || ''
+    og_image_url: config.og_image_url || '',
+    hero_video_url: config.hero_video_url || ''
   });
   const [assets, setAssets] = useState<Partial<Record<AssetKind, UploadedAsset>>>({});
   const [uploading, setUploading] = useState<AssetKind | null>(null);
@@ -213,10 +235,11 @@ export default function BrandingForm({ config }: { config: BrandingConfig }) {
   const set = (key: keyof typeof form, value: string) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
-  const urlKey: Record<AssetKind, 'logo_url' | 'favicon_url' | 'og_image_url'> = {
+  const urlKey: Record<AssetKind, 'logo_url' | 'favicon_url' | 'og_image_url' | 'hero_video_url'> = {
     logo: 'logo_url',
     favicon: 'favicon_url',
-    og: 'og_image_url'
+    og: 'og_image_url',
+    hero: 'hero_video_url'
   };
 
   const onSave = () => {
@@ -284,6 +307,16 @@ export default function BrandingForm({ config }: { config: BrandingConfig }) {
           onFile={(file) => onUpload('og', file)}
           onRemove={() => onRemove('og')}
         />
+        <div className='md:col-span-3'>
+          <AssetCard
+            kind='hero'
+            url={form.hero_video_url}
+            asset={assets.hero}
+            uploading={uploading === 'hero'}
+            onFile={(file) => onUpload('hero', file)}
+            onRemove={() => onRemove('hero')}
+          />
+        </div>
       </div>
 
       <Card>
@@ -313,6 +346,15 @@ export default function BrandingForm({ config }: { config: BrandingConfig }) {
           <div className='space-y-2 md:col-span-2'>
             <Label htmlFor='tagline'>Tagline</Label>
             <Input id='tagline' value={form.tagline} onChange={(e) => set('tagline', e.target.value)} />
+          </div>
+          <div className='space-y-2 md:col-span-2'>
+            <Label htmlFor='hero_video_url'>Video animasi landing (URL)</Label>
+            <Input
+              id='hero_video_url'
+              placeholder='https://.../hero.mp4 — kosongkan untuk memakai video default'
+              value={form.hero_video_url}
+              onChange={(e) => set('hero_video_url', e.target.value)}
+            />
           </div>
           <div className='space-y-2'>
             <Label htmlFor='support_email'>Email dukungan</Label>

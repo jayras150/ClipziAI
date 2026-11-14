@@ -147,6 +147,7 @@ export type BrandingConfig = {
   logo_url: string | null;
   favicon_url: string | null;
   og_image_url: string | null;
+  hero_video_url: string | null;
   accent_color: string;
   support_email: string | null;
   footer_note: string | null;

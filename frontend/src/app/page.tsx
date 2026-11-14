@@ -1,8 +1,9 @@
 "use client"
 
 import Link from "next/link"
-import { BrandLogo, BrandName } from "@/components/BrandingProvider"
+import { BrandLogo, BrandName, useBranding } from "@/components/BrandingProvider"
 import LandingAuth from "@/components/LandingAuth"
+import NavDrawer from "@/components/NavDrawer"
 import { useEffect, useRef, useState } from "react"
 import {
   ArrowRight,
@@ -13,7 +14,6 @@ import {
   Ellipsis,
   Link2,
   Menu,
-  Play,
   ScanFace,
   ScanSearch,
   Scissors,
@@ -108,6 +108,9 @@ export default function LandingPage() {
   const [signedIn, setSignedIn] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const heroVideoRef = useRef<HTMLVideoElement>(null)
+  // Video animasi hero bisa diganti dari admin (branding.hero_video_url).
+  const { branding } = useBranding()
+  const heroVideoSrc = branding.hero_video_url || "/media/hook.mp4"
 
   // Year is computed on the client to avoid hydration mismatch.
   useEffect(() => setYear(new Date().getFullYear()), [])
@@ -131,7 +134,7 @@ export default function LandingPage() {
    * sampai elemen benar-benar punya data, dan sebagian browser memblokir
    * autoplay tanpa interaksi. Jadi kita panggil `play()` berulang pada event
    * media (loadeddata/canplay), saat tab kembali aktif, dan pada interaksi
-   * pertama pengguna. Overlay bulatan ▶ tetap dipertahankan sebagai hiasan.
+   * pertama pengguna. Tidak ada overlay/ikon di tengah video.
    */
   useEffect(() => {
     const video = heroVideoRef.current
@@ -205,6 +208,7 @@ export default function LandingPage() {
   return (
     <div className="landing">
       <header className="container navbar">
+        <NavDrawer />
         <BrandLogo variant="landing" href="#home" onClick={closeMenu} />
         <nav className={`nav-links${menuOpen ? " open" : ""}`}>
           {signedIn && (
@@ -250,7 +254,7 @@ export default function LandingPage() {
                 <video
                   ref={heroVideoRef}
                   className="studio-video"
-                  src="/media/hook.mp4"
+                  src={heroVideoSrc}
                   autoPlay
                   muted
                   loop
@@ -258,9 +262,6 @@ export default function LandingPage() {
                   preload="auto"
                   aria-label="Clipzy AI preview clip"
                 />
-                <span className="studio-play" aria-hidden="true">
-                  <Play size={19} fill="currentColor" strokeWidth={0} />
-                </span>
                 <div className="studio-video-label">
                   <strong>Your next viral moment</strong>
                   AI-selected highlight · 00:42
