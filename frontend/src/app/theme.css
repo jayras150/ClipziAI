@@ -159,8 +159,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
   column-gap: 20px;
   row-gap: 10px;
   min-height: 66px;
-  backdrop-filter: blur(18px) saturate(150%);
-  background: linear-gradient(180deg, rgba(8, 10, 15, 0.92), rgba(8, 10, 15, 0.7));
+  /* Transparan: navbar tidak punya panel/gradient sendiri supaya menyatu
+     dengan latar body (halo + grid ambient tetap terlihat menembus). */
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border-bottom: 1px solid var(--ui-line);
 }
 .ui-brand-logo {
