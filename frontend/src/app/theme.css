@@ -203,47 +203,29 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 
 @media (max-width: 920px) {
-  /* Mobile/tablet: 2 kolom (brand | aksi) + baris kedua berisi menu yang bisa
-     di-scroll horizontal. Menu TIDAK pernah disembunyikan. */
+  /* Mobile: Menu (ikon) | logo | aksi. Menu pindah ke drawer kiri. */
   .ui-nav {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     column-gap: 10px;
     row-gap: 8px;
     padding: 8px 16px;
   }
   .ui-nav > .ui-brand {
-    grid-column: 1;
+    grid-column: 2;
     grid-row: 1;
+    justify-self: start;
     min-width: 0;
   }
   .ui-nav-actions {
-    grid-column: 2;
+    grid-column: 3;
     grid-row: 1;
     justify-self: end;
     margin-left: 0;
   }
-  .ui-nav > .ui-nav-links {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    justify-self: stretch;
-    display: flex;
-    flex-wrap: nowrap;
-    justify-content: flex-start;
-    gap: 4px;
-    width: 100%;
-    margin-left: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: 2px;
-  }
-  .ui-nav > .ui-nav-links::-webkit-scrollbar { display: none; }
-  .ui-nav > .ui-nav-links a {
-    flex: 0 0 auto;
-    padding: 7px 10px;
-    font-size: 13.5px;
-  }
+  .ui-nav > .ui-nav-links { display: none; }
+  /* Tombol YouTube pindah ke dropdown profil di mobile. */
+  .ui-yt { display: none; }
+  .ui-nav-toggle { display: inline-flex; }
 }
 
 /* Garis emas lama diganti border+shadow glass (garis lurus akan memotong sudut). */
@@ -1840,6 +1822,110 @@ body:has(.ui-modal-backdrop) .preview-dock {
   .edit-preview-stage { height: 150px; }
   .style-rail .style-card { flex-basis: 112px; width: 112px; min-width: 112px; height: 86px; }
   .style-rail-nav { width: 26px; height: 26px; }
+}
+
+/* --- Menu mobile: tombol ikon + drawer kiri (setengah layar) --- */
+.ui-nav-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 38px;
+  border-radius: 11px;
+  border: 1px solid var(--ui-line);
+  background: rgba(255, 255, 255, 0.05);
+  color: #cfd4e0;
+  cursor: pointer;
+  transition: 0.18s;
+}
+.ui-nav-toggle:hover {
+  border-color: rgba(244, 199, 107, 0.5);
+  background: rgba(244, 199, 107, 0.1);
+  color: var(--ui-gold);
+}
+
+.ui-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(3, 5, 9, 0.62);
+  backdrop-filter: blur(4px);
+  animation: uiFade 0.16s ease-out;
+}
+.ui-drawer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 50vw;
+  min-width: 210px;
+  max-width: 320px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-right: 1px solid rgba(244, 199, 107, 0.22);
+  background: linear-gradient(180deg, #12161f, #0a0d13);
+  box-shadow: 0 0 60px rgba(0, 0, 0, 0.65);
+  animation: uiDrawerIn 0.2s ease-out;
+}
+@keyframes uiDrawerIn {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+body.drawer-open { overflow: hidden; }
+
+.ui-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--ui-line);
+}
+.ui-drawer-title {
+  font-family: var(--ui-mono);
+  font-size: 10px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--ui-gold);
+}
+.ui-drawer-close {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  border: 1px solid var(--ui-line);
+  background: rgba(255, 255, 255, 0.05);
+  color: #cfd4e0;
+  cursor: pointer;
+}
+.ui-drawer-close:hover { border-color: rgba(244, 199, 107, 0.5); color: var(--ui-gold); }
+.ui-drawer-links {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 4px;
+  overflow-y: auto;
+}
+.ui-drawer-links a {
+  padding: 11px 12px;
+  border-radius: 10px;
+  color: #cfd4e0;
+  font-size: 14.5px;
+  font-weight: 500;
+}
+.ui-drawer-links a:hover,
+.ui-drawer-links a.active {
+  background: rgba(244, 199, 107, 0.1);
+  color: #ffe6b0;
+}
+
+/* Hanya tampil di mobile: item YouTube di dropdown profil. */
+.ui-only-mobile { display: none !important; }
+.ui-dropdown-sep { height: 1px; margin: 6px 4px; background: var(--ui-line); }
+@media (max-width: 920px) {
+  .ui-only-mobile { display: flex !important; }
 }
 
 /* =============================================================================

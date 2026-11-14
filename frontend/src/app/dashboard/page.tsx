@@ -39,6 +39,8 @@ import { ClipzySpinner, InlineSpinner, ProcessingBar } from "@/components/Clipzy
 import ClipModal from "@/components/ClipModal"
 import SiteFooter from "@/components/SiteFooter"
 import UserMenu from "@/components/UserMenu"
+import NavDrawer from "@/components/NavDrawer"
+import { APP_NAV_LINKS } from "@/lib/nav"
 
 const ACTIVE_STATUSES = ["queued", "processing"]
 
@@ -674,14 +676,14 @@ export default function DashboardPage() {
   return (
     <div className="ui-shell">
       <header className="ui-container ui-container-wide ui-nav">
+        <NavDrawer activeHref="/dashboard" />
         <BrandLogo />
         <nav className="ui-nav-links">
-          <Link href="/dashboard">Dashboard</Link>
-          <Link href="/#features">Features</Link>
-          <Link href="/#how">How it works</Link>
-          <Link href="/#demo">Demo</Link>
-          <Link href="/pricing">Pricing</Link>
-          <Link href="/contact">Contact</Link>
+          {APP_NAV_LINKS.map((link) => (
+            <Link key={link.href} href={link.href}>
+              {link.label}
+            </Link>
+          ))}
         </nav>
         <div className="ui-nav-actions">
           {youtube.connected ? (
@@ -734,7 +736,15 @@ export default function DashboardPage() {
               Connect YouTube
             </button>
           )}
-          <UserMenu />
+          <UserMenu
+            youtube={{
+              connected: Boolean(youtube.connected),
+              channelName: youtube.channel_name,
+              loading: youtubeLoading,
+            }}
+            onConnectYouTube={() => void connectYouTube()}
+            onDisconnectYouTube={() => setConfirmDisconnect(true)}
+          />
         </div>
       </header>
 

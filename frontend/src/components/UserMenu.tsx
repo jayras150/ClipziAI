@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { CreditCard, LayoutDashboard, LogOut } from "lucide-react"
+import { CreditCard, LayoutDashboard, LogOut, Unlink, Youtube } from "lucide-react"
 
 import { api, UserProfileData } from "@/lib/api"
 import { AUTH_EVENT, clearSession, hasSession } from "@/lib/auth"
@@ -33,7 +33,16 @@ function ProfileIcon({ size = 15 }: { size?: number }) {
  * Data profil dibaca di useEffect (bukan saat render) supaya tidak ada
  * hydration mismatch — token tersimpan di localStorage yang tidak ada di server.
  */
-export default function UserMenu() {
+export default function UserMenu({
+  youtube,
+  onConnectYouTube,
+  onDisconnectYouTube,
+}: {
+  /** Info YouTube untuk menu mobile (tombol connect/disconnect pindah ke sini). */
+  youtube?: { connected: boolean; channelName?: string; loading?: boolean }
+  onConnectYouTube?: () => void
+  onDisconnectYouTube?: () => void
+} = {}) {
   const [open, setOpen] = useState(false)
   const [profile, setProfile] = useState<UserProfileData | null>(null)
   const boxRef = useRef<HTMLDivElement>(null)
@@ -121,6 +130,43 @@ export default function UserMenu() {
           <Link className="ui-dropdown-item" href="/pricing" role="menuitem" onClick={() => setOpen(false)}>
             <CreditCard size={15} /> Pricing
           </Link>
+          {youtube && (
+            <>
+              <div className="ui-dropdown-sep ui-only-mobile" />
+              {youtube.connected ? (
+                <>
+                  <div className="ui-dropdown-note ui-only-mobile">
+                    YouTube · {youtube.channelName || "connected"}
+                  </div>
+                  <button
+                    type="button"
+                    className="ui-dropdown-item danger ui-only-mobile"
+                    role="menuitem"
+                    disabled={youtube.loading || !onDisconnectYouTube}
+                    onClick={() => {
+                      setOpen(false)
+                      onDisconnectYouTube?.()
+                    }}
+                  >
+                    <Unlink size={15} /> Disconnect YouTube
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="ui-dropdown-item ui-only-mobile"
+                  role="menuitem"
+                  disabled={youtube.loading || !onConnectYouTube}
+                  onClick={() => {
+                    setOpen(false)
+                    onConnectYouTube?.()
+                  }}
+                >
+                  <Youtube size={15} className="yt-icon" fill="#ff2d2d" strokeWidth={0} /> Connect YouTube
+                </button>
+              )}
+            </>
+          )}
           <button type="button" className="ui-dropdown-item danger" role="menuitem" onClick={signOut}>
             <LogOut size={15} /> Sign out
           </button>

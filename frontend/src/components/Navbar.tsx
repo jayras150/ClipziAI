@@ -5,7 +5,9 @@ import { useEffect, useState } from "react"
 
 import { BrandLogo } from "@/components/BrandingProvider"
 import UserMenu from "@/components/UserMenu"
+import NavDrawer from "@/components/NavDrawer"
 import { AUTH_EVENT, hasSession } from "@/lib/auth"
+import { APP_NAV_LINKS } from "@/lib/nav"
 
 /**
  * Navbar aplikasi.
@@ -32,14 +34,14 @@ export default function Navbar() {
 
   return (
     <header className="ui-container ui-nav">
+      <NavDrawer />
       <BrandLogo />
       <nav className="ui-nav-links">
-        <Link href="/dashboard">Dashboard</Link>
-        <Link href="/#features">Features</Link>
-        <Link href="/#how">How it works</Link>
-        <Link href="/#demo">Demo</Link>
-        <Link href="/pricing">Pricing</Link>
-        <Link href="/contact">Contact</Link>
+        {APP_NAV_LINKS.map((link) => (
+          <Link key={link.href} href={link.href}>
+            {link.label}
+          </Link>
+        ))}
       </nav>
       <div className="ui-nav-actions">
         {signedIn ? (
