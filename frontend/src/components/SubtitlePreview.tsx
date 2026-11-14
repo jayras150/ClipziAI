@@ -38,7 +38,7 @@ export default function SubtitlePreview({
         </span>
       </div>
       <p className="ui-hint" style={{ marginTop: 8 }}>
-        Caption dibakar ke video dengan gaya ini (sama seperti hasil render).
+        Captions are burned into the video using this style (same as the rendered output).
       </p>
     </div>
   )

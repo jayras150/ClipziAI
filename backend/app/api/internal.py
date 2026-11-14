@@ -292,11 +292,11 @@ async def downloader_fallback(
     try:
         task_id = UUID(str(payload.task_id))
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail="task_id tidak valid") from exc
+        raise HTTPException(status_code=400, detail="Invalid task_id") from exc
 
     task = await db.get(Task, task_id)
     if not task:
-        raise HTTPException(status_code=404, detail="Task tidak ditemukan")
+        raise HTTPException(status_code=404, detail="Task not found")
     result = await runner_manager.request_fallback(db, task)
     logger.info("Fallback downloader task %s: %s", task_id, result)
     return result

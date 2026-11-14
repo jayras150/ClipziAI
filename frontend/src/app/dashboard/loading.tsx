@@ -20,9 +20,9 @@ export default function DashboardLoading() {
       >
         <ClipzySpinner size="lg" />
         <div>
-          <p style={{ margin: 0, fontWeight: 700, color: "#f4efe4" }}>Menyiapkan studio klip…</p>
+          <p style={{ margin: 0, fontWeight: 700, color: "#f4efe4" }}>Preparing your clip studio…</p>
           <p style={{ margin: 0, fontSize: 13, color: "var(--ui-muted)" }}>
-            Memuat task, kredit, dan koneksi YouTube Anda.
+            Loading your tasks, credits, and YouTube connection.
           </p>
         </div>
       </div>

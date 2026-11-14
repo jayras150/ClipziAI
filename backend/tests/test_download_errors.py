@@ -41,9 +41,45 @@ def test_user_message_never_leaks_technical_details():
         de.CATEGORY_UNKNOWN,
     ):
         message = de.user_message_for(category).lower()
-        assert "video gagal diproses" in message or "video" in message
+        assert "video" in message or "link" in message
         for word in forbidden:
             assert word not in message
+
+
+def test_user_messages_are_english_only():
+    """UI user wajib bahasa Inggris; jangan ada sisa kata Indonesia."""
+    banned = (
+        "silakan",
+        "gagal",
+        "tidak",
+        "belum",
+        "periksa",
+        "hubungi",
+        "coba",
+        "video ini",
+        "pastikan",
+        "kembali",
+        "bermasalah",
+    )
+    categories = (
+        de.CATEGORY_BOT_CHECK,
+        de.CATEGORY_COOKIES_INVALID,
+        de.CATEGORY_COOKIES_MISSING,
+        de.CATEGORY_VIDEO_PRIVATE,
+        de.CATEGORY_VIDEO_UNAVAILABLE,
+        de.CATEGORY_INVALID_URL,
+        de.CATEGORY_GEO_BLOCKED,
+        de.CATEGORY_RATE_LIMITED,
+        de.CATEGORY_FORMAT_UNAVAILABLE,
+        de.CATEGORY_NETWORK,
+        de.CATEGORY_TIMEOUT,
+        de.CATEGORY_UNKNOWN,
+    )
+    for category in categories:
+        message = de.user_message_for(category).lower()
+        for word in banned:
+            assert word not in message, f"{category}: masih ada kata '{word}'"
+        assert "video" in message or "link" in message
 
 
 def test_download_error_exposes_metadata():

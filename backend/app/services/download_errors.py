@@ -23,37 +23,37 @@ CATEGORY_TIMEOUT = "timeout"
 CATEGORY_UNKNOWN = "unknown"
 
 _USER_MESSAGE = (
-    "Video gagal diproses.\n\n"
-    "Terjadi kendala saat mengunduh video.\n"
-    "Silakan coba kembali."
+    "We couldn't process this video.\n\n"
+    "Something went wrong while downloading it.\n"
+    "Please try again."
 )
 
 _BY_CATEGORY_MESSAGE = {
     CATEGORY_VIDEO_PRIVATE: (
-        "Video ini bersifat privat atau dibatasi.\n\n"
-        "Pastikan video dapat diakses publik, lalu coba kembali."
+        "This video is private or restricted.\n\n"
+        "Make sure it is publicly accessible, then try again."
     ),
     CATEGORY_VIDEO_UNAVAILABLE: (
-        "Video tidak tersedia atau sudah dihapus.\n\n"
-        "Periksa kembali link videonya."
+        "This video is unavailable or has been removed.\n\n"
+        "Check the link and try again."
     ),
     CATEGORY_INVALID_URL: (
-        "Link video tidak valid.\n\n"
-        "Periksa kembali URL yang Anda masukkan."
+        "That link isn't a valid video URL.\n\n"
+        "Check the URL and try again."
     ),
     CATEGORY_COOKIES_MISSING: (
-        "Video gagal diproses.\n\n"
-        "Server belum memiliki akses yang diperlukan untuk mengunduh video ini.\n"
-        "Silakan hubungi admin atau coba kembali nanti."
+        "We couldn't process this video.\n\n"
+        "Our server doesn't have the access it needs to download this video.\n"
+        "Please try again later or contact support."
     ),
     CATEGORY_COOKIES_INVALID: (
-        "Video gagal diproses.\n\n"
-        "Akses ke video ini sedang bermasalah di server.\n"
-        "Silakan coba kembali nanti."
+        "We couldn't process this video.\n\n"
+        "Our server is having trouble accessing this video right now.\n"
+        "Please try again later."
     ),
     CATEGORY_GEO_BLOCKED: (
-        "Video ini tidak dapat diakses dari lokasi server.\n\n"
-        "Silakan coba video lain."
+        "This video isn't available from our server's location.\n\n"
+        "Try a different video."
     ),
 }
 

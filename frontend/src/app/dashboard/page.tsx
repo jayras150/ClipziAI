@@ -73,7 +73,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 /** Pesan aman untuk user — detail teknis hanya di admin. */
 const USER_ERROR_MESSAGE =
-  "Video gagal diproses.\n\nTerjadi kendala saat mengunduh video.\nSilakan coba kembali."
+  "We couldn't process this video.\n\nSomething went wrong while downloading it.\nPlease try again."
 
 function statusBadgeClass(status: string): string {
   if (status === "completed") return "ui-badge ui-badge-success"
@@ -129,7 +129,7 @@ function viralBand(score: number): "excellent" | "good" | "fair" | "low" {
 
 /** Tooltip breakdown faktor skor viral (persen 0-100). */
 function viralTooltip(factors: Record<string, any> | null | undefined): string {
-  if (!factors) return "Skor viral belum dihitung"
+  if (!factors) return "Viral score not calculated yet"
   const pct = (key: string) =>
     typeof factors[key] === "number" ? `${Math.round(factors[key] * 100)}%` : "—"
   const lines = [
@@ -524,7 +524,7 @@ export default function DashboardPage() {
       setUrlValue(text)
       setNotice("Link pasted from clipboard.")
     } catch {
-      setTaskError("Browser memblokir akses clipboard. Klik kolom URL lalu tekan Ctrl+V.")
+      setTaskError("Your browser blocked clipboard access. Click the URL field and press Ctrl+V.")
     }
   }
 
@@ -719,12 +719,12 @@ export default function DashboardPage() {
       setTasks((current) =>
         current.map((item) => (item.id === updated.id ? updated : item)),
       )
-      setNotice("Task dikirim ulang. Proses download akan dimulai kembali.")
+      setNotice("Task resubmitted. The download will start again.")
     } catch (error) {
       setTaskError(
         readApiError(
           (error as { response?: { data?: unknown } })?.response?.data,
-          "Task belum bisa diulang. Silakan coba lagi.",
+          "This task can't be retried yet. Please try again.",
         ),
       )
     } finally {
@@ -1353,7 +1353,7 @@ export default function DashboardPage() {
                 <div style={{ gridColumn: "1 / -1" }}>
                   <ProcessingBar
                     title="AI sedang memproses video"
-                    hint="Progres diperbarui otomatis. Anda boleh menutup halaman ini."
+                    hint="Progress updates automatically. You can close this page."
                     progress={activeTaskForBanner.progress}
                   />
                 </div>
@@ -1472,7 +1472,7 @@ export default function DashboardPage() {
                           </button>
                         ) : (
                           <span className="ui-hint">
-                            Batas percobaan ulang tercapai. Hubungi admin bila masih bermasalah.
+                            Retry limit reached. Contact support if the problem continues.
                           </span>
                         )}
                       </div>
@@ -1526,7 +1526,7 @@ export default function DashboardPage() {
                         </button>
                       ) : (
                         <span className="ui-hint">
-                          Batas percobaan ulang tercapai. Hubungi admin bila masih bermasalah.
+                          Retry limit reached. Contact support if the problem continues.
                         </span>
                       )}
                     </div>
@@ -1568,7 +1568,7 @@ export default function DashboardPage() {
                           <option value="fade">fade</option>
                           <option value="wipeleft">wipe</option>
                           <option value="dissolve">dissolve</option>
-                          <option value="none">tanpa transisi</option>
+                          <option value="none">no transition</option>
                         </select>
                         <button
                           id="merge-clips"

@@ -19,6 +19,7 @@ import logging
 import random
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -196,12 +197,248 @@ async def check_runner(db: AsyncSession, runner: DownloadRunner) -> Dict[str, An
         runner.status = "active" if ok else "error"
         runner.last_error = None if ok else response.text[:400]
         await db.commit()
-        return {"ok": ok, "status_code": response.status_code, "error": runner.last_error}
+        # Preflight: apakah workflow benar-benar ada di default branch?
+        workflow = await workflow_status(db, runner) if ok else None
+        return {
+            "ok": ok,
+            "status_code": response.status_code,
+            "error": runner.last_error,
+            "workflow": workflow,
+        }
     except Exception as exc:  # jaringan / token salah
         runner.status = "error"
         runner.last_error = str(exc)[:400]
         await db.commit()
-        return {"ok": False, "status_code": None, "error": runner.last_error}
+        return {"ok": False, "status_code": None, "error": runner.last_error, "workflow": None}
+
+
+WORKFLOW_TEMPLATE = Path(__file__).resolve().parents[1] / "templates" / "downloader_video.yml"
+
+
+def workflow_template() -> str:
+    """Isi workflow fallback yang dibundel di image backend (sumber tunggal)."""
+    try:
+        raw = WORKFLOW_TEMPLATE.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeError(f"Template workflow tidak tersedia: {exc}") from exc
+    return raw.replace("\r\n", "\n").strip() + "\n"
+
+
+def _workflow_path(runner: DownloadRunner) -> str:
+    name = (runner.workflow_file or "downloader_video.yml").strip().lstrip("/")
+    if name.startswith(".github/"):
+        return name
+    return f".github/workflows/{name}"
+
+
+def _github_message(response: httpx.Response) -> str:
+    try:
+        payload = response.json()
+    except Exception:
+        payload = None
+    if isinstance(payload, dict):
+        message = str(payload.get("message") or "")
+        if payload.get("errors"):
+            message = f"{message} ({payload.get('errors')})"
+        if message:
+            return message[:300]
+    return (response.text or "")[:300]
+
+
+def _github_error(action: str, response: httpx.Response) -> str:
+    """Pesan error admin (bahasa Indonesia; UI admin tetap Indonesia)."""
+    message = _github_message(response)
+    if response.status_code == 401:
+        return f"{action} gagal: token GitHub tidak valid atau kedaluwarsa ({message})."
+    if response.status_code == 403:
+        return (
+            f"{action} gagal: GitHub menolak izin ({message}). "
+            "PAT perlu izin Actions, Contents, dan Workflows (read & write) "
+            "serta akses ke repo ini."
+        )
+    if response.status_code == 404:
+        return f"{action} gagal: repo/branch/file workflow tidak ditemukan ({message})."
+    if response.status_code == 409:
+        return f"{action} gagal: konflik versi file ({message}). Coba lagi."
+    return f"{action} gagal ({response.status_code}): {message}"
+
+
+async def workflow_status(db: AsyncSession, runner: DownloadRunner) -> Dict[str, Any]:
+    """Cek repo, default branch, dan apakah workflow sudah terpasang & sinkron."""
+    base = settings.GITHUB_API_URL.rstrip("/")
+    repo_full = f"{runner.owner}/{runner.repo}"
+    path = _workflow_path(runner)
+    result: Dict[str, Any] = {
+        "ok": False,
+        "repo": repo_full,
+        "workflow_file": runner.workflow_file,
+        "path": path,
+        "ref": runner.git_ref or "main",
+        "default_branch": None,
+        "repo_empty": False,
+        "exists": False,
+        "up_to_date": False,
+        "sha": None,
+        "size": None,
+        "commit_url": None,
+        "actions_enabled": None,
+        "workflow_registered": None,
+        "error": None,
+    }
+    try:
+        template = workflow_template()
+        async with httpx.AsyncClient(timeout=20) as client:
+            repo_resp = await client.get(
+                f"{base}/repos/{repo_full}", headers=_github_headers(runner)
+            )
+            if repo_resp.status_code != 200:
+                result["error"] = _github_error("Cek repo", repo_resp)
+                return result
+            repo = repo_resp.json() or {}
+            default_branch = str(repo.get("default_branch") or runner.git_ref or "main")
+            result["default_branch"] = default_branch
+            result["repo_empty"] = int(repo.get("size") or 0) == 0
+            result["actions_enabled"] = bool(repo.get("has_actions", True))
+
+            params = None if result["repo_empty"] else {"ref": default_branch}
+            content_resp = await client.get(
+                f"{base}/repos/{repo_full}/contents/{path}",
+                headers=_github_headers(runner),
+                params=params,
+            )
+            if content_resp.status_code == 200:
+                data = content_resp.json() or {}
+                result["exists"] = True
+                result["sha"] = data.get("sha")
+                result["size"] = data.get("size")
+                result["commit_url"] = data.get("html_url")
+                encoded = str(data.get("content") or "").replace("\n", "").replace("\r", "")
+                if encoded:
+                    try:
+                        decoded = base64.b64decode(encoded).decode("utf-8", "replace")
+                    except (ValueError, TypeError):
+                        decoded = ""
+                    result["up_to_date"] = (
+                        decoded.replace("\r\n", "\n").strip() == template.strip()
+                    )
+            elif content_resp.status_code == 404:
+                # Repo kosong / file belum ada: bukan kegagalan.
+                result["ok"] = True
+                return result
+            else:
+                result["error"] = _github_error("Cek workflow", content_resp)
+                return result
+
+            workflows_resp = await client.get(
+                f"{base}/repos/{repo_full}/actions/workflows", headers=_github_headers(runner)
+            )
+            if workflows_resp.status_code == 200:
+                workflows = (workflows_resp.json() or {}).get("workflows") or []
+                result["workflow_registered"] = any(
+                    str(item.get("path") or "").rstrip("/").endswith(path)
+                    for item in workflows
+                )
+                result["actions_enabled"] = True
+            else:
+                result["workflow_registered"] = False
+        result["ok"] = True
+        return result
+    except Exception as exc:
+        result["error"] = f"Cek workflow gagal: {exc}"
+        return result
+
+
+async def install_workflow(
+    db: AsyncSession, runner: DownloadRunner, force: bool = False
+) -> Dict[str, Any]:
+    """Pasang/perbarui file workflow di default branch repo runner.
+
+    - Repo kosong: PUT tanpa `branch` agar GitHub membuat commit pertama.
+    - File sudah sama: `unchanged` (tanpa commit baru).
+    - File beda tanpa `force`: `conflict` (tidak menimpa kustomisasi).
+    """
+    status = await workflow_status(db, runner)
+    if status.get("error"):
+        raise RuntimeError(str(status["error"]))
+
+    path = str(status["path"])
+    repo_full = str(status["repo"])
+    branch = str(status.get("default_branch") or runner.git_ref or "main")
+    exists = bool(status.get("exists"))
+
+    if exists and status.get("up_to_date") and not force:
+        return {
+            "action": "unchanged",
+            "path": path,
+            "branch": branch,
+            "sha": status.get("sha"),
+            "commit_url": status.get("commit_url"),
+            "message": "Workflow sudah sesuai template (tidak ada perubahan).",
+        }
+    if exists and not force:
+        return {
+            "action": "conflict",
+            "path": path,
+            "branch": branch,
+            "message": (
+                "File workflow sudah ada dan isinya berbeda. "
+                "Centang 'Timpa' bila ingin memperbarui."
+            ),
+        }
+
+    template = workflow_template()
+    payload: Dict[str, Any] = {
+        "message": (
+            "chore(downloader): perbarui workflow fallback ClipziAI"
+            if exists
+            else "chore(downloader): pasang workflow fallback ClipziAI"
+        ),
+        "content": base64.b64encode(template.encode()).decode(),
+    }
+    if exists and status.get("sha"):
+        payload["sha"] = status["sha"]
+    if not status.get("repo_empty"):
+        payload["branch"] = branch
+
+    base = settings.GITHUB_API_URL.rstrip("/")
+    url = f"{base}/repos/{repo_full}/contents/{path}"
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.put(url, headers=_github_headers(runner), json=payload)
+        if (
+            response.status_code == 422
+            and "branch" in payload
+            and "not found" in (response.text or "").lower()
+        ):
+            # Repo tanpa commit: buat commit pertama tanpa branch.
+            payload.pop("branch", None)
+            response = await client.put(url, headers=_github_headers(runner), json=payload)
+        if response.status_code == 409:
+            fresh = await workflow_status(db, runner)
+            if fresh.get("sha"):
+                payload["sha"] = fresh["sha"]
+            else:
+                payload.pop("sha", None)
+            response = await client.put(url, headers=_github_headers(runner), json=payload)
+
+    if response.status_code not in (200, 201):
+        message = _github_error("Pasang workflow", response)
+        runner.last_error = message[:400]
+        await db.commit()
+        raise RuntimeError(message)
+
+    data = response.json() or {}
+    commit = data.get("commit") or {}
+    content = data.get("content") or {}
+    runner.last_error = None
+    await db.commit()
+    return {
+        "action": "updated" if exists else "created",
+        "path": path,
+        "branch": branch,
+        "sha": content.get("sha"),
+        "commit_url": commit.get("html_url"),
+        "message": "Workflow berhasil diperbarui." if exists else "Workflow berhasil dipasang.",
+    }
 
 
 async def _select_runner(

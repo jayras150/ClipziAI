@@ -192,7 +192,7 @@ export default function ProfilePage() {
           <div style={{ display: "grid", placeItems: "center", gap: 14 }}>
             <ClipzySpinner size="lg" className="ui-gold" />
             <p className="ui-muted" style={{ margin: 0 }}>
-              Memuat profil Anda…
+              Loading your profile…
             </p>
           </div>
         </main>

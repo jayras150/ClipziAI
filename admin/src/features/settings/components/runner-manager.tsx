@@ -1,11 +1,21 @@
 'use client';
 
+import { useState, useTransition } from 'react';
+
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SubmitButton } from '@/components/ui/submit-button';
-import { createRunner, deleteRunner, testRunner, toggleRunner } from '@/app/dashboard/settings/runners/actions';
+import {
+  checkRunnerWorkflow,
+  createRunner,
+  deleteRunner,
+  installRunnerWorkflow,
+  testRunner,
+  toggleRunner,
+  type WorkflowResult
+} from '@/app/dashboard/settings/runners/actions';
 
 export type RunnerRow = {
   id: string;
@@ -33,6 +43,98 @@ function tone(status: string) {
   return 'outline' as const;
 }
 
+/** Alat cek/pasang workflow per runner (status langsung di UI, tanpa reload). */
+function WorkflowTools({ runner }: { runner: RunnerRow }) {
+  const [result, setResult] = useState<WorkflowResult | null>(null);
+  const [force, setForce] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  const run = (kind: 'check' | 'install') => {
+    startTransition(async () => {
+      const next =
+        kind === 'check'
+          ? await checkRunnerWorkflow(runner.id)
+          : await installRunnerWorkflow(runner.id, force);
+      setResult(next);
+    });
+  };
+
+  let badgeLabel = 'Belum dicek';
+  let badgeTone: 'secondary' | 'destructive' | 'outline' = 'outline';
+  if (result?.error) {
+    badgeLabel = 'Error';
+    badgeTone = 'destructive';
+  } else if (result) {
+    if (result.repo_empty && !result.exists) {
+      badgeLabel = 'Repo kosong';
+    } else if (!result.exists) {
+      badgeLabel = 'Belum terpasang';
+    } else if (result.up_to_date) {
+      badgeLabel = 'Siap';
+      badgeTone = 'secondary';
+    } else {
+      badgeLabel = 'Beda versi';
+    }
+  }
+
+  return (
+    <div className='mt-2 rounded-md border p-2'>
+      <div className='flex flex-wrap items-center gap-2 text-xs'>
+        <span className='font-medium'>Workflow</span>
+        <Badge variant={badgeTone}>{badgeLabel}</Badge>
+        {result && !result.error ? (
+          <span className='text-muted-foreground'>
+            {result.path}
+            {result.default_branch ? ` · ${result.default_branch}` : ''}
+            {result.workflow_registered === true ? ' · terdaftar' : ''}
+            {result.workflow_registered === false ? ' · belum terdaftar' : ''}
+          </span>
+        ) : null}
+      </div>
+      {result?.message ? <p className='mt-1 text-xs'>{result.message}</p> : null}
+      {result?.error ? (
+        <p className='text-destructive mt-1 text-xs'>{result.error}</p>
+      ) : null}
+      <div className='mt-2 flex flex-wrap items-center gap-2'>
+        <button
+          type='button'
+          className='hover:bg-muted rounded-md border px-2 py-1 text-xs disabled:opacity-50'
+          disabled={pending}
+          onClick={() => run('check')}
+        >
+          Cek workflow
+        </button>
+        <button
+          type='button'
+          className='hover:bg-muted rounded-md border px-2 py-1 text-xs disabled:opacity-50'
+          disabled={pending}
+          onClick={() => run('install')}
+        >
+          Pasang workflow
+        </button>
+        <label className='text-muted-foreground flex items-center gap-1 text-xs'>
+          <input
+            type='checkbox'
+            checked={force}
+            onChange={(event) => setForce(event.target.checked)}
+          />
+          Timpa jika berbeda
+        </label>
+        {result?.commit_url ? (
+          <a
+            className='text-xs underline'
+            href={result.commit_url}
+            target='_blank'
+            rel='noreferrer'
+          >
+            Lihat commit
+          </a>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export default function RunnerManager({ runners }: { runners: RunnerRow[] }) {
   return (
     <div className='space-y-4'>
@@ -40,8 +142,10 @@ export default function RunnerManager({ runners }: { runners: RunnerRow[] }) {
         <CardHeader>
           <CardTitle>Tambah runner</CardTitle>
           <CardDescription>
-            Gunakan PAT fine-grained dengan izin <strong>Actions: write</strong> pada repo yang
-            memang diotorisasi. Jangan memakai akun/repo yang tidak berwenang.
+            Gunakan PAT fine-grained dengan izin <strong>Actions</strong>,{' '}
+            <strong>Contents</strong>, dan <strong>Workflows</strong> (read &amp; write) pada repo
+            yang memang diotorisasi. Izin Contents/Workflows diperlukan untuk tombol “Pasang
+            workflow”. Jangan memakai akun/repo yang tidak berwenang.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -131,6 +235,7 @@ export default function RunnerManager({ runners }: { runners: RunnerRow[] }) {
                 {runner.last_error ? (
                   <p className='text-destructive mt-1 line-clamp-2 text-xs'>{runner.last_error}</p>
                 ) : null}
+                <WorkflowTools runner={runner} />
                 <div className='mt-2 flex flex-wrap gap-2'>
                   <form action={testRunner}>
                     <input type='hidden' name='id' value={runner.id} />

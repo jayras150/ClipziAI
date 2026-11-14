@@ -51,7 +51,7 @@ async def _load_source_clips(db, task: Task, clip_ids: List[str]) -> List[Clip]:
             continue
         continue
     if not parsed:
-        raise RuntimeError("clip_ids kosong atau tidak valid")
+        raise RuntimeError("clip_ids is empty or invalid")
 
     result = await db.execute(
         select(Clip).where(
@@ -62,7 +62,7 @@ async def _load_source_clips(db, task: Task, clip_ids: List[str]) -> List[Clip]:
     found = {str(clip.id): clip for clip in result.scalars().all()}
     ordered = [found[str(cid)] for cid in parsed if str(cid) in found]
     if not ordered:
-        raise RuntimeError("Tidak ada klip valid milik user ini")
+        raise RuntimeError("No valid clips found for this user")
     return ordered
 
 
@@ -96,7 +96,7 @@ async def run_compose_pipeline(task_id: UUID) -> Dict[str, Any]:
                 await _download_asset(clip.download_url, dest)
                 local_paths.append(dest)
             if not local_paths:
-                raise RuntimeError("Semua klip sumber tidak punya download_url")
+                raise RuntimeError("None of the source clips has a download_url")
             await _set_progress(db, task, 45)
 
             width, height = processor._dimensions_for_ratio(
@@ -254,11 +254,11 @@ async def run_split_pipeline(task_id: UUID) -> Dict[str, Any]:
             clips = await _load_source_clips(db, task, [str(options.get("clip_id") or "")])
             source = clips[0]
             if not source.download_url:
-                raise RuntimeError("Klip sumber tidak punya download_url")
+                raise RuntimeError("The source clip has no download_url")
 
             at_time = float(options.get("at_time") or 0)
             if at_time <= 0:
-                raise RuntimeError("at_time harus lebih besar dari 0")
+                raise RuntimeError("at_time must be greater than 0")
 
             local = str(work_dir / f"source.{_ext_from_url(source.download_url)}")
             await _download_asset(source.download_url, local)
@@ -268,7 +268,7 @@ async def run_split_pipeline(task_id: UUID) -> Dict[str, Any]:
             total = float(info.get("duration") or 0)
             if at_time >= total - 0.3:
                 raise RuntimeError(
-                    f"at_time ({at_time:.2f}s) melebihi durasi klip ({total:.2f}s)"
+                    f"at_time ({at_time:.2f}s) exceeds the clip duration ({total:.2f}s)"
                 )
 
             out_a = str(work_dir / "part_a.mp4")

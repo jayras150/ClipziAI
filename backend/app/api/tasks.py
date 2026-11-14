@@ -175,8 +175,8 @@ async def create_task(
         task.status = TaskStatus.ERROR
         task.download_status = "failed"
         task.error_message = (
-            f"Gagal mengirim task ke worker (mode {dispatch_mode()}): "
-            f"{dispatch.get('error') or 'tanpa keterangan'}"
+            f"Failed to send the task to the worker (mode {dispatch_mode()}): "
+            f"{dispatch.get('error') or 'no details provided'}"
         )
         task.user_message = user_message_for(None)
         await db.commit()
@@ -234,17 +234,17 @@ async def retry_own_task(
     if status_value in ("queued", "processing"):
         return task
     if status_value not in ("error", "cancelled"):
-        raise HTTPException(status_code=400, detail="Task ini belum bisa diulang.")
+        raise HTTPException(status_code=400, detail="This task can't be retried yet.")
 
     if (task.retry_count or 0) >= (task.max_retries or 0):
         raise HTTPException(
             status_code=429,
-            detail="Batas percobaan ulang tercapai. Silakan hubungi admin.",
+            detail="Retry limit reached. Please contact support if the problem continues.",
         )
     if task.error_category and not is_retryable(task.error_category):
         raise HTTPException(
             status_code=400,
-            detail="Video ini tidak dapat diproses ulang. Periksa kembali link videonya.",
+            detail="This video can't be processed again. Check the video link and try again.",
         )
 
     task.retry_count = (task.retry_count or 0) + 1
@@ -264,8 +264,8 @@ async def retry_own_task(
         task.status = TaskStatus.ERROR
         task.download_status = "failed"
         task.error_message = (
-            f"Gagal mengirim ulang task ke worker (mode {dispatch_mode()}): "
-            f"{dispatch.get('error') or 'tanpa keterangan'}"
+            f"Failed to resend the task to the worker (mode {dispatch_mode()}): "
+            f"{dispatch.get('error') or 'no details provided'}"
         )
         task.user_message = user_message_for(None)
         await db.commit()
@@ -437,8 +437,8 @@ async def _new_editing_task(
     if not dispatch.get("queued"):
         task.status = TaskStatus.ERROR
         task.error_message = (
-            f"Gagal mengirim {title_hint} ke worker (mode {dispatch_mode()}): "
-            f"{dispatch.get('error') or 'tanpa keterangan'}"
+            f"Failed to send the {title_hint} task to the worker (mode {dispatch_mode()}): "
+            f"{dispatch.get('error') or 'no details provided'}"
         )
         await db.commit()
     return task
@@ -462,7 +462,7 @@ async def compose_task_clips(
 
     clip_ids = [str(cid) for cid in payload.clip_ids]
     if len(clip_ids) < 2:
-        raise HTTPException(status_code=400, detail="Minimal 2 klip untuk digabung")
+        raise HTTPException(status_code=400, detail="Select at least 2 clips to merge.")
 
     found = (
         await db.execute(

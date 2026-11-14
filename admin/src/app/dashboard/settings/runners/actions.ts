@@ -50,3 +50,61 @@ export async function deleteRunner(formData: FormData) {
   await adminFetch(`/api/admin/settings/runners/${id}`, { method: 'DELETE' });
   revalidatePath('/dashboard/settings/runners');
 }
+
+/** Status workflow di repo runner (preflight). */
+export type WorkflowResult = {
+  ok?: boolean;
+  repo?: string;
+  path?: string;
+  ref?: string;
+  default_branch?: string | null;
+  repo_empty?: boolean;
+  exists?: boolean;
+  up_to_date?: boolean;
+  sha?: string | null;
+  size?: number | null;
+  commit_url?: string | null;
+  actions_enabled?: boolean | null;
+  workflow_registered?: boolean | null;
+  error?: string | null;
+  action?: string;
+  message?: string;
+  branch?: string;
+};
+
+function _errorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    // adminFetch membentuk "502 detail"; buang kode status agar pesan rapi.
+    return error.message.replace(/^\d{3}\s+/, '');
+  }
+  return 'Permintaan ke GitHub gagal. Coba lagi.';
+}
+
+export async function checkRunnerWorkflow(id: string): Promise<WorkflowResult> {
+  if (!id) return { error: 'Runner tidak valid.' };
+  try {
+    const data = await adminFetch<WorkflowResult>(
+      `/api/admin/settings/runners/${id}/workflow`
+    );
+    return data;
+  } catch (error) {
+    return { error: _errorMessage(error) };
+  }
+}
+
+export async function installRunnerWorkflow(
+  id: string,
+  force: boolean
+): Promise<WorkflowResult> {
+  if (!id) return { error: 'Runner tidak valid.' };
+  try {
+    const data = await adminFetch<WorkflowResult>(
+      `/api/admin/settings/runners/${id}/workflow`,
+      { method: 'POST', body: JSON.stringify({ force }) }
+    );
+    revalidatePath('/dashboard/settings/runners');
+    return data;
+  } catch (error) {
+    return { error: _errorMessage(error) };
+  }
+}

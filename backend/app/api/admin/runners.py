@@ -130,6 +130,53 @@ async def update_runner(
     return runner_manager.serialize_runner(runner)
 
 
+class WorkflowInstallIn(BaseModel):
+    """Opsi pemasangan workflow (force = timpa file yang berbeda)."""
+
+    force: bool = False
+
+
+@router.get("/{runner_id}/workflow")
+async def get_runner_workflow(
+    runner_id: UUID,
+    db: AsyncSession = Depends(get_db_session),
+):
+    runner = await db.get(DownloadRunner, runner_id)
+    if not runner:
+        raise HTTPException(status_code=404, detail="Runner tidak ditemukan.")
+    return await runner_manager.workflow_status(db, runner)
+
+
+@router.post("/{runner_id}/workflow")
+async def install_runner_workflow(
+    runner_id: UUID,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+    payload: Optional[WorkflowInstallIn] = None,
+):
+    """Pasang/perbarui file workflow di repo runner (commit langsung ke default branch)."""
+    runner = await db.get(DownloadRunner, runner_id)
+    if not runner:
+        raise HTTPException(status_code=404, detail="Runner tidak ditemukan.")
+    try:
+        result = await runner_manager.install_workflow(
+            db, runner, force=bool(payload.force) if payload else False
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    _audit(
+        db,
+        request,
+        current_admin,
+        "runner_workflow_installed",
+        str(runner.id),
+        {"action": result.get("action"), "path": result.get("path")},
+    )
+    await db.commit()
+    return result
+
+
 @router.post("/{runner_id}/test")
 async def test_runner(
     runner_id: UUID,
