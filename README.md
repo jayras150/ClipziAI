@@ -441,18 +441,19 @@ Worker memuatnya di awal setiap task (`load_and_apply_ai_config`).
 yt-dlp butuh cookies untuk video yang meminta login/usia. Dua mode yang didukung:
 
 1. **Rotasi DB (disarankan)** - cookies disimpan per baris di `ytdlp_cookies`
-   (AES-256-GCM). `cookie_store.acquire()` memilih cookie aktif yang paling lama tidak
-   dipakai, dan `sync_back()` menyimpan token hasil refresh yt-dlp kembali ke DB.
-   Cooker yang gagal 3× otomatis ditandai `expired`.
+   (AES-256-GCM). `cookie_store.acquire()` memilih cookies **acak** dari semua baris
+   `active` (beban merata antar akun), lalu `sync_back()` menyimpan token hasil refresh
+   yt-dlp kembali ke DB. Cookies yang gagal 3× otomatis ditandai `expired`.
 2. **Base64 env** - base64 dari `cookies.txt`, disimpan terenkripsi di
    `platform_settings` key `youtube` dan di-inject ke `YTDLP_COOKIES_BASE64`
    (dipakai `downloader.py`). Cocok bila worker hanya membaca env.
 
-Di dashboard: Settings › YouTube Cookies → tempel **base64** (boleh dengan prefix
-`data:text/plain;base64,`) atau isi `cookies.txt`, isi label, pilih mode, lalu **Simpan
-cookies**. Backend otomatis: decode → validasi format Netscape (harus ada domain
-youtube.com) → simpan. Tabel menampilkan status, jumlah sukses/gagal, error terakhir,
-tombol **Uji**, **Aktifkan/Nonaktifkan**, **Hapus**.
+Di dashboard: Settings › YouTube Cookies → pilih **Netscape (cookies.txt)** atau
+**Base64**. Tombol **Encode → Base64** membuat base64 tanpa menyimpan; centang
+“Simpan base64 untuk ENV worker” agar base64 global (terenkripsi di
+`platform_settings`) ikut diperbarui dan langsung dipakai sebagai fallback ENV.
+Tabel menampilkan status, jumlah sukses/gagal, error terakhir, tombol **Copy base64**
+per akun, **Jadikan ENV**, **Uji**, **Aktifkan/Nonaktifkan**, dan **Hapus**.
 
 Membuat base64 dari file:
 

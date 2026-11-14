@@ -54,3 +54,39 @@ def test_encode_decode_base64_roundtrip():
     encoded = encode_cookies_base64(text)
     assert decode_cookies_base64(encoded) == text
     assert decode_cookies_base64(f"data:text/plain;base64,{encoded}") == text
+
+
+def test_save_global_base64_encrypts_and_injects(monkeypatch):
+    """Base64 global disimpan terenkripsi + langsung dipakai ENV worker."""
+    import asyncio
+    import base64 as b64
+
+    from app.api.admin import ytdlp_cookies as mod
+    from app.core.config import get_settings
+    from app.services import platform_settings as ps
+
+    store = {}
+
+    async def fake_get(db, key, default=None):
+        return store.get(key, default)
+
+    async def fake_set(db, key, value):
+        store[key] = value
+
+    monkeypatch.setattr(ps, "get_setting", fake_get)
+    monkeypatch.setattr(ps, "set_setting", fake_set)
+    monkeypatch.setattr(mod, "encrypt_field", lambda value: f"enc:{value}")
+
+    text = HEADER + _line("SID") + _line("HSID") + _line("SAPISID")
+    settings = get_settings()
+    original = settings.YTDLP_COOKIES_BASE64
+    try:
+        encoded = asyncio.run(mod._save_global_base64(object(), "akun-1", text))
+    finally:
+        settings.YTDLP_COOKIES_BASE64 = original
+
+    expected = b64.b64encode(text.encode()).decode()
+    assert encoded == expected
+    assert store["youtube"]["cookies_base64_enc"] == f"enc:{expected}"
+    assert store["youtube"]["label"] == "akun-1"
+    assert store["youtube"]["summary"]["cookie_count"] == 3
