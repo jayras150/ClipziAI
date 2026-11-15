@@ -138,15 +138,23 @@ fi
 # Kalau path salah / copy gagal, jangan menunggu 900 s dengan CPU/GPU 0%: setelah
 # `CLIPZI_RESTORE_FAST_FAIL` detik tanpa model, cetak isi folder lalu unduh model.
 if [ -n "${CLIPZI_RESTORE_TIMEOUT:-}" ]; then
-    MODEL_PATH="${CLIPZI_RESTORE_MODEL_PATH:-/workspace/whisper_model}"
+    RESTORE_PATH="${CLIPZI_RESTORE_MODEL_PATH:-/workspace/whisper_model}"
     FAST_FAIL="${CLIPZI_RESTORE_FAST_FAIL:-150}"
-    # Container jalan sebagai user non-root; /workspace milik root di banyak host
-    # Vast. Tanpa fallback ini, unduhan model gagal "PermissionError: /workspace".
-    mkdir -p "$MODEL_PATH" 2>/dev/null || true
-    if [ ! -w "$MODEL_PATH" ]; then
-        log "PERINGATAN: $MODEL_PATH tidak writable; fallback ke /app/whisper_model"
-        MODEL_PATH="/app/whisper_model"
+    # Kalau cloud copy SUDAH menaruh model (walau read-only milik root), pakai
+    # langsung: membaca tidak butuh izin tulis. Dulu script pindah ke folder
+    # kosong lalu mengunduh ulang 3 GB -> lambat + disk penuh.
+    EXISTING_MODEL="$(find "$RESTORE_PATH" -maxdepth 2 -name model.bin -type f 2>/dev/null | head -n 1)"
+    if [ -n "$EXISTING_MODEL" ]; then
+        MODEL_PATH="$(dirname "$EXISTING_MODEL")"
+        log "model restore ditemukan: $EXISTING_MODEL (read-only tidak masalah)"
+    else
+        MODEL_PATH="$RESTORE_PATH"
         mkdir -p "$MODEL_PATH" 2>/dev/null || true
+        if [ ! -w "$MODEL_PATH" ]; then
+            MODEL_PATH="/app/whisper_model"
+            mkdir -p "$MODEL_PATH" 2>/dev/null || true
+            log "PERINGATAN: $RESTORE_PATH tidak writable dan model belum ada; unduh ke $MODEL_PATH"
+        fi
     fi
     export GPU_WHISPER_MODEL="$MODEL_PATH"
     export HF_HOME="${HF_HOME:-/app/.cache/huggingface}"
