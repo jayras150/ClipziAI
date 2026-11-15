@@ -18,6 +18,10 @@ services:
       - ./backend/.env
     expose:
       - "8000"
+    # Loopback-only: agent metrik host (systemd) POST ke 127.0.0.1:8000.
+    # Tidak terekspos ke internet (Caddy memakai jaringan docker).
+    ports:
+      - "127.0.0.1:8000:8000"
     volumes:
       - clipzi_cache:/app/.cache
     mem_limit: 1200m

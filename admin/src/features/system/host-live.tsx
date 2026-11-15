@@ -65,6 +65,11 @@ type HostPayload = {
     network: { rx_rate: number | null; tx_rate: number | null };
     containers: ContainerRow[];
     docker?: { total: number; running: number; disk_usage?: string[] };
+    agent?: {
+      started_at?: string | null;
+      uptime_seconds?: number | null;
+      interval_seconds?: number | null;
+    } | null;
   } | null;
   history?: HistoryPoint[];
   services?: ServiceRow[];
@@ -257,6 +262,9 @@ export function HostLive() {
           {uptime(latest.uptime_seconds)}
           {data.api_uptime_seconds ? ` · API up ${uptime(data.api_uptime_seconds)}` : ''}
           {data.api_version ? ` (v${data.api_version})` : ''}
+          {latest.agent?.uptime_seconds
+            ? ` · agent up ${uptime(latest.agent.uptime_seconds)}`
+            : ''}
         </span>
         <Button size='sm' variant='ghost' className='ml-auto gap-2' onClick={() => void load()}>
           {loading ? <ClipzySpinner size='xs' variant='ring' /> : null}

@@ -19,6 +19,11 @@ services:
       - ../backend/.env
     expose:
       - "8000"
+    # Port dipublikasikan HANYA ke loopback host supaya agent metrik
+    # (`clipzi-host-metrics.service`) bisa POST ke 127.0.0.1:8000.
+    # Tidak terbuka ke internet: Caddy tetap memakai jaringan docker.
+    ports:
+      - "127.0.0.1:8000:8000"
     volumes:
       # cache cookies yt-dlp (token hasil rotasi ikut tersimpan antar restart)
       # + cache model Whisper lokal fallback transkripsi (HF_HOME di bawah)

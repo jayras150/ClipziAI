@@ -61,6 +61,8 @@ class HostMetricsIn(BaseModel):
     network: dict | None = None
     containers: list | None = None
     docker: dict | None = None
+    # Info proses agent (started_at/uptime/interval) — ditampilkan di tab System.
+    agent: dict | None = None
 
 
 class DomainAppliedIn(BaseModel):
