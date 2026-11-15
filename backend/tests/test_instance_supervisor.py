@@ -108,6 +108,14 @@ def test_watch_berhenti_saat_task_selesai():
     assert reason == "completed"
 
 
+def test_watch_berhenti_saat_task_dihapus():
+    """Task dihapus user => supervisor harus berhenti, bukan menunggu timeout."""
+    sup = _supervisor(_FakeClient([]), [None])
+    outcome, reason = asyncio.run(sup._watch(1))
+    assert outcome == "done"
+    assert reason == "task dihapus"
+
+
 def test_watch_menganggap_exited_sebagai_gagal():
     client = _FakeClient(
         [{"actual_status": "exited", "status_msg": "Error: no space left"}]
