@@ -17,7 +17,7 @@ from app.models.download_log import DownloadAttempt, TaskLog
 from app.models.task import Task, TaskStatus
 from app.models.user import User
 from app.services.download_errors import user_message_for
-from app.services.vast_worker import dispatch_mode, submit_task
+from app.services.vast_worker import destroy_task_instances, dispatch_mode, submit_task
 
 router = APIRouter(dependencies=[Depends(get_current_admin)])
 
@@ -263,7 +263,14 @@ async def cancel_task(
     task.status = TaskStatus.CANCELLED
     await db.commit()
     await _audit(db, request, current_admin, "task_cancelled", str(task_id), {"from": before})
-    return {"message": f"Task {task_id} dibatalkan", "status": "cancelled"}
+    cleanup = await destroy_task_instances(task_id, "task dibatalkan admin")
+    return {
+        "message": f"Task {task_id} dibatalkan",
+        "status": "cancelled",
+        "instances_destroyed": cleanup.get("destroyed", 0),
+        "destroy_errors": cleanup.get("errors", []),
+    }
+
 
 
 @router.post("/{task_id}/retry")

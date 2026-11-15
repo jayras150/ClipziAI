@@ -515,6 +515,9 @@ estimasi biaya lokal dari riwayat instance, dan **Export CSV**.
 **Workers** kini menampilkan instance live dari Vast (GPU, disk terpakai/alokasi, harga/jam,
 status) plus riwayat lokal, dengan tombol **Logs** (termasuk opsi **debug/daemon logs**) dan
 **Destroy**. Jika instance sudah dihapus, log jatuh ke `log_tail` lokal.
+- **Hapus task user / cancel admin** sekarang memanggil `destroy_task_instances` untuk mematikan
+  instance Vast segera; reaper juga menganggap task yang hilang sebagai terminal, bukan menunggu
+  timeout (mencegah GPU tetap ditagih).
 
 ### Backup & restore model Whisper (Google Drive)
 

@@ -23,7 +23,7 @@ from app.schemas.task import (
 )
 from app.schemas.clip import ClipResponse
 from app.schemas.common import MessageResponse
-from app.services.vast_worker import dispatch_mode, submit_task
+from app.services.vast_worker import destroy_task_instances, dispatch_mode, submit_task
 from app.services.download_errors import is_retryable, user_message_for
 from app.services.viral import score_clip
 
@@ -385,11 +385,18 @@ async def delete_task(
     
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
+    # Hentikan GPU dulu; task yang dihapus tidak akan pernah menjadi terminal
+    # sehingga reaper bisa menunggu sampai timeout (instance tetap ditagih).
+    cleanup = await destroy_task_instances(task_id, "task dihapus user")
+    if cleanup.get("errors"):
+        logger.warning("Destroy instance task %s: %s", task_id, cleanup["errors"])
+
     await db.delete(task)
     await db.commit()
-    
+
     return MessageResponse(message="Task deleted successfully")
+
 
 
 # =============================================================================

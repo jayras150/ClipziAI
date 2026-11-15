@@ -155,6 +155,8 @@ class InstanceSupervisor:
 
         while True:
             status = await self._task_status()
+            if status is None:
+                return "done", "task dihapus"
             if status in {"completed", "error", "cancelled"}:
                 return "done", status or "terminal"
 

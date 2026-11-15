@@ -36,6 +36,7 @@ Catatan mode ``oneshot``
 import asyncio
 import logging
 import time
+from datetime import datetime
 from typing import Any, Dict, Optional
 from uuid import UUID
 
@@ -249,8 +250,10 @@ async def _reap_instance(instance_id: int, task_id: UUID) -> None:
                 task = await db.get(Task, task_id)
                 status = task.status if task else None
 
-            if status in terminal:
-                reason = status.value if status else "unknown"
+            # Task yang sudah dihapus user tidak akan pernah menjadi terminal;
+            # tanpa cek None reaper menunggu timeout penuh (GPU tetap ditagih).
+            if status is None or status in terminal:
+                reason = status.value if status else "task dihapus"
                 break
 
             if status == TaskStatus.QUEUED and time.monotonic() > boot_deadline:
@@ -486,6 +489,74 @@ async def _dispatch_oneshot(task_id: UUID) -> Dict[str, Any]:
         "price_per_hour": offer.get("dph_total"),
         "max_attempts": settings.VAST_MAX_ATTEMPTS,
     }
+
+
+async def destroy_task_instances(task_id: UUID, reason: str = "task dihapus") -> Dict[str, Any]:
+    """Hentikan semua instance GPU milik satu task (best effort).
+
+    Dipanggil saat user menghapus task atau admin membatalkan task. Tanpa ini
+    instance tetap hidup sampai reaper/timeout karena task sudah tidak ada.
+    """
+    from sqlalchemy import select
+
+    from app.db.session import AsyncSessionLocal
+    from app.models.worker_instance import WorkerInstance
+
+    instance_ids: set[int] = set()
+    async with AsyncSessionLocal() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(WorkerInstance).where(WorkerInstance.task_id == task_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for row in rows:
+            if row.instance_id and (row.state or "") != "destroyed":
+                instance_ids.add(int(row.instance_id))
+
+    if not instance_ids:
+        return {"destroyed": 0, "errors": []}
+
+    destroyed = 0
+    errors: list[str] = []
+    try:
+        client = _get_vast_client()
+    except Exception as exc:  # noqa: BLE001
+        return {"destroyed": 0, "errors": [f"Vast client tidak siap: {exc}"]}
+
+    for instance_id in sorted(instance_ids):
+        try:
+            await asyncio.to_thread(client.destroy_instance, instance_id)
+            destroyed += 1
+        except Exception as exc:  # noqa: BLE001
+            message = str(exc)
+            if "404" in message or "not found" in message.lower():
+                destroyed += 1
+            else:
+                errors.append(f"{instance_id}: {message[:160]}")
+                logger.warning("Gagal menghapus instance %s task %s: %s", instance_id, task_id, exc)
+
+    async with AsyncSessionLocal() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(WorkerInstance).where(WorkerInstance.task_id == task_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for row in rows:
+            if row.instance_id and int(row.instance_id) in instance_ids:
+                row.state = "destroyed"
+                row.destroyed_at = datetime.utcnow()
+                row.destroy_reason = reason[:120]
+        await db.commit()
+
+    return {"destroyed": destroyed, "errors": errors}
 
 
 async def cleanup_orphan_instances() -> int:
