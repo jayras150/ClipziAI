@@ -644,6 +644,38 @@ class VideoProcessor:
         """Wrapper kompatibel dengan lama (aspect 9:16)."""
         return await self.smart_crop_aspect(input_path, output_path, start_time, duration, "9:16", face_detect)
 
+    # Font yang tersedia di image produksi. Nama kunci dipakai di
+    # editing_options.caption_font; path fallback pertama tetap DejaVu Sans Bold.
+    CAPTION_FONT_FILES: Dict[str, List[str]] = {
+        "sans": [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        ],
+        "serif": [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
+        ],
+        "mono": [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+        ],
+    }
+
+    @classmethod
+    def resolve_font_file(cls, font_name: Optional[str] = None) -> Optional[str]:
+        """Cari file font untuk drawtext; None bila tidak ada font sama sekali."""
+        key = (font_name or "sans").strip().lower()
+        candidates = list(cls.CAPTION_FONT_FILES.get(key, []))
+        candidates += [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+            "/Windows/Fonts/arialbd.ttf",
+        ]
+        return next((p for p in candidates if os.path.exists(p)), None)
+
     async def add_text_overlay(
         self,
         input_path: str,
@@ -657,15 +689,10 @@ class VideoProcessor:
         box_color: str = "black@0.6",
         border_width: int = 0,
         border_color: str = "black",
+        font_name: Optional[str] = None,
     ) -> str:
-        """Bakar teks ke video dengan ffmpeg drawtext. Font sistem dilema dulu."""
-        font_paths = [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-            "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
-            "/Windows/Fonts/arialbd.ttf",
-        ]
-        font_file = next((p for p in font_paths if os.path.exists(p)), None)
+        """Bakar teks ke video dengan ffmpeg drawtext."""
+        font_file = self.resolve_font_file(font_name)
         if not font_file:
             raise RuntimeError("Tidak ditemukan font TTF di container untuk caption.")
 
@@ -1961,6 +1988,249 @@ class VideoProcessor:
             output_path,
         ]
 
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._run_ffmpeg, cmd)
+        return output_path
+
+    # =====================================================================
+    # Ken Burns / manual pan
+    # =====================================================================
+    @staticmethod
+    def ken_burns_filter_chain(
+        width: int,
+        height: int,
+        duration: float,
+        output_fps: int,
+        zoom: float = 1.12,
+        direction: str = "zoom-in",
+    ) -> str:
+        """Bangun filter ``zoompan`` untuk Ken Burns/manual pan.
+
+        Arah yang didukung: zoom-in, zoom-out, left-right, right-left,
+        top-bottom, bottom-top, center. Fungsi murni supaya bisa diuji tanpa
+        menjalankan ffmpeg.
+        """
+        total = max(1, int(round(float(duration or 1) * max(1, int(output_fps)))))
+        zmax = max(1.01, min(3.0, float(zoom or 1.12)))
+        pan = (direction or "zoom-in").strip().lower()
+        if pan in {"in", "zoom-in", "kenburns-in"}:
+            z = f"min({zmax:.4f},1+({zmax - 1:.4f})*on/{total})"
+        elif pan in {"out", "zoom-out", "kenburns-out"}:
+            z = f"max(1,{zmax:.4f}-({zmax - 1:.4f})*on/{total})"
+        else:
+            z = f"{zmax:.4f}"
+
+        center_x = "(iw-iw/zoom)/2"
+        center_y = "(ih-ih/zoom)/2"
+        if pan == "left-right":
+            x, y = f"(iw-iw/zoom)*on/{total}", center_y
+        elif pan == "right-left":
+            x, y = f"(iw-iw/zoom)*(1-on/{total})", center_y
+        elif pan == "top-bottom":
+            x, y = center_x, f"(ih-ih/zoom)*on/{total}"
+        elif pan == "bottom-top":
+            x, y = center_x, f"(ih-ih/zoom)*(1-on/{total})"
+        else:
+            x, y = center_x, center_y
+
+        return (
+            f"scale={int(width)}:{int(height)}:force_original_aspect_ratio=increase,"
+            f"crop={int(width)}:{int(height)},"
+            f"zoompan=z='{z}':x='{x}':y='{y}':d=1:"
+            f"s={int(width)}x{int(height)}:fps={int(output_fps)},setsar=1"
+        )
+
+    async def render_ken_burns(
+        self,
+        input_path: str,
+        output_path: str,
+        start_time: float = 0,
+        duration: float = 60,
+        aspect_ratio: str = "9:16",
+        zoom: float = 1.12,
+        direction: str = "zoom-in",
+        filter_preset: Optional[str] = None,
+    ) -> str:
+        """Render klip dengan gerakan kamera manual (Ken Burns/pan)."""
+        width, height = self._dimensions_for_ratio(aspect_ratio)
+        output_fps = max(1, int(settings.OUTPUT_FPS or 30))
+        chain = self.ken_burns_filter_chain(
+            width, height, duration, output_fps, zoom=zoom, direction=direction
+        )
+        preset_chain = self.filter_chain_for_preset(filter_preset)
+        if preset_chain:
+            chain = f"{chain},{preset_chain}"
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
+            "-ss", str(start_time),
+            "-i", input_path,
+            "-t", str(duration),
+            "-vf", chain,
+            "-r", str(output_fps),
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            "-c:a", "aac", "-b:a", "128k",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._run_ffmpeg, cmd)
+        return output_path
+
+    async def overlay_video(
+        self,
+        input_path: str,
+        overlay_path: str,
+        output_path: str,
+        position: str = "bottom-right",
+        scale: float = 0.32,
+        opacity: float = 1.0,
+        start: Optional[float] = None,
+        end: Optional[float] = None,
+        margin: int = 24,
+    ) -> str:
+        """Tempel video/gambar B-roll di atas klip.
+
+        Video overlay di-loop bila lebih pendek; gambar memakai ``-loop 1``.
+        ``scale`` adalah lebar overlay relatif lebar video utama.
+        """
+        info = await self.get_video_info(input_path)
+        duration = float(info.get("duration") or 0) or 1.0
+        width = int(info.get("width") or 1080)
+        positions = {
+            "top-left": f"{margin}:{margin}",
+            "top-right": f"main_w-overlay_w-{margin}:{margin}",
+            "bottom-left": f"{margin}:main_h-overlay_h-{margin}",
+            "bottom-right": f"main_w-overlay_w-{margin}:main_h-overlay_h-{margin}",
+            "center": "(main_w-overlay_w)/2:(main_h-overlay_h)/2",
+        }
+        pos = positions.get((position or "bottom-right").lower(), positions["bottom-right"])
+        enable = ""
+        if start is not None and end is not None:
+            enable = f":enable='between(t,{float(start)},{float(end)})'"
+        elif start is not None:
+            enable = f":enable='gte(t,{float(start)})'"
+        elif end is not None:
+            enable = f":enable='lte(t,{float(end)})'"
+
+        target_w = max(24, int(round(width * max(0.05, min(float(scale), 1.0)))))
+        target_w += target_w % 2
+        alpha = max(0.0, min(1.0, float(opacity)))
+        suffix = Path(overlay_path).suffix.lower()
+        is_image = suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
+            "-i", input_path,
+        ]
+        if is_image:
+            cmd += ["-loop", "1", "-framerate", str(max(1, int(settings.OUTPUT_FPS or 30)))]
+        else:
+            cmd += ["-stream_loop", "-1"]
+        cmd += ["-i", overlay_path]
+
+        filter_complex = (
+            f"[1:v]scale={target_w}:-2:force_original_aspect_ratio=decrease,"
+            f"format=rgba,colorchannelmixer=aa={alpha}[ov];"
+            f"[0:v][ov]overlay={pos}:eof_action=repeat{enable}[v]"
+        )
+        cmd += [
+            "-filter_complex", filter_complex,
+            "-map", "[v]", "-map", "0:a?",
+            "-t", f"{duration:.3f}",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            "-c:a", "aac", "-b:a", "160k",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._run_ffmpeg, cmd)
+        return output_path
+
+    async def ensure_audio(self, input_path: str, output_path: str) -> str:
+        """Pastikan video punya track audio (tambahkan senyap bila tidak ada)."""
+        info = await self.get_video_info(input_path)
+        if info.get("has_audio"):
+            import shutil as _shutil
+            _shutil.copyfile(input_path, output_path)
+            return output_path
+        duration = float(info.get("duration") or 0) or 1.0
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
+            "-i", input_path,
+            "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+            "-shortest", "-map", "0:v", "-map", "1:a",
+            "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
+            "-t", f"{duration:.3f}",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._run_ffmpeg, cmd)
+        return output_path
+
+    async def mute_audio(self, input_path: str, output_path: str) -> str:
+        """Bisukan audio satu segmen tanpa menghapus stream (aman untuk concat)."""
+        info = await self.get_video_info(input_path)
+        if not info.get("has_audio"):
+            return await self.ensure_audio(input_path, output_path)
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
+            "-i", input_path,
+            "-af", "volume=0",
+            "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._run_ffmpeg, cmd)
+        return output_path
+
+    async def trim_video(
+        self,
+        input_path: str,
+        output_path: str,
+        start_time: float = 0,
+        end_time: Optional[float] = None,
+        speed: float = 1.0,
+        filter_preset: Optional[str] = None,
+    ) -> str:
+        """Potong klip yang sudah jadi, opsional speed/filter (tanpa crop ulang)."""
+        speed = max(0.25, min(4.0, float(speed or 1.0)))
+        filters: List[str] = []
+        preset_chain = self.filter_chain_for_preset(filter_preset)
+        if preset_chain:
+            filters.append(preset_chain)
+        if speed != 1.0:
+            filters.append(f"setpts=PTS/{speed:.4f}")
+
+        audio_filters: List[str] = []
+        if speed != 1.0:
+            remaining = speed
+            while remaining > 2.0:
+                audio_filters.append("atempo=2.0")
+                remaining /= 2.0
+            while remaining < 0.5:
+                audio_filters.append("atempo=0.5")
+                remaining /= 0.5
+            audio_filters.append(f"atempo={remaining:.4f}")
+
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
+            "-ss", str(max(0.0, float(start_time))),
+            "-i", input_path,
+        ]
+        if end_time is not None and float(end_time) > float(start_time):
+            cmd += ["-t", str(float(end_time) - float(start_time))]
+        if filters:
+            cmd += ["-vf", ",".join(filters)]
+        if audio_filters:
+            cmd += ["-af", ",".join(audio_filters)]
+        cmd += [
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            "-c:a", "aac", "-b:a", "160k",
+            "-movflags", "+faststart",
+            output_path,
+        ]
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, self._run_ffmpeg, cmd)
         return output_path

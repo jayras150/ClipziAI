@@ -2,6 +2,7 @@
 YouTube schemas - Upload, metadata, viral score
 """
 from typing import Optional, List
+from datetime import datetime
 from pydantic import BaseModel
 
 
@@ -23,6 +24,17 @@ class YouTubeUploadRequest(BaseModel):
     privacy_status: Optional[str] = "public"
     # Upload ulang walau klip ini sudah pernah diunggah.
     force: bool = False
+    # Jadwal publish YouTube (status harus private; YouTube menolak publishAt
+    # untuk video public/unlisted).
+    publish_at: Optional[datetime] = None
+
+
+class YouTubeBulkUploadRequest(BaseModel):
+    """Antre beberapa klip sekaligus; publish_at opsional untuk schedule."""
+
+    clip_ids: List[str]
+    privacy_status: str = "unlisted"
+    publish_at: Optional[datetime] = None
 
 
 class YouTubeUploadResponse(BaseModel):

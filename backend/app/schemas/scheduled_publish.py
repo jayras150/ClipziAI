@@ -8,8 +8,9 @@ from datetime import datetime
 
 class ScheduledPublishCreate(BaseModel):
     clip_id: str
-    platform: str  # youtube, tiktok, instagram, facebook
+    platform: str = "youtube"  # youtube only (Batch E10)
     scheduled_at: datetime
+    privacy_status: str = "unlisted"
 
 
 class ScheduledPublishResponse(BaseModel):

@@ -148,14 +148,108 @@ def _slice_segments(
         seg_end = float(segment.get("end") or 0)
         if seg_end <= clip_start or seg_start >= clip_end:
             continue
+        words: List[Dict[str, Any]] = []
+        for raw_word in segment.get("words") or []:
+            word = dict(raw_word) if isinstance(raw_word, dict) else {}
+            word_start = float(word.get("start") or 0)
+            word_end = float(word.get("end") or word_start)
+            if word_end <= clip_start or word_start >= clip_end:
+                continue
+            word["start"] = max(0.0, word_start - clip_start)
+            word["end"] = max(0.0, min(clip_end, word_end) - clip_start)
+            words.append(word)
         sliced.append(
             {
                 **segment,
                 "start": max(0.0, seg_start - clip_start),
                 "end": max(0.0, min(clip_end, seg_end) - clip_start),
+                "words": words,
             }
         )
     return sliced
+
+
+def _normalise_segments(raw: Any) -> List[Dict[str, Any]]:
+    """Validasi ``editing_options.segments`` menjadi daftar segmen aman.
+
+    Segmen diurutkan sesuai input pengguna (bukan diurutkan ulang berdasarkan
+    waktu) karena urutan itulah yang akan disambung. Segmen yang tumpang tindih
+    tetap diizinkan: pengguna mungkin ingin mengulang bagian tertentu.
+    """
+    if not isinstance(raw, list):
+        return []
+    cleaned: List[Dict[str, Any]] = []
+    for item in raw[:12]:
+        if not isinstance(item, dict):
+            continue
+        try:
+            start = float(item.get("start"))
+            end = float(item.get("end"))
+        except (TypeError, ValueError):
+            continue
+        if start < 0 or end <= start:
+            continue
+        cleaned.append(
+            {
+                "start": round(start, 3),
+                "end": round(end, 3),
+                "mute": bool(item.get("mute", False)),
+            }
+        )
+    return cleaned
+
+
+def _build_segment_timeline(
+    transcript_segments: Sequence[Dict[str, Any]],
+    clip_segments: Sequence[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Gabungkan transkrip beberapa segmen sumber menjadi timeline klip baru.
+
+    Timestamp digeser kumulatif sehingga cocok dengan hasil concat. Kata juga
+    ikut digeser agar ASS karaoke tetap sinkron.
+    """
+    timeline: List[Dict[str, Any]] = []
+    offset = 0.0
+    for spec in clip_segments:
+        start = float(spec["start"])
+        end = float(spec["end"])
+        for segment in _slice_segments(transcript_segments, start, end):
+            shifted = dict(segment)
+            shifted["start"] = float(segment.get("start") or 0) + offset
+            shifted["end"] = float(segment.get("end") or 0) + offset
+            shifted_words: List[Dict[str, Any]] = []
+            for raw_word in segment.get("words") or []:
+                word = dict(raw_word)
+                word["start"] = float(word.get("start") or 0) + offset
+                word["end"] = float(word.get("end") or 0) + offset
+                shifted_words.append(word)
+            shifted["words"] = shifted_words
+            timeline.append(shifted)
+        offset += end - start
+    return timeline
+
+
+def _ffmpeg_color(value: Any) -> Optional[str]:
+    """#RRGGBB -> 0xRRGGBB agar bisa dipakai drawtext; nilai lain dibiarkan."""
+    text = str(value or "").strip()
+    if len(text) == 7 and text.startswith("#"):
+        return "0x" + text[1:]
+    return text or None
+
+
+def _caption_size_option(value: Any) -> Optional[float]:
+    try:
+        size = float(value)
+    except (TypeError, ValueError):
+        return None
+    return max(12.0, min(160.0, size)) if size > 0 else None
+
+
+def _bool_option(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return str(value).strip().lower() not in {"false", "0", "off", "no", ""}
+
 
 
 async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignore[reportGeneralTypeIssues]
@@ -261,6 +355,29 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
             "off",
             "no",
         }
+        # ---------- Batch E: segmen, caption custom, Ken Burns, PIP ----------
+        clip_segments = _normalise_segments(options.get("segments"))
+        caption_color = options.get("caption_color")
+        caption_size = _caption_size_option(options.get("caption_size"))
+        caption_font = str(options.get("caption_font") or "").strip().lower() or None
+        caption_karaoke = _bool_option(options.get("caption_karaoke"), default=True)
+        ken_burns = _bool_option(options.get("ken_burns"), default=False)
+        pan_direction = str(options.get("pan_direction") or "zoom-in").strip().lower()
+        ken_burns_zoom = float(options.get("ken_burns_zoom", 1.12) or 1.12)
+        overlay_url = str(options.get("overlay_url") or "").strip()
+        overlay_position = str(options.get("overlay_position") or "bottom-right")
+        overlay_scale = float(options.get("overlay_scale", 0.32) or 0.32)
+        overlay_opacity = float(options.get("overlay_opacity", 1.0) or 1.0)
+        overlay_start = options.get("overlay_start")
+        overlay_end = options.get("overlay_end")
+        overlay_path: Optional[str] = None
+        if overlay_url:
+            try:
+                overlay_path = str(work_dir / f"overlay.{_ext_from_url(overlay_url, 'mp4')}")
+                await _download_asset(overlay_url, overlay_path)
+            except Exception as exc:
+                logger.warning("B-roll overlay gagal diunduh: %s", str(exc)[:200])
+                overlay_path = None
         # ---------- Musik latar ----------
         music_url = options.get("music_url")
         music_volume = float(options.get("music_volume", 0.22) or 0.22)
@@ -488,7 +605,40 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
             planned: List[Dict[str, Any]] = []
             planned_by_start: Dict[float, Dict[str, Any]] = {}
 
-            if manual_start is not None:
+            segment_display_start = 0.0
+            if clip_segments:
+                # Multi-segment manual: satu klip hasil concat, urutan sesuai UI.
+                cleaned_segments: List[Dict[str, Any]] = []
+                for spec in clip_segments:
+                    start = max(0.0, min(float(spec["start"]), max(0.0, total_duration - 0.1)))
+                    end = min(float(spec["end"]), total_duration)
+                    if end - start < 0.2:
+                        continue
+                    cleaned_segments.append(
+                        {"start": round(start, 3), "end": round(end, 3), "mute": bool(spec["mute"])}
+                    )
+                if not cleaned_segments:
+                    raise RuntimeError("Semua segmen trim berada di luar durasi video.")
+                clip_segments = cleaned_segments
+                segment_display_start = cleaned_segments[0]["start"]
+                segment_total = sum(
+                    float(spec["end"]) - float(spec["start"]) for spec in cleaned_segments
+                )
+                ranges = [(0.0, round(segment_total, 3))]
+                task.total_clips = 1
+                await db.commit()
+                timeline = _build_segment_timeline(
+                    raw_segments or segments, cleaned_segments
+                )
+                segments = timeline
+                raw_segments = timeline
+                logger.info(
+                    "Pipeline: multi-segment task %s -> %s segmen, total %.2fs",
+                    task.id,
+                    len(cleaned_segments),
+                    segment_total,
+                )
+            elif manual_start is not None:
                 start = float(manual_start)
                 end = float(manual_end) if manual_end is not None else total_duration
                 if end <= start:
@@ -680,7 +830,54 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
             total = len(ranges)
             for index, (start, duration) in enumerate(ranges, 1):
                 raw_clip = str(work_dir / f"clip_{index:02d}_raw.mp4")
-                if auto_zoom in {"speaker", "face", "follow"}:
+                if clip_segments:
+                    segment_paths: List[str] = []
+                    for seg_index, spec in enumerate(clip_segments, 1):
+                        seg_raw = str(work_dir / f"clip_{index:02d}_seg{seg_index:02d}.mp4")
+                        seg_start = float(spec["start"])
+                        seg_duration = float(spec["end"]) - seg_start
+                        if auto_zoom in {"speaker", "face", "follow"}:
+                            await processor.track_speaker_crop(
+                                video_path,
+                                seg_raw,
+                                start_time=seg_start,
+                                duration=seg_duration,
+                                aspect_ratio=aspect_ratio,
+                                zoom=zoom_level,
+                                filter_preset=filter_preset,
+                                split_screen=auto_zoom_split,
+                            )
+                        elif ken_burns:
+                            await processor.render_ken_burns(
+                                video_path,
+                                seg_raw,
+                                start_time=seg_start,
+                                duration=seg_duration,
+                                aspect_ratio=aspect_ratio,
+                                zoom=ken_burns_zoom,
+                                direction=pan_direction,
+                                filter_preset=filter_preset,
+                            )
+                        else:
+                            await processor.render_clip(
+                                video_path,
+                                seg_raw,
+                                start_time=seg_start,
+                                duration=seg_duration,
+                                aspect_ratio=aspect_ratio,
+                                filter_preset=filter_preset,
+                                blur_fill=blur_fill,
+                            )
+                        with_audio = str(work_dir / f"clip_{index:02d}_seg{seg_index:02d}_a.mp4")
+                        await processor.ensure_audio(seg_raw, with_audio)
+                        if spec.get("mute"):
+                            muted = str(work_dir / f"clip_{index:02d}_seg{seg_index:02d}_mute.mp4")
+                            await processor.mute_audio(with_audio, muted)
+                            with_audio = muted
+                        segment_paths.append(with_audio)
+                    width, height = processor._dimensions_for_ratio(aspect_ratio)
+                    await processor.concat_videos(segment_paths, raw_clip, width, height)
+                elif auto_zoom in {"speaker", "face", "follow"}:
                     # Auto zoom: jendela crop mengikuti wajah pembicara.
                     await processor.track_speaker_crop(
                         video_path,
@@ -691,6 +888,17 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
                         zoom=zoom_level,
                         filter_preset=filter_preset,
                         split_screen=auto_zoom_split,
+                    )
+                elif ken_burns:
+                    await processor.render_ken_burns(
+                        video_path,
+                        raw_clip,
+                        start_time=start,
+                        duration=duration,
+                        aspect_ratio=aspect_ratio,
+                        zoom=ken_burns_zoom,
+                        direction=pan_direction,
+                        filter_preset=filter_preset,
                     )
                 else:
                     await processor.render_clip(
@@ -705,6 +913,28 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
 
                 final_clip = raw_clip
                 subtitle_url: Optional[str] = None
+
+                if overlay_path:
+                    overlaid = str(work_dir / f"clip_{index:02d}_overlay.mp4")
+                    try:
+                        await processor.overlay_video(
+                            final_clip,
+                            overlay_path,
+                            overlaid,
+                            position=overlay_position,
+                            scale=overlay_scale,
+                            opacity=overlay_opacity,
+                            start=float(overlay_start) if overlay_start not in (None, "") else None,
+                            end=float(overlay_end) if overlay_end not in (None, "") else None,
+                        )
+                        final_clip = overlaid
+                    except Exception as exc:
+                        logger.warning(
+                            "B-roll overlay gagal (task %s klip %s): %s",
+                            task.id,
+                            index,
+                            str(exc)[:200],
+                        )
 
                 # Buang jeda/senyap (jump cuts) sebelum efek berikutnya.
                 if trim_silence:
@@ -739,6 +969,10 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
                                 out_h,
                                 clip_start=start,
                                 clip_end=start + duration,
+                                caption_color=caption_color,
+                                caption_size=caption_size,
+                                caption_font=caption_font,
+                                karaoke=caption_karaoke,
                             )
                             if built:
                                 burn_path = built
@@ -756,7 +990,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
                         burned = str(work_dir / f"clip_{index:02d}_sub.mp4")
                         try:
                             await processor.burn_subtitle(
-                                raw_clip, burn_path, burned, style=caption_style
+                                final_clip, burn_path, burned, style=caption_style
                             )
                             final_clip = burned
                         except Exception as exc:
@@ -791,7 +1025,13 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
                         caption_preset = get_caption_style(caption_style)
                         overlay = caption_preset["overlay"]
                         _, out_h = processor._dimensions_for_ratio(aspect_ratio)
-                        font_size = max(18, int(round(out_h * float(overlay["size_ratio"]))))
+                        default_size = max(18, int(round(out_h * float(overlay["size_ratio"]))))
+                        font_size = (
+                            max(12, int(round(caption_size)))
+                            if caption_size
+                            else default_size
+                        )
+                        font_color = _ffmpeg_color(caption_color) or str(overlay["color"])
                         vertical = str(overlay.get("y") or "bottom")
                         if vertical == "top":
                             y_expr = "h*0.07"
@@ -804,13 +1044,14 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
                             captioned,
                             caption_text,
                             font_size=font_size,
-                            font_color=str(overlay["color"]),
+                            font_color=font_color,
                             x="(w-text_w)/2",
                             y=y_expr,
                             box=bool(overlay.get("box", False)),
                             box_color=str(overlay.get("box_color") or "black@0.6"),
                             border_width=int(overlay.get("border_width") or 0),
                             border_color=str(overlay.get("border_color") or "black"),
+                            font_name=caption_font,
                         )
                         final_clip = captioned
                     except Exception as exc:
@@ -972,7 +1213,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
 
                 rendered.append(
                     {
-                        "start": start,
+                        "start": segment_display_start if clip_segments else start,
                         "duration": duration,
                         "download_url": download_url,
                         "subtitle_url": subtitle_url,

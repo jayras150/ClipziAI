@@ -107,6 +107,40 @@ export interface ClipData {
   created_at?: string
 }
 
+export interface ClipThumbnailCandidateData {
+  url: string
+  at_second: number
+}
+
+export interface ClipThumbnailData {
+  clip_id: string
+  candidates: ClipThumbnailCandidateData[]
+  selected_url: string | null
+  hook: string | null
+}
+
+export interface ClipEditStatusData {
+  status: "idle" | "processing" | "done" | "error" | string
+  progress: number
+  error?: string | null
+  download_url?: string | null
+  thumbnail_url?: string | null
+}
+
+export interface PresignUploadData {
+  upload_url: string
+  public_url: string
+  object_key: string
+  expires_in: number
+  max_bytes: number
+}
+
+export interface BulkUploadData {
+  accepted: boolean
+  queued: number
+  jobs: { id: string; clip_id: string; scheduled_at: string | null; status: string }[]
+}
+
 /** Metadata YouTube satu klip, dibuat AI dari transkrip Whisper. */
 export interface ClipMetadataData {
   clip_id: string
@@ -331,6 +365,10 @@ export class ApiClient {
       {
         source_url: sourceUrl,
         source_type: detectSourceType(sourceUrl),
+        // Backend memvalidasi whitelist di editing_options (termasuk segments,
+        // Ken Burns, overlay). Field top-level tetap dikirim agar kompatibel
+        // dengan versi lama yang membaca kolom typed.
+        editing_options: editingOptions ?? {},
         ...editingOptions,
       },
       { headers: { Authorization: `Bearer ${token}` } },
@@ -401,6 +439,109 @@ export class ApiClient {
           "Content-Type": "multipart/form-data",
         },
       },
+    )
+    return response.data
+  }
+
+  /** Minta URL PUT sementara untuk upload video langsung ke R2/S3. */
+  async presignUpload(
+    token: string,
+    payload: { filename: string; content_type: string; size: number; duration_seconds?: number },
+  ): Promise<PresignUploadData> {
+    const response = await this.client.post<PresignUploadData>("/api/uploads/presign", payload, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return response.data
+  }
+
+  /** Upload klip memakai metadata AI yang sudah tersimpan (tombol di kartu). */
+  async quickUploadClipToYouTube(
+    token: string,
+    clipId: string,
+    privacyStatus = "unlisted",
+  ): Promise<YouTubeUploadAccepted | YouTubeUploadResult> {
+    const response = await this.client.post<YouTubeUploadAccepted | YouTubeUploadResult>(
+      "/api/youtube/upload",
+      {
+        clip_id: clipId,
+        auto_generate_metadata: true,
+        privacy_status: privacyStatus,
+      },
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    return response.data
+  }
+
+  /** Antre beberapa klip (sekarang atau publish_at terjadwal). */
+  async bulkUploadToYouTube(
+    token: string,
+    clipIds: string[],
+    privacyStatus = "unlisted",
+    publishAt?: string,
+  ): Promise<BulkUploadData> {
+    const response = await this.client.post<BulkUploadData>(
+      "/api/youtube/bulk",
+      {
+        clip_ids: clipIds,
+        privacy_status: privacyStatus,
+        publish_at: publishAt || null,
+      },
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    return response.data
+  }
+
+  /** Edit satu klip di tempat (tanpa membuat Task baru). */
+  async editClip(
+    token: string,
+    clipId: string,
+    payload: {
+      trim_start?: number
+      trim_end?: number
+      speed?: number
+      filter_preset?: string
+      caption_text?: string
+      caption_style?: string
+      caption_color?: string
+      caption_size?: number
+      caption_font?: string
+    },
+  ): Promise<ClipEditStatusData> {
+    const response = await this.client.post<ClipEditStatusData>(
+      `/api/clips/${clipId}/edit`,
+      payload,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    return response.data
+  }
+
+  async getClipEditStatus(token: string, clipId: string): Promise<ClipEditStatusData> {
+    const response = await this.client.get<ClipEditStatusData>(
+      `/api/clips/${clipId}/edit/status`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    return response.data
+  }
+
+  /** Tiga kandidat thumbnail dari klip. */
+  async generateClipThumbnails(token: string, clipId: string): Promise<ClipThumbnailData> {
+    const response = await this.client.post<ClipThumbnailData>(
+      `/api/clips/${clipId}/thumbnails`,
+      {},
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    return response.data
+  }
+
+  async selectClipThumbnail(
+    token: string,
+    clipId: string,
+    url: string,
+  ): Promise<ClipThumbnailData> {
+    const response = await this.client.patch<ClipThumbnailData>(
+      `/api/clips/${clipId}/thumbnail`,
+      { url },
+      { headers: { Authorization: `Bearer ${token}` } },
     )
     return response.data
   }

@@ -208,6 +208,7 @@ class YouTubeService:
         category_id: str = "24",
         made_for_kids: bool = False,
         source_url: Optional[str] = None,
+        publish_at: Optional[datetime] = None,
     ) -> Dict[str, Any]:
         """
         Upload video ke YouTube memakai resumable upload Data API v3.
@@ -223,6 +224,9 @@ class YouTubeService:
 
         allowed_privacy = {"public", "unlisted", "private"}
         privacy = privacy_status if privacy_status in allowed_privacy else "public"
+        if publish_at is not None:
+            # YouTube mensyaratkan video private saat publishAt dikirim.
+            privacy = "private"
         return await asyncio.to_thread(
             self._upload_sync,
             access_token,
@@ -234,6 +238,7 @@ class YouTubeService:
             category_id,
             made_for_kids,
             source_url,
+            publish_at,
         )
 
     @staticmethod
@@ -273,6 +278,7 @@ class YouTubeService:
         category_id: str,
         made_for_kids: bool,
         source_url: Optional[str],
+        publish_at: Optional[datetime] = None,
     ) -> Dict[str, Any]:
         """Bagian sinkron dari resumable upload (dijalankan di thread)."""
         snippet = build_snippet(
@@ -290,6 +296,23 @@ class YouTubeService:
             privacy,
         )
 
+        status_payload: Dict[str, Any] = {
+            "privacyStatus": privacy,
+            "selfDeclaredMadeForKids": bool(made_for_kids),
+        }
+        if publish_at is not None:
+            try:
+                normalized = publish_at
+                if normalized.tzinfo is None:
+                    normalized = normalized.replace(tzinfo=timezone.utc)
+                status_payload["publishAt"] = (
+                    normalized.astimezone(timezone.utc)
+                    .isoformat(timespec="seconds")
+                    .replace("+00:00", "Z")
+                )
+            except Exception:
+                status_payload.pop("publishAt", None)
+
         init_response = requests.post(
             "https://www.googleapis.com/upload/youtube/v3/videos",
             params={"uploadType": "resumable", "part": "snippet,status"},
@@ -300,10 +323,7 @@ class YouTubeService:
             },
             json={
                 "snippet": snippet,
-                "status": {
-                    "privacyStatus": privacy,
-                    "selfDeclaredMadeForKids": bool(made_for_kids),
-                },
+                "status": status_payload,
             },
             timeout=60,
         )

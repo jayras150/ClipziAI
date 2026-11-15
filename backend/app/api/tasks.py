@@ -41,6 +41,9 @@ ALLOWED_EDITING_OPTIONS = {
     "intro_url", "outro_url", "auto_zoom", "zoom_level", "auto_zoom_split",
     "music_url", "music_volume", "music_ducking",
     "max_clips", "burn_subtitle", "segments",
+    "caption_karaoke", "ken_burns", "pan_direction", "ken_burns_zoom",
+    "overlay_url", "overlay_position", "overlay_scale", "overlay_opacity",
+    "overlay_start", "overlay_end",
     "target_duration_min", "target_duration_max",
 }
 

@@ -113,6 +113,36 @@ function formatDuration(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, "0")}`
 }
 
+function readVideoDuration(file: File): Promise<number | undefined> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file)
+    const video = document.createElement("video")
+    video.preload = "metadata"
+    const finish = (value?: number) => {
+      URL.revokeObjectURL(url)
+      resolve(value)
+    }
+    video.onloadedmetadata = () => finish(Number.isFinite(video.duration) ? video.duration : undefined)
+    video.onerror = () => finish(undefined)
+    window.setTimeout(() => finish(undefined), 6000)
+    video.src = url
+  })
+}
+
+function videoContentType(file: File): string {
+  if (file.type) return file.type.split(";")[0].trim()
+  const ext = file.name.split(".").pop()?.toLowerCase()
+  return (
+    {
+      mp4: "video/mp4",
+      mov: "video/quicktime",
+      avi: "video/x-msvideo",
+      webm: "video/webm",
+      mkv: "video/x-matroska",
+    }[ext || ""] || "video/mp4"
+  )
+}
+
 function formatSize(bytes: number | null): string {
   if (!bytes) return ""
   const mb = bytes / (1024 * 1024)
@@ -238,6 +268,29 @@ export default function DashboardPage() {
   const [musicUrl, setMusicUrl] = useState("")
   const [musicVolume, setMusicVolume] = useState("0.22")
   const [musicDucking, setMusicDucking] = useState(true)
+  // Batch E: upload langsung, multi-segmen, caption custom, Ken Burns, B-roll.
+  const [uploadingFile, setUploadingFile] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [segments, setSegments] = useState<
+    { start: string; end: string; mute: boolean }[]
+  >([])
+  const [captionColor, setCaptionColor] = useState("")
+  const [captionSize, setCaptionSize] = useState("")
+  const [captionFont, setCaptionFont] = useState("")
+  const [captionKaraoke, setCaptionKaraoke] = useState(true)
+  const [kenBurns, setKenBurns] = useState(false)
+  const [panDirection, setPanDirection] = useState("zoom-in")
+  const [kenBurnsZoom, setKenBurnsZoom] = useState("1.12")
+  const [overlayUrl, setOverlayUrl] = useState("")
+  const [overlayPosition, setOverlayPosition] = useState("bottom-right")
+  const [overlayScale, setOverlayScale] = useState("0.32")
+  const [overlayOpacity, setOverlayOpacity] = useState("1")
+  const [overlayStart, setOverlayStart] = useState("")
+  const [overlayEnd, setOverlayEnd] = useState("")
+  const [bulkUploading, setBulkUploading] = useState(false)
+  const [bulkPrivacy, setBulkPrivacy] = useState("unlisted")
+  const [bulkPublishAt, setBulkPublishAt] = useState("")
+  const [cardUploading, setCardUploading] = useState<Record<string, boolean>>({})
   const [submitting, setSubmitting] = useState(false)
   const [taskError, setTaskError] = useState("")
   const [notice, setNotice] = useState("")
@@ -494,6 +547,61 @@ export default function DashboardPage() {
         editingOptions.music_ducking = musicDucking
       }
 
+      // Multi-segment trim + mute per segmen
+      if (segments.length > 0) {
+        const parsedSegments = segments.map((segment) => ({
+          start: parseFloat(segment.start),
+          end: parseFloat(segment.end),
+          mute: segment.mute,
+        }))
+        if (
+          parsedSegments.some(
+            (segment) =>
+              Number.isNaN(segment.start) ||
+              Number.isNaN(segment.end) ||
+              segment.start < 0 ||
+              segment.end <= segment.start,
+          )
+        ) {
+          setTaskError("Each segment needs a start and end time, with end greater than start.")
+          setSubmitting(false)
+          return
+        }
+        editingOptions.segments = parsedSegments
+      }
+
+      // Caption custom + karaoke
+      if (captionColor) editingOptions.caption_color = captionColor
+      const customCaptionSize = parseFloat(captionSize)
+      if (!Number.isNaN(customCaptionSize) && customCaptionSize > 0) {
+        editingOptions.caption_size = customCaptionSize
+      }
+      if (captionFont) editingOptions.caption_font = captionFont
+      editingOptions.caption_karaoke = captionKaraoke
+
+      // Ken Burns / manual pan (auto zoom follow-speaker tetap prioritas)
+      if (autoZoom !== "speaker" && kenBurns) {
+        editingOptions.ken_burns = true
+        editingOptions.pan_direction = panDirection
+        const kbZoom = parseFloat(kenBurnsZoom)
+        if (!Number.isNaN(kbZoom)) editingOptions.ken_burns_zoom = kbZoom
+      }
+
+      // B-roll / PIP overlay
+      const overlay = overlayUrl.trim()
+      if (overlay) {
+        editingOptions.overlay_url = overlay
+        editingOptions.overlay_position = overlayPosition
+        const scale = parseFloat(overlayScale)
+        const opacity = parseFloat(overlayOpacity)
+        if (!Number.isNaN(scale)) editingOptions.overlay_scale = scale
+        if (!Number.isNaN(opacity)) editingOptions.overlay_opacity = opacity
+        const oStart = parseFloat(overlayStart)
+        const oEnd = parseFloat(overlayEnd)
+        if (!Number.isNaN(oStart)) editingOptions.overlay_start = oStart
+        if (!Number.isNaN(oEnd)) editingOptions.overlay_end = oEnd
+      }
+
       const task = await api.createTask(stored, url, editingOptions)
       setUrlValue("")
       if (task.status === "error") {
@@ -579,6 +687,21 @@ export default function DashboardPage() {
     setMusicUrl("")
     setMusicVolume("0.22")
     setMusicDucking(true)
+    setSegments([])
+    setCaptionColor("")
+    setCaptionSize("")
+    setCaptionFont("")
+    setCaptionKaraoke(true)
+    setKenBurns(false)
+    setPanDirection("zoom-in")
+    setKenBurnsZoom("1.12")
+    setOverlayUrl("")
+    setOverlayPosition("bottom-right")
+    setOverlayScale("0.32")
+    setOverlayOpacity("1")
+    setOverlayStart("")
+    setOverlayEnd("")
+    setBulkPublishAt("")
     setTaskError("")
     setNotice("Editing options reset to default.")
   }
@@ -685,12 +808,126 @@ export default function DashboardPage() {
 
 
 
-  const onPickFile = (file: File | null) => {
+  /** Upload langsung ke storage (presigned PUT) lalu isi URL untuk diproses. */
+  const onPickFile = async (file: File | null) => {
     if (!file) return
+    const stored = getToken()
+    if (!stored) {
+      window.location.href = "/login"
+      return
+    }
+    if (file.size > 2 * 1024 * 1024 * 1024) {
+      setTaskError("Video is too large. Maximum size is 2 GB.")
+      return
+    }
     setTaskError("")
-    setNotice(
-      `"${file.name}" selected. Direct file upload is not available yet — paste a YouTube, TikTok or Instagram link above to start processing.`,
-    )
+    setNotice("")
+    setUploadingFile(true)
+    setUploadProgress(0)
+    try {
+      const duration = await readVideoDuration(file)
+      if (duration !== undefined && duration < 60) {
+        setTaskError("Video must be at least 1 minute long so clips can end on a full sentence.")
+        return
+      }
+      const contentType = videoContentType(file)
+      const presign = await api.presignUpload(stored, {
+        filename: file.name,
+        content_type: contentType,
+        size: file.size,
+        duration_seconds: duration,
+      })
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        xhr.open("PUT", presign.upload_url)
+        xhr.setRequestHeader("Content-Type", contentType)
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            setUploadProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)))
+          }
+        }
+        xhr.onload = () =>
+          xhr.status >= 200 && xhr.status < 300
+            ? resolve()
+            : reject(new Error(`Storage upload failed (HTTP ${xhr.status}).`))
+        xhr.onerror = () => reject(new Error("Storage upload failed. Check the bucket CORS policy."))
+        xhr.send(file)
+      })
+      setUrlValue(presign.public_url)
+      setUploadProgress(100)
+      setNotice(`"${file.name}" uploaded. Review the options, then click Process video.`)
+    } catch (error: any) {
+      setTaskError(readApiError(error.response?.data, error.message || "Could not upload the video."))
+    } finally {
+      setUploadingFile(false)
+      if (fileInputRef.current) fileInputRef.current.value = ""
+    }
+  }
+
+  /** Upload cepat satu klip dari kartu memakai metadata AI yang tersimpan. */
+  const uploadClipFromCard = async (clip: ClipData) => {
+    if (!token || cardUploading[clip.id]) return
+    if (!youtube.connected) {
+      void connectYouTube()
+      return
+    }
+    setCardUploading((current) => ({ ...current, [clip.id]: true }))
+    setTaskError("")
+    setNotice("")
+    try {
+      await api.quickUploadClipToYouTube(token, clip.id, bulkPrivacy)
+      patchClip(clip.id, { youtube_uploaded: true })
+      setNotice(`Clip #${clip.clip_index + 1} is uploading to YouTube in the background.`)
+      const status = await api.waitForYouTubeUpload(token, clip.id, {
+        timeoutMs: 10 * 60 * 1000,
+        intervalMs: 5000,
+      })
+      if (status.status === "done") {
+        patchClip(clip.id, {
+          youtube_uploaded: true,
+          youtube_video_id: status.youtube_video_id || null,
+        })
+        setNotice(`Clip #${clip.clip_index + 1} uploaded to YouTube.`)
+      } else if (status.status === "error") {
+        setTaskError(status.error || "YouTube upload failed. Check your quota and connection.")
+      }
+    } catch (error: any) {
+      setTaskError(readApiError(error.response?.data, "Could not upload this clip to YouTube."))
+    } finally {
+      setCardUploading((current) => {
+        const next = { ...current }
+        delete next[clip.id]
+        return next
+      })
+    }
+  }
+
+  /** Antre unggahan beberapa klip sekaligus, opsional dengan jadwal publish. */
+  const bulkUploadSelected = async () => {
+    if (!token || selectedClips.length === 0 || bulkUploading) return
+    if (!youtube.connected) {
+      void connectYouTube()
+      return
+    }
+    setBulkUploading(true)
+    setTaskError("")
+    setNotice("")
+    try {
+      const result = await api.bulkUploadToYouTube(
+        token,
+        selectedClips,
+        bulkPrivacy,
+        bulkPublishAt ? new Date(bulkPublishAt).toISOString() : undefined,
+      )
+      setNotice(
+        `${result.queued} clip(s) queued for YouTube${bulkPublishAt ? " (scheduled)" : ""}.`,
+      )
+      setSelectedClips([])
+    } catch (error: any) {
+      setTaskError(readApiError(error.response?.data, "Could not queue the selected clips."))
+    } finally {
+      setBulkUploading(false)
+    }
   }
 
   const openTaskData = tasks.find((task) => task.id === openTaskId) || null
@@ -879,20 +1116,33 @@ export default function DashboardPage() {
             <section className="ui-card ui-upload-hero">
               <div
                 className="ui-dropzone"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => {
+                  if (!uploadingFile) fileInputRef.current?.click()
+                }}
                 role="button"
                 tabIndex={0}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") fileInputRef.current?.click()
+                  if ((event.key === "Enter" || event.key === " ") && !uploadingFile) {
+                    fileInputRef.current?.click()
+                  }
                 }}
               >
                 <div className="ui-drop-icon">
-                  <Upload size={26} />
+                  {uploadingFile ? <ClipzySpinner size="md" /> : <Upload size={26} />}
                 </div>
-                <p className="ui-drop-title">Drop your video here</p>
-                <p className="ui-hint" style={{ marginTop: 6 }}>
-                  Click to browse or drag a file — you can also paste a link below.
+                <p className="ui-drop-title">
+                  {uploadingFile ? `Uploading… ${uploadProgress}%` : "Drop your video here"}
                 </p>
+                <p className="ui-hint" style={{ marginTop: 6 }}>
+                  {uploadingFile
+                    ? "Keep this tab open while the file goes directly to storage."
+                    : "Click to browse or drag a file — you can also paste a link below."}
+                </p>
+                {uploadingFile && (
+                  <div className="ui-progress" style={{ width: "100%", marginTop: 12 }}>
+                    <span style={{ width: `${uploadProgress}%` }} />
+                  </div>
+                )}
                 <div className="ui-drop-formats">
                   <span>MP4</span>
                   <span>MOV</span>
@@ -903,12 +1153,13 @@ export default function DashboardPage() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="video/*"
+                accept="video/mp4,video/quicktime,video/x-msvideo,video/webm,video/x-matroska,video/*"
                 hidden
-                onChange={(event) => onPickFile(event.target.files?.[0] ?? null)}
+                disabled={uploadingFile}
+                onChange={(event) => void onPickFile(event.target.files?.[0] ?? null)}
               />
               <p className="ui-hint" style={{ textAlign: "center", marginTop: 10 }}>
-                Direct file upload is still rolling out — paste a link below for now.
+                Upload goes straight to R2/S3 — the API only signs a temporary URL.
               </p>
             </section>
 
@@ -1112,6 +1363,99 @@ export default function DashboardPage() {
                 <details className="ui-opt-details" style={{ marginTop: 14 }}>
                   <summary>Advanced editing options</summary>
                   <div className="ui-opt-panel">
+                    <div className="ui-opt ui-opt-wide">
+                      <div className="ui-opt-head">
+                        <label className="ui-opt-label">Multi-segment trim</label>
+                        <button
+                          type="button"
+                          className="ui-btn ui-btn-ghost"
+                          onClick={() =>
+                            setSegments((current) =>
+                              current.length >= 12
+                                ? current
+                                : [...current, { start: "", end: "", mute: false }],
+                            )
+                          }
+                          disabled={segments.length >= 12}
+                        >
+                          + Add segment
+                        </button>
+                      </div>
+                      <span className="ui-hint">
+                        One output clip, concatenated in this order. Times are source seconds.
+                      </span>
+                      {segments.length > 0 && (
+                        <div className="segment-list">
+                          {segments.map((segment, index) => (
+                            <div className="segment-row" key={index}>
+                              <span className="segment-index">{index + 1}</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                placeholder="start (s)"
+                                className="ui-input"
+                                value={segment.start}
+                                onChange={(event) =>
+                                  setSegments((current) =>
+                                    current.map((item, itemIndex) =>
+                                      itemIndex === index
+                                        ? { ...item, start: event.target.value }
+                                        : item,
+                                    ),
+                                  )
+                                }
+                              />
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                placeholder="end (s)"
+                                className="ui-input"
+                                value={segment.end}
+                                onChange={(event) =>
+                                  setSegments((current) =>
+                                    current.map((item, itemIndex) =>
+                                      itemIndex === index
+                                        ? { ...item, end: event.target.value }
+                                        : item,
+                                    ),
+                                  )
+                                }
+                              />
+                              <label className="segment-mute" title="Mute this segment">
+                                <input
+                                  type="checkbox"
+                                  checked={segment.mute}
+                                  onChange={(event) =>
+                                    setSegments((current) =>
+                                      current.map((item, itemIndex) =>
+                                        itemIndex === index
+                                          ? { ...item, mute: event.target.checked }
+                                          : item,
+                                      ),
+                                    )
+                                  }
+                                />
+                                mute
+                              </label>
+                              <button
+                                type="button"
+                                className="clip-icon-btn"
+                                title="Remove segment"
+                                onClick={() =>
+                                  setSegments((current) =>
+                                    current.filter((_, itemIndex) => itemIndex !== index),
+                                  )
+                                }
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <div className="ui-opt-grid">
                       <div className="ui-opt">
                         <label className="ui-opt-label" htmlFor="filter-preset">Filter</label>
@@ -1129,6 +1473,60 @@ export default function DashboardPage() {
                           <option value="vibrant">vibrant</option>
                           <option value="vintage">vintage</option>
                         </select>
+                      </div>
+                      <div className="ui-opt">
+                        <label className="ui-opt-label" htmlFor="caption-color">
+                          Caption color
+                        </label>
+                        <input
+                          id="caption-color"
+                          type="color"
+                          className="ui-input"
+                          value={captionColor || "#F4C76B"}
+                          onChange={(e) => setCaptionColor(e.target.value)}
+                        />
+                      </div>
+                      <div className="ui-opt">
+                        <label className="ui-opt-label" htmlFor="caption-size">
+                          Caption size (px)
+                        </label>
+                        <input
+                          id="caption-size"
+                          type="number"
+                          min="12"
+                          max="160"
+                          placeholder="auto"
+                          className="ui-input"
+                          value={captionSize}
+                          onChange={(e) => setCaptionSize(e.target.value)}
+                        />
+                      </div>
+                      <div className="ui-opt">
+                        <label className="ui-opt-label" htmlFor="caption-font">
+                          Caption font
+                        </label>
+                        <select
+                          id="caption-font"
+                          className="ui-input"
+                          value={captionFont}
+                          onChange={(e) => setCaptionFont(e.target.value)}
+                        >
+                          <option value="">Preset font</option>
+                          <option value="sans">DejaVu Sans</option>
+                          <option value="serif">DejaVu Serif</option>
+                          <option value="mono">DejaVu Sans Mono</option>
+                        </select>
+                      </div>
+                      <div className="ui-opt">
+                        <span className="ui-opt-label">Karaoke highlight</span>
+                        <label className="ui-switch">
+                          <input
+                            type="checkbox"
+                            checked={captionKaraoke}
+                            onChange={(e) => setCaptionKaraoke(e.target.checked)}
+                          />
+                          <span>Highlight active word</span>
+                        </label>
                       </div>
                       <div className="ui-opt">
                         <span className="ui-opt-label">Watermark logo (upload)</span>
@@ -1229,6 +1627,57 @@ export default function DashboardPage() {
                         </>
                       )}
                       <div className="ui-opt">
+                        <span className="ui-opt-label">Ken Burns / manual pan</span>
+                        <label className="ui-switch">
+                          <input
+                            type="checkbox"
+                            checked={kenBurns}
+                            disabled={autoZoom === "speaker"}
+                            onChange={(e) => setKenBurns(e.target.checked)}
+                          />
+                          <span>Animate camera</span>
+                        </label>
+                      </div>
+                      {kenBurns && autoZoom !== "speaker" && (
+                        <>
+                          <div className="ui-opt">
+                            <label className="ui-opt-label" htmlFor="pan-direction">
+                              Camera direction
+                            </label>
+                            <select
+                              id="pan-direction"
+                              className="ui-input"
+                              value={panDirection}
+                              onChange={(e) => setPanDirection(e.target.value)}
+                            >
+                              <option value="zoom-in">Zoom in</option>
+                              <option value="zoom-out">Zoom out</option>
+                              <option value="left-right">Pan left → right</option>
+                              <option value="right-left">Pan right → left</option>
+                              <option value="top-bottom">Pan top → bottom</option>
+                              <option value="bottom-top">Pan bottom → top</option>
+                              <option value="center">Static center</option>
+                            </select>
+                          </div>
+                          <div className="ui-opt">
+                            <label className="ui-opt-label" htmlFor="kenburns-zoom">
+                              Camera zoom
+                            </label>
+                            <select
+                              id="kenburns-zoom"
+                              className="ui-input"
+                              value={kenBurnsZoom}
+                              onChange={(e) => setKenBurnsZoom(e.target.value)}
+                            >
+                              <option value="1.08">1.08×</option>
+                              <option value="1.12">1.12×</option>
+                              <option value="1.2">1.20×</option>
+                              <option value="1.35">1.35×</option>
+                            </select>
+                          </div>
+                        </>
+                      )}
+                      <div className="ui-opt">
                         <label className="ui-opt-label" htmlFor="music-track">Music</label>
                         <select
                           id="music-track"
@@ -1260,6 +1709,105 @@ export default function DashboardPage() {
                             <option value="0.5">50%</option>
                           </select>
                         </div>
+                      )}
+                      <div className="ui-opt ui-opt-wide">
+                        <label className="ui-opt-label" htmlFor="overlay-url">
+                          B-roll / PIP overlay URL
+                        </label>
+                        <input
+                          id="overlay-url"
+                          type="url"
+                          placeholder="https://.../broll.mp4 or .png"
+                          className="ui-input"
+                          value={overlayUrl}
+                          onChange={(e) => setOverlayUrl(e.target.value)}
+                        />
+                        <span className="ui-hint">
+                          Second video/image. Video loops; image stays static.
+                        </span>
+                      </div>
+                      {overlayUrl.trim() && (
+                        <>
+                          <div className="ui-opt">
+                            <label className="ui-opt-label" htmlFor="overlay-position">
+                              Overlay position
+                            </label>
+                            <select
+                              id="overlay-position"
+                              className="ui-input"
+                              value={overlayPosition}
+                              onChange={(e) => setOverlayPosition(e.target.value)}
+                            >
+                              <option value="top-left">Top left</option>
+                              <option value="top-right">Top right</option>
+                              <option value="bottom-left">Bottom left</option>
+                              <option value="bottom-right">Bottom right</option>
+                              <option value="center">Center</option>
+                            </select>
+                          </div>
+                          <div className="ui-opt">
+                            <label className="ui-opt-label" htmlFor="overlay-scale">
+                              Overlay width
+                            </label>
+                            <select
+                              id="overlay-scale"
+                              className="ui-input"
+                              value={overlayScale}
+                              onChange={(e) => setOverlayScale(e.target.value)}
+                            >
+                              <option value="0.2">20%</option>
+                              <option value="0.32">32%</option>
+                              <option value="0.45">45%</option>
+                              <option value="0.6">60%</option>
+                            </select>
+                          </div>
+                          <div className="ui-opt">
+                            <label className="ui-opt-label" htmlFor="overlay-opacity">
+                              Overlay opacity
+                            </label>
+                            <select
+                              id="overlay-opacity"
+                              className="ui-input"
+                              value={overlayOpacity}
+                              onChange={(e) => setOverlayOpacity(e.target.value)}
+                            >
+                              <option value="1">100%</option>
+                              <option value="0.8">80%</option>
+                              <option value="0.6">60%</option>
+                              <option value="0.4">40%</option>
+                            </select>
+                          </div>
+                          <div className="ui-opt">
+                            <label className="ui-opt-label" htmlFor="overlay-start">
+                              Overlay start (s)
+                            </label>
+                            <input
+                              id="overlay-start"
+                              type="number"
+                              min="0"
+                              step="any"
+                              placeholder="0"
+                              className="ui-input"
+                              value={overlayStart}
+                              onChange={(e) => setOverlayStart(e.target.value)}
+                            />
+                          </div>
+                          <div className="ui-opt">
+                            <label className="ui-opt-label" htmlFor="overlay-end">
+                              Overlay end (s)
+                            </label>
+                            <input
+                              id="overlay-end"
+                              type="number"
+                              min="0"
+                              step="any"
+                              placeholder="clip end"
+                              className="ui-input"
+                              value={overlayEnd}
+                              onChange={(e) => setOverlayEnd(e.target.value)}
+                            />
+                          </div>
+                        </>
                       )}
                       <div className="ui-opt">
                         <label className="ui-opt-label" htmlFor="intro-url">Intro URL</label>
@@ -1314,9 +1862,9 @@ export default function DashboardPage() {
                 </details>
 
                 <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                  <button type="submit" className="ui-btn ui-btn-gold" disabled={submitting}>
-                    {submitting ? <ClipzySpinner size="xs" /> : <Play size={15} />}
-                    {submitting ? "Starting…" : "Process"}
+                  <button type="submit" className="ui-btn ui-btn-gold" disabled={submitting || uploadingFile}>
+                    {submitting || uploadingFile ? <ClipzySpinner size="xs" /> : <Play size={15} />}
+                    {uploadingFile ? `Uploading ${uploadProgress}%` : submitting ? "Starting…" : "Process"}
                   </button>
                   <button
                     type="button"
@@ -1556,33 +2104,17 @@ export default function DashboardPage() {
                   )
                 ) : (
                   <>
-                    {/* Editing lanjutan: gabung klip terpilih (compose) */}
+                    {/* Editing lanjutan: gabung klip / antre unggah terpilih */}
                     {clips.length > 1 && (
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 8,
-                          alignItems: "center",
-                          flexWrap: "wrap",
-                          marginTop: 14,
-                        }}
-                      >
+                      <div className="clip-bulk-bar">
                         <span style={{ fontSize: 12, color: "var(--ui-muted)" }}>
-                          Select clips to merge ({selectedClips.length} selected)
+                          Selected: {selectedClips.length} clip(s)
                         </span>
                         <select
                           id="compose-transition"
                           value={composeTransition}
                           onChange={(e) => setComposeTransition(e.target.value)}
-                          className="ui-input"
-                          style={{
-                            width: 120,
-                            padding: "6px 8px",
-                            fontSize: 12,
-                            background: "#171a22",
-                            color: "#f5f5f2",
-                            border: "1px solid var(--ui-line)",
-                          }}
+                          className="ui-input clip-bulk-small"
                         >
                           <option value="fade">fade</option>
                           <option value="wipeleft">wipe</option>
@@ -1592,12 +2124,44 @@ export default function DashboardPage() {
                         <button
                           id="merge-clips"
                           type="button"
-                          className="ui-btn ui-btn-gold"
-                          style={{ fontSize: 12, padding: "8px 12px" }}
+                          className="ui-btn ui-btn-gold clip-bulk-small"
                           disabled={selectedClips.length < 2 || editingBusy}
                           onClick={mergeSelectedClips}
                         >
-                          <Layers size={13} /> Merge {selectedClips.length || ""}
+                          <Layers size={13} /> Merge
+                        </button>
+                        <span className="clip-bulk-divider" />
+                        <select
+                          id="bulk-privacy"
+                          className="ui-input clip-bulk-small"
+                          value={bulkPrivacy}
+                          onChange={(e) => setBulkPrivacy(e.target.value)}
+                          title="Privacy for uploads"
+                        >
+                          <option value="unlisted">Unlisted</option>
+                          <option value="public">Public</option>
+                          <option value="private">Private</option>
+                        </select>
+                        <input
+                          id="bulk-publish-at"
+                          type="datetime-local"
+                          className="ui-input clip-bulk-small"
+                          value={bulkPublishAt}
+                          onChange={(e) => setBulkPublishAt(e.target.value)}
+                          title="Optional schedule (YouTube publishAt)"
+                        />
+                        <button
+                          type="button"
+                          className="ui-btn ui-btn-gold clip-bulk-small"
+                          disabled={selectedClips.length === 0 || bulkUploading}
+                          onClick={() => void bulkUploadSelected()}
+                        >
+                          {bulkUploading ? (
+                            <ClipzySpinner size="xs" />
+                          ) : (
+                            <YouTubeIcon size={14} />
+                          )}
+                          Upload selected
                         </button>
                       </div>
                     )}
@@ -1687,6 +2251,21 @@ export default function DashboardPage() {
                                   </span>
                                 </span>
                               </button>
+                              {clip.youtube_uploaded && (
+                                <a
+                                  className="clip-yt-badge"
+                                  href={
+                                    clip.youtube_video_id
+                                      ? `https://youtu.be/${clip.youtube_video_id}`
+                                      : "#"
+                                  }
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  title="Open on YouTube"
+                                >
+                                  <YouTubeIcon size={12} /> Uploaded
+                                </a>
+                              )}
                             </div>
 
                             <div className="clip-body">
@@ -1710,14 +2289,14 @@ export default function DashboardPage() {
                               </div>
 
                               <div className="clip-actions">
-                                <label className="clip-pick" title="Select for merge">
+                                <label className="clip-pick" title="Select for merge/upload">
                                   <input
                                     type="checkbox"
                                     className="clip-select"
                                     checked={selectedClips.includes(clip.id)}
                                     onChange={() => toggleClipSelection(clip.id)}
                                   />
-                                  <span>Merge</span>
+                                  <span>Select</span>
                                 </label>
 
                                 <div className="clip-split">
@@ -1743,6 +2322,24 @@ export default function DashboardPage() {
                                     <Scissors size={13} />
                                   </button>
                                 </div>
+
+                                <button
+                                  type="button"
+                                  className="clip-icon-btn"
+                                  title={
+                                    clip.youtube_uploaded
+                                      ? "Re-upload this clip to YouTube"
+                                      : "Upload this clip to YouTube"
+                                  }
+                                  disabled={Boolean(cardUploading[clip.id])}
+                                  onClick={() => void uploadClipFromCard(clip)}
+                                >
+                                  {cardUploading[clip.id] ? (
+                                    <ClipzySpinner size="xs" />
+                                  ) : (
+                                    <YouTubeIcon size={13} />
+                                  )}
+                                </button>
 
                                 <div className="clip-files">
                                   {clip.download_url && (

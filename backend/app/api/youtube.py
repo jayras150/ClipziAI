@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime, timedelta, timezone
 from jose import JWTError, jwt
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from app.api.deps import get_db_session, get_current_user
@@ -26,6 +26,7 @@ from app.models.task import Task
 from app.models.youtube_credential import YouTubeCredential
 from app.schemas.youtube import (
     YouTubeAuthUrl,
+    YouTubeBulkUploadRequest,
     YouTubeConnectionStatus,
     YouTubeUploadRequest,
     YouTubeUploadResponse,
@@ -38,6 +39,7 @@ from app.services.metadata_generator import (
 )
 from app.services.youtube_service import YouTubeService
 from app.services.viral import score_clip
+from app.services.youtube_queue import enqueue_clips
 
 router = APIRouter()
 settings = get_settings()
@@ -96,6 +98,7 @@ async def _run_youtube_upload(
     privacy: str,
     category_id: str,
     made_for_kids: bool,
+    publish_at: Optional[datetime] = None,
 ) -> None:
     """
     Jalankan unggahan di background.
@@ -115,6 +118,7 @@ async def _run_youtube_upload(
             privacy_status=privacy,
             category_id=category_id,
             made_for_kids=made_for_kids,
+            publish_at=publish_at,
         )
         async with AsyncSessionLocal() as bg_db:
             clip = (
@@ -421,42 +425,52 @@ async def upload_to_youtube(
 
     metadata = upload_data.metadata
     if metadata is None and upload_data.auto_generate_metadata:
-        stored = ""
-        if isinstance(clip.viral_factors, dict):
-            stored = str(clip.viral_factors.get("transcript") or "")
-        if len(stored.split()) < MIN_TRANSCRIPT_WORDS:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    "The clip transcript is not ready. Open the clip popup, click "
-                    "\"Regenerate with AI\" until a title appears, then upload again."
-                ),
-            )
-        transcript = stored
-        generator = MetadataGenerator()
-        try:
-            generated = await generator.generate(
-                transcript=transcript,
-                source_title=clip.title or "",
-                duration=float(clip.duration or 0),
-                start_time=clip.start_time or "",
-                end_time=clip.end_time or "",
-            )
-        except MetadataGenerationError as exc:
-            raise HTTPException(status_code=502, detail=str(exc))
-        clip.ai_suggested_title = generated["title"][:500]
-        clip.ai_suggested_description = generated["description"]
-        clip.ai_suggested_tags = list(generated["tags"])
-        factors = dict(clip.viral_factors or {})
-        factors["ai_hook"] = generated.get("hook") or generated["title"]
-        clip.viral_factors = factors
-        await db.commit()
-        title = clip.ai_suggested_title
-        description = clip.ai_suggested_description or ""
-        tags = list(clip.ai_suggested_tags or [])
-        category_id = "22"
-        made_for_kids = False
-        privacy = upload_data.privacy_status or "unlisted"
+        # Tombol cepat di kartu klip: metadata AI sudah tersimpan dari popup,
+        # jadi tidak perlu transkripsi/LLM ulang.
+        if clip.ai_suggested_title:
+            title = clip.ai_suggested_title
+            description = clip.ai_suggested_description or ""
+            tags = list(clip.ai_suggested_tags or [])
+            category_id = "22"
+            made_for_kids = False
+            privacy = upload_data.privacy_status or "unlisted"
+        else:
+            stored = ""
+            if isinstance(clip.viral_factors, dict):
+                stored = str(clip.viral_factors.get("transcript") or "")
+            if len(stored.split()) < MIN_TRANSCRIPT_WORDS:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "The clip transcript is not ready. Open the clip popup, click "
+                        "\"Regenerate with AI\" until a title appears, then upload again."
+                    ),
+                )
+            transcript = stored
+            generator = MetadataGenerator()
+            try:
+                generated = await generator.generate(
+                    transcript=transcript,
+                    source_title=clip.title or "",
+                    duration=float(clip.duration or 0),
+                    start_time=clip.start_time or "",
+                    end_time=clip.end_time or "",
+                )
+            except MetadataGenerationError as exc:
+                raise HTTPException(status_code=502, detail=str(exc))
+            clip.ai_suggested_title = generated["title"][:500]
+            clip.ai_suggested_description = generated["description"]
+            clip.ai_suggested_tags = list(generated["tags"])
+            factors = dict(clip.viral_factors or {})
+            factors["ai_hook"] = generated.get("hook") or generated["title"]
+            clip.viral_factors = factors
+            await db.commit()
+            title = clip.ai_suggested_title
+            description = clip.ai_suggested_description or ""
+            tags = list(clip.ai_suggested_tags or [])
+            category_id = "22"
+            made_for_kids = False
+            privacy = upload_data.privacy_status or "unlisted"
     elif metadata is not None:
         title = metadata.title
         description = metadata.description
@@ -490,6 +504,7 @@ async def upload_to_youtube(
         privacy,
         category_id,
         made_for_kids,
+        upload_data.publish_at,
     )
 
     return JSONResponse(
@@ -499,6 +514,55 @@ async def upload_to_youtube(
             "status": "uploading",
             "clip_id": str(clip.id),
             "message": "Upload started. Poll /api/youtube/upload/status/{clip_id} for progress.",
+        },
+    )
+
+
+@router.post("/bulk", response_model=None)
+async def bulk_upload_to_youtube(
+    payload: YouTubeBulkUploadRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Antre beberapa klip sekaligus; scheduler mengunggahnya berurutan."""
+    if not payload.clip_ids:
+        raise HTTPException(status_code=400, detail="Select at least one clip.")
+    if len(payload.clip_ids) > 50:
+        raise HTTPException(status_code=400, detail="Maximum 50 clips per batch.")
+    credential = (
+        await db.execute(
+            select(YouTubeCredential).where(YouTubeCredential.user_id == current_user.id)
+        )
+    ).scalar_one_or_none()
+    if credential is None:
+        raise HTTPException(
+            status_code=400,
+            detail="YouTube is not connected yet. Connect it from the dashboard first.",
+        )
+    try:
+        rows = await enqueue_clips(
+            db,
+            current_user.id,
+            payload.clip_ids,
+            privacy_status=payload.privacy_status or "unlisted",
+            publish_at=payload.publish_at,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return JSONResponse(
+        status_code=202,
+        content={
+            "accepted": True,
+            "queued": len(rows),
+            "jobs": [
+                {
+                    "id": str(row.id),
+                    "clip_id": str(row.clip_id),
+                    "scheduled_at": row.scheduled_at.isoformat() if row.scheduled_at else None,
+                    "status": row.status,
+                }
+                for row in rows
+            ],
         },
     )
 
@@ -568,7 +632,9 @@ async def get_viral_score(
         if stored_transcript:
             payload["factors"]["transcript"] = stored_transcript[:2000]
         clip.viral_score = payload["score"]
-        clip.viral_factors = payload["factors"]
+        merged_factors = dict(clip.viral_factors or {})
+        merged_factors.update(payload["factors"])
+        clip.viral_factors = merged_factors
         await db.commit()
 
     factors = dict(clip.viral_factors or {})

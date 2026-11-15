@@ -29,16 +29,24 @@ from app.models.task import Task
 from app.models.user import User
 from app.schemas.clip import (
     ClipDetailResponse,
+    ClipEditRequest,
+    ClipEditStatusResponse,
     ClipMetadataRequest,
     ClipMetadataResponse,
     ClipMetadataUpdate,
+    ClipThumbnailCandidate,
+    ClipThumbnailResponse,
+    ClipThumbnailSelect,
 )
+from app.services.clip_edit import edit_status, run_clip_edit
 from app.services.metadata_generator import (
     MIN_TRANSCRIPT_WORDS,
     MetadataGenerationError,
     MetadataGenerator,
     _clean_tags,
 )
+from app.services.processor import VideoProcessor
+from app.services.storage_registry import get_storage
 from app.services.transcriber import AudioTranscriber
 
 logger = logging.getLogger(__name__)
@@ -461,6 +469,58 @@ async def generate_clip_metadata(
     )
 
 
+@router.post("/{clip_id}/edit", response_model=ClipEditStatusResponse, status_code=202)
+async def edit_clip_in_place(
+    clip_id: str,
+    payload: ClipEditRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Trim/speed/filter/caption satu klip tanpa membuat task baru."""
+    clip, _task = await _load_clip(db, clip_id, current_user.id)
+    current = edit_status(clip.id)
+    if current.get("status") == "processing":
+        raise HTTPException(status_code=409, detail="This clip is already being edited.")
+    if not clip.download_url:
+        raise HTTPException(status_code=409, detail="This clip has no video file to edit.")
+
+    options = payload.model_dump(exclude_none=True)
+    if not any(
+        [
+            float(options.get("trim_start") or 0) > 0,
+            options.get("trim_end") is not None,
+            float(options.get("speed") or 1.0) != 1.0,
+            bool(options.get("filter_preset")),
+            bool(str(options.get("caption_text") or "").strip()),
+        ]
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Choose at least one edit (trim, speed, filter, or caption).",
+        )
+
+    background_tasks.add_task(run_clip_edit, clip.id, current_user.id, options)
+    return ClipEditStatusResponse(status="processing", progress=5)
+
+
+@router.get("/{clip_id}/edit/status", response_model=ClipEditStatusResponse)
+async def get_clip_edit_status(
+    clip_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    clip, _task = await _load_clip(db, clip_id, current_user.id)
+    state = edit_status(clip.id)
+    return ClipEditStatusResponse(
+        status=str(state.get("status") or "idle"),
+        progress=int(state.get("progress") or 0),
+        error=state.get("error"),
+        download_url=state.get("download_url") or clip.download_url,
+        thumbnail_url=state.get("thumbnail_url") or clip.thumbnail_url,
+    )
+
+
 @router.patch("/{clip_id}/metadata", response_model=ClipMetadataResponse)
 async def update_clip_metadata(
     clip_id: str,
@@ -496,4 +556,95 @@ async def update_clip_metadata(
         generated_by="manual",
         regenerate_left=regen_left,
     )
+
+
+@router.post("/{clip_id}/thumbnails", response_model=ClipThumbnailResponse)
+async def generate_clip_thumbnails(
+    clip_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Ambil 3 kandidat thumbnail dari klip (awal/tengah/akhir)."""
+    clip, _task = await _load_clip(db, clip_id, current_user.id)
+    if not clip.download_url:
+        raise HTTPException(status_code=409, detail="This clip has no video file.")
+
+    storage = get_storage()
+    with tempfile.TemporaryDirectory() as work_dir:
+        source = os.path.join(work_dir, "source.mp4")
+        try:
+            await asyncio.to_thread(_download_clip, clip.download_url, source)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=502, detail=f"Could not download the clip: {str(exc)[:200]}"
+            ) from exc
+
+        processor = VideoProcessor(work_dir)
+        info = await processor.get_video_info(source)
+        duration = float(info.get("duration") or clip.duration or 1.0)
+        times = [
+            round(max(0.1, duration * 0.15), 2),
+            round(max(0.2, duration * 0.50), 2),
+            round(max(0.3, duration * 0.85), 2),
+        ]
+        candidates: list[ClipThumbnailCandidate] = []
+        for index, at_second in enumerate(times, 1):
+            path = os.path.join(work_dir, f"candidate_{index}.jpg")
+            result = await processor.extract_thumbnail(source, path, at_second=at_second)
+            if not result:
+                continue
+            key = storage.generate_object_key(
+                str(current_user.id),
+                f"candidate_{index}.jpg",
+                folder=f"thumbs/{clip.task_id}/{clip.id}",
+            )
+            url = storage.upload_file(result, key, "image/jpeg")
+            if url:
+                candidates.append(ClipThumbnailCandidate(url=url, at_second=at_second))
+
+    if not candidates:
+        raise HTTPException(status_code=502, detail="No thumbnail frames could be extracted.")
+
+    factors = dict(clip.viral_factors or {})
+    factors["thumbnail_candidates"] = [item.model_dump() for item in candidates]
+    clip.viral_factors = factors
+    await db.commit()
+
+    return ClipThumbnailResponse(
+        clip_id=str(clip.id),
+        candidates=candidates,
+        selected_url=clip.thumbnail_url,
+        hook=_hook_of(clip),
+    )
+
+
+@router.patch("/{clip_id}/thumbnail", response_model=ClipThumbnailResponse)
+async def select_clip_thumbnail(
+    clip_id: str,
+    payload: ClipThumbnailSelect,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Pilih salah satu kandidat sebagai poster klip."""
+    clip, _task = await _load_clip(db, clip_id, current_user.id)
+    factors = dict(clip.viral_factors or {})
+    candidates = factors.get("thumbnail_candidates") or []
+    allowed = {
+        str(item.get("url"))
+        for item in candidates
+        if isinstance(item, dict) and item.get("url")
+    }
+    if clip.thumbnail_url:
+        allowed.add(clip.thumbnail_url)
+    if payload.url not in allowed:
+        raise HTTPException(status_code=400, detail="That thumbnail is not a candidate for this clip.")
+    clip.thumbnail_url = payload.url
+    await db.commit()
+    return ClipThumbnailResponse(
+        clip_id=str(clip.id),
+        candidates=[ClipThumbnailCandidate(**item) for item in candidates if isinstance(item, dict)],
+        selected_url=clip.thumbnail_url,
+        hook=_hook_of(clip),
+    )
+
 

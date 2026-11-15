@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from app.core.config import get_settings
 from app.core.auth_cookies import ACCESS_COOKIE, CSRF_COOKIE, CSRF_HEADER, REFRESH_COOKIE
 from app.db.session import engine, init_db
-from app.api import tasks, health, formats, editing, youtube, clips, internal
+from app.api import tasks, health, formats, editing, youtube, clips, internal, uploads
 from app.api import auth, users, pricing, payment, credits
 from app.api import music
 from app.api.admin import auth as admin_auth
@@ -73,6 +73,9 @@ async def lifespan(app: FastAPI):
     from app.services.cleanup_manager import cleanup_scheduler
 
     cleanup_task = asyncio.create_task(cleanup_scheduler())
+    from app.services.youtube_queue import scheduled_publish_scheduler
+
+    publish_task = asyncio.create_task(scheduled_publish_scheduler())
     vast_task = asyncio.create_task(_run_vast_maintenance())
     # Setelan AI tersimpan di DB -> inject ke env/settings saat startup supaya
     # kredensial dari dashboard langsung dipakai tanpa menunggu request admin.
@@ -116,7 +119,7 @@ async def lifespan(app: FastAPI):
     # Shutdown: batalkan task latar dan tunggu sampai selesai SEBELUM menutup
     # engine. Tanpa await, koneksi asyncpg bisa ditutup setelah event loop mati
     # (log "Event loop is closed" saat restart).
-    for task in (cleanup_task, vast_task):
+    for task in (cleanup_task, vast_task, publish_task):
         task.cancel()
         try:
             await task
@@ -221,6 +224,7 @@ app.include_router(payment.router, prefix="/api/payment", tags=["Payment"])
 app.include_router(credits.router, prefix="/api/credits", tags=["Credits"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
 app.include_router(clips.router, prefix="/api/clips", tags=["Clips"])
+app.include_router(uploads.router, prefix="/api/uploads", tags=["Uploads"])
 app.include_router(internal.router, prefix="/api/internal", tags=["Internal"])
 app.include_router(music.router, prefix="/api/music", tags=["Music"])
 app.include_router(health.router, prefix="/api", tags=["Health"])

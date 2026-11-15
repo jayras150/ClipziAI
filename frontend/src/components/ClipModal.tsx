@@ -10,10 +10,11 @@ import {
   X,
 } from "lucide-react"
 
-import { api, ClipData } from "@/lib/api"
+import { api, ClipData, ClipThumbnailData } from "@/lib/api"
 import { ClipzySpinner } from "@/components/ClipzySpinner"
 import YouTubeIcon from "@/components/YouTubeIcon"
 import { readApiError } from "@/lib/api-errors"
+import { SUBTITLE_STYLE_OPTIONS } from "@/lib/caption-styles"
 
 /**
  * Popup satu klip: player video + metadata YouTube yang dibuat AI dari transkrip
@@ -49,12 +50,23 @@ export default function ClipModal({
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
   const [uploadUrl, setUploadUrl] = useState("")
+  const [thumbs, setThumbs] = useState<ClipThumbnailData | null>(null)
+  const [thumbBusy, setThumbBusy] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const [editBusy, setEditBusy] = useState(false)
+  const [editProgress, setEditProgress] = useState(0)
+  const [editTrimStart, setEditTrimStart] = useState("")
+  const [editTrimEnd, setEditTrimEnd] = useState("")
+  const [editSpeed, setEditSpeed] = useState("1")
+  const [editFilter, setEditFilter] = useState("none")
+  const [editCaption, setEditCaption] = useState("")
+  const [editCaptionStyle, setEditCaptionStyle] = useState("classic")
   // Sisa kuota tombol "Regenerate with AI" (maks 3 per klip), dari server.
   const [regenLeft, setRegenLeft] = useState<number | null>(null)
 
   const autoTried = useRef<Set<string>>(new Set())
   const clipId = clip?.id ?? ""
-  const busy = generating || saving || uploading
+  const busy = generating || saving || uploading || thumbBusy || editBusy
 
   const tags = tagsText
     .split(",")
@@ -168,6 +180,27 @@ export default function ClipModal({
     setUploadUrl(
       clip.youtube_video_id ? `https://youtu.be/${clip.youtube_video_id}` : "",
     )
+    setThumbs(null)
+    const storedThumbs = Array.isArray(clip.viral_factors?.thumbnail_candidates)
+      ? (clip.viral_factors?.thumbnail_candidates as ClipThumbnailData["candidates"])
+      : []
+    if (storedThumbs.length > 0) {
+      setThumbs({
+        clip_id: clip.id,
+        candidates: storedThumbs,
+        selected_url: clip.thumbnail_url,
+        hook: clip.ai_hook || null,
+      })
+    }
+    setEditOpen(false)
+    setEditProgress(0)
+    const manual = (clip.viral_factors?.manual_edit || {}) as Record<string, any>
+    setEditTrimStart(String(manual.trim_start ?? ""))
+    setEditTrimEnd(String(manual.trim_end ?? ""))
+    setEditSpeed(String(manual.speed ?? "1"))
+    setEditFilter(String(manual.filter_preset ?? "none"))
+    setEditCaption(String(manual.caption_text ?? ""))
+    setEditCaptionStyle(String(manual.caption_style ?? "classic"))
     if (!clip.ai_suggested_title && !autoTried.current.has(clip.id)) {
       autoTried.current.add(clip.id)
       void generate(false)
@@ -269,6 +302,95 @@ export default function ClipModal({
     }
   }
 
+  const generateThumbnails = async () => {
+    if (!clipId) return
+    setThumbBusy(true)
+    setError("")
+    setNotice("")
+    try {
+      const data = await api.generateClipThumbnails(token, clipId)
+      setThumbs(data)
+      setNotice("Three thumbnail candidates ready. Pick one as the clip poster.")
+    } catch (err: any) {
+      setError(readApiError(err.response?.data, "Could not generate thumbnail candidates."))
+    } finally {
+      setThumbBusy(false)
+    }
+  }
+
+  const chooseThumbnail = async (url: string) => {
+    if (!clipId) return
+    setThumbBusy(true)
+    setError("")
+    try {
+      const data = await api.selectClipThumbnail(token, clipId, url)
+      setThumbs(data)
+      onUpdated(clipId, { thumbnail_url: url })
+      setNotice("Thumbnail updated.")
+    } catch (err: any) {
+      setError(readApiError(err.response?.data, "Could not select that thumbnail."))
+    } finally {
+      setThumbBusy(false)
+    }
+  }
+
+  const applyEdit = async () => {
+    if (!clipId) return
+    const trimStart = parseFloat(editTrimStart)
+    const trimEnd = parseFloat(editTrimEnd)
+    const speed = parseFloat(editSpeed)
+    const caption = editCaption.trim()
+    if (
+      Number.isNaN(trimStart) &&
+      Number.isNaN(trimEnd) &&
+      (Number.isNaN(speed) || speed === 1) &&
+      editFilter === "none" &&
+      !caption
+    ) {
+      setError("Choose at least one edit: trim, speed, filter, or caption.")
+      return
+    }
+    setEditBusy(true)
+    setEditProgress(5)
+    setError("")
+    setNotice("Rendering clip edit in the background…")
+    try {
+      await api.editClip(token, clipId, {
+        trim_start: Number.isNaN(trimStart) ? 0 : trimStart,
+        trim_end: Number.isNaN(trimEnd) ? undefined : trimEnd,
+        speed: Number.isNaN(speed) ? 1 : speed,
+        filter_preset: editFilter === "none" ? undefined : editFilter,
+        caption_text: caption || undefined,
+        caption_style: caption ? editCaptionStyle : undefined,
+      })
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 2000))
+        const state = await api.getClipEditStatus(token, clipId)
+        setEditProgress(state.progress || 0)
+        if (state.status === "done") {
+          onUpdated(clipId, {
+            download_url: state.download_url || clip?.download_url || null,
+            thumbnail_url: state.thumbnail_url || clip?.thumbnail_url || null,
+            editing_applied: Array.from(
+              new Set([...(clip?.editing_applied || []), "trim", "speed", "filter", "caption"]),
+            ),
+          })
+          setNotice("Clip edited. The new video is ready.")
+          setEditBusy(false)
+          return
+        }
+        if (state.status === "error") {
+          throw new Error(state.error || "Clip edit failed.")
+        }
+      }
+      throw new Error("Clip edit is still running. Reopen this popup in a minute.")
+    } catch (err: any) {
+      setError(readApiError(err.response?.data, err.message || "Could not edit this clip."))
+    } finally {
+      setEditBusy(false)
+    }
+  }
+
   if (!clip) return null
 
   const minutes = Math.floor(clip.duration / 60)
@@ -352,6 +474,46 @@ export default function ClipModal({
                 >
                   SRT
                 </a>
+              )}
+            </div>
+
+            <div className="clip-modal-thumbs">
+              <div className="clip-modal-thumbs-head">
+                <span className="clip-modal-label" style={{ margin: 0 }}>
+                  Thumbnail / hook
+                </span>
+                <button
+                  type="button"
+                  className="ui-btn ui-btn-ghost"
+                  onClick={() => void generateThumbnails()}
+                  disabled={busy}
+                >
+                  {thumbBusy ? <ClipzySpinner size="xs" /> : <Sparkles size={13} />}
+                  {thumbs ? "Regenerate 3 picks" : "Generate 3 picks"}
+                </button>
+              </div>
+              {clip.ai_hook && <p className="clip-modal-hook">“{clip.ai_hook}”</p>}
+              {thumbs && thumbs.candidates.length > 0 && (
+                <div className="clip-thumb-grid">
+                  {thumbs.candidates.map((candidate) => (
+                    <button
+                      key={candidate.url}
+                      type="button"
+                      className={`clip-thumb-pick${
+                        (thumbs.selected_url || clip.thumbnail_url) === candidate.url
+                          ? " selected"
+                          : ""
+                      }`}
+                      onClick={() => void chooseThumbnail(candidate.url)}
+                      disabled={busy}
+                      title={`Frame at ${candidate.at_second.toFixed(1)}s`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={candidate.url} alt={`Thumbnail at ${candidate.at_second}s`} />
+                      <span>{candidate.at_second.toFixed(1)}s</span>
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
 
@@ -451,6 +613,111 @@ export default function ClipModal({
                 Save
               </button>
             </div>
+
+            <details
+              className="clip-modal-edit"
+              open={editOpen}
+              onToggle={(event) => setEditOpen((event.currentTarget as HTMLDetailsElement).open)}
+            >
+              <summary>Edit this clip in place</summary>
+              <p className="ui-hint">
+                Trim/speed/filter/caption without creating a new task. The original file is kept
+                in the clip metadata for recovery.
+              </p>
+              <div className="clip-edit-grid">
+                <label>
+                  Trim start (s)
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    className="ui-input"
+                    value={editTrimStart}
+                    onChange={(event) => setEditTrimStart(event.target.value)}
+                    placeholder="0"
+                  />
+                </label>
+                <label>
+                  Trim end (s)
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    className="ui-input"
+                    value={editTrimEnd}
+                    onChange={(event) => setEditTrimEnd(event.target.value)}
+                    placeholder={`${clip.duration.toFixed(1)}`}
+                  />
+                </label>
+                <label>
+                  Speed
+                  <select
+                    className="ui-input"
+                    value={editSpeed}
+                    onChange={(event) => setEditSpeed(event.target.value)}
+                  >
+                    <option value="0.5">0.5×</option>
+                    <option value="1">1×</option>
+                    <option value="1.5">1.5×</option>
+                    <option value="2">2×</option>
+                  </select>
+                </label>
+                <label>
+                  Filter
+                  <select
+                    className="ui-input"
+                    value={editFilter}
+                    onChange={(event) => setEditFilter(event.target.value)}
+                  >
+                    <option value="none">none</option>
+                    <option value="warm">warm</option>
+                    <option value="cool">cool</option>
+                    <option value="cinematic">cinematic</option>
+                    <option value="bw">b&amp;w</option>
+                    <option value="vibrant">vibrant</option>
+                    <option value="vintage">vintage</option>
+                  </select>
+                </label>
+                <label>
+                  Caption text
+                  <input
+                    type="text"
+                    className="ui-input"
+                    value={editCaption}
+                    onChange={(event) => setEditCaption(event.target.value)}
+                    placeholder="optional overlay"
+                  />
+                </label>
+                <label>
+                  Caption style
+                  <select
+                    className="ui-input"
+                    value={editCaptionStyle}
+                    onChange={(event) => setEditCaptionStyle(event.target.value)}
+                  >
+                    {SUBTITLE_STYLE_OPTIONS.map((style) => (
+                      <option key={style.value} value={style.value}>
+                        {style.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              {editBusy && (
+                <div className="ui-progress" style={{ marginTop: 10 }}>
+                  <span style={{ width: `${editProgress}%` }} />
+                </div>
+              )}
+              <button
+                type="button"
+                className="ui-btn ui-btn-gold"
+                onClick={() => void applyEdit()}
+                disabled={busy}
+              >
+                {editBusy ? <ClipzySpinner size="xs" /> : <Wand2 size={14} />}
+                {editBusy ? `Rendering ${editProgress}%` : "Apply clip edit"}
+              </button>
+            </details>
 
             <div className="clip-modal-youtube">
               <label className="clip-modal-label" htmlFor="clip-modal-category">

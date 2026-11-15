@@ -80,3 +80,42 @@ class ClipDetailResponse(ClipResponse):
 
     transcript: str = ""
     youtube_video_url: Optional[str] = None
+
+
+class ClipEditRequest(BaseModel):
+    """Edit satu klip di tempat (tanpa membuat Task baru)."""
+
+    trim_start: float = Field(0, ge=0)
+    trim_end: Optional[float] = Field(None, ge=0)
+    speed: float = Field(1.0, ge=0.25, le=4.0)
+    filter_preset: Optional[str] = None
+    caption_text: Optional[str] = Field(None, max_length=300)
+    caption_style: Optional[str] = None
+    caption_color: Optional[str] = Field(None, max_length=20)
+    caption_size: Optional[float] = Field(None, ge=12, le=160)
+    caption_font: Optional[str] = Field(None, max_length=20)
+
+
+class ClipEditStatusResponse(BaseModel):
+    status: str
+    progress: int = 0
+    error: Optional[str] = None
+    download_url: Optional[str] = None
+    thumbnail_url: Optional[str] = None
+
+
+class ClipThumbnailCandidate(BaseModel):
+    url: str
+    at_second: float
+
+
+class ClipThumbnailResponse(BaseModel):
+    clip_id: str
+    candidates: List[ClipThumbnailCandidate] = Field(default_factory=list)
+    selected_url: Optional[str] = None
+    hook: Optional[str] = None
+
+
+class ClipThumbnailSelect(BaseModel):
+    url: str = Field(min_length=1, max_length=1000)
+

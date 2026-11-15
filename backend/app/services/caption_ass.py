@@ -34,6 +34,58 @@ def _parse_force_style(force_style: str) -> Dict[str, str]:
     return parsed
 
 
+def _rgb_to_ass(colour: str) -> str:
+    """#RRGGBB / 0xRRGGBB / RRGGBB -> ASS &H00BBGGRR."""
+    value = str(colour or "").strip()
+    for prefix in ("#", "0x", "0X"):
+        if value.startswith(prefix):
+            value = value[len(prefix):]
+            break
+    if len(value) == 3:
+        value = "".join(ch * 2 for ch in value)
+    if len(value) != 6 or any(ch not in "0123456789abcdefABCDEF" for ch in value):
+        return ""
+    red, green, blue = value[0:2], value[2:4], value[4:6]
+    return f"&H00{blue}{green}{red}".upper()
+
+
+CAPTION_FONT_NAMES = {
+    "sans": "DejaVu Sans",
+    "serif": "DejaVu Serif",
+    "mono": "DejaVu Sans Mono",
+}
+
+
+def apply_caption_overrides(
+    style: Dict[str, str],
+    *,
+    height: int,
+    caption_color: Optional[str] = None,
+    caption_size: Optional[float] = None,
+    caption_font: Optional[str] = None,
+) -> Dict[str, str]:
+    """Terapkan warna/ukuran/font custom ke parsed force_style.
+
+    ``caption_size`` dalam piksel output; nilai force_style dikonversi balik ke
+    basis PlayResY=288 agar hasil akhir tetap seukuran yang diminta.
+    """
+    result = dict(style)
+    ass_colour = _rgb_to_ass(caption_color or "")
+    if ass_colour:
+        result["PrimaryColour"] = ass_colour
+    if caption_size is not None:
+        try:
+            pixels = float(caption_size)
+        except (TypeError, ValueError):
+            pixels = 0
+        if pixels > 0:
+            result["FontSize"] = f"{pixels * 288.0 / max(1, int(height)):.3f}"
+    font_key = str(caption_font or "").strip().lower()
+    if font_key in CAPTION_FONT_NAMES:
+        result["FontName"] = CAPTION_FONT_NAMES[font_key]
+    return result
+
+
 def _ass_time(seconds: float) -> str:
     seconds = max(0.0, float(seconds))
     hours = int(seconds // 3600)
@@ -138,11 +190,19 @@ def build_ass(
     highlight: Optional[str] = None,
     max_words: int = 5,
     max_chars: int = 26,
+    caption_color: Optional[str] = None,
+    caption_size: Optional[float] = None,
+    caption_font: Optional[str] = None,
+    karaoke: bool = True,
 ) -> Optional[str]:
     """Tulis file ASS untuk rentang klip. None bila tidak ada kata di rentang itu.
 
     Waktu kata sudah bertimestamp absolut (dari video sumber), jadi digeser ke 0
     sesuai `clip_start` supaya cocok dengan klip yang dirender.
+
+    ``caption_color``/``caption_size``/``caption_font`` menimpa gaya preset.
+    ``karaoke=False`` mematikan highlight kata aktif tetapi tetap memakai timing
+    per kata.
     """
     words = extract_words(segments)
     if not words:
@@ -163,6 +223,13 @@ def build_ass(
         return None
 
     style = _parse_force_style(force_style)
+    style = apply_caption_overrides(
+        style,
+        height=height,
+        caption_color=caption_color,
+        caption_size=caption_size,
+        caption_font=caption_font,
+    )
     font_name = style.get("FontName") or "DejaVu Sans"
     font_size = _scaled(style.get("FontSize", "16"), height, 16)
     primary = style.get("PrimaryColour") or "&H00FFFFFF"
@@ -175,6 +242,8 @@ def build_ass(
     alignment = int(style.get("Alignment", "2") or 2)
     margin_v = _scaled(style.get("MarginV", "22"), height, 22)
     highlight = highlight or pick_highlight(primary)
+    if not karaoke:
+        highlight = primary
 
     header = [
         "[Script Info]",
