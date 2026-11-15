@@ -555,6 +555,10 @@ status) plus riwayat lokal, dengan tombol **Logs** (termasuk opsi **debug/daemon
   ke folder root Drive. TensorFlow ditolak.
 - File CT2 wajib: `model.bin`, `config.json`, `tokenizer.json`,
   `preprocessor_config.json`, dan `vocabulary.json`/`vocabulary.txt`.
+- **Hapus + Drive**: service account hanya bisa menghapus folder yang dimilikinya. Folder
+  model yang dibuat akun Google Anda (upload Colab) tetap aman; gunakan **Hapus daftar**
+  lalu hapus folder lewat tautan Drive yang ditampilkan admin.
+
 - **Notebook Colab privat**: di **Settings › Whisper Models** klik **Unduh notebook**,
   upload `.ipynb` ke Google Drive **sekali**, tempel **Notebook Drive File ID**, lalu
   **Buka Colab**. Notebook `backend/app/templates/whisper_colab.ipynb` sudah berisi kode
