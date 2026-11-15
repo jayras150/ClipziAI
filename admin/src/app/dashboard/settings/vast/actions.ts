@@ -87,6 +87,63 @@ export async function testVastOffers(limit = 5) {
   }
 }
 
+/** Status template worker (hash aktif, image, env yang akan dibekukan). */
+export type VastTemplateStatus = {
+  template_hash: string;
+  template_name: string;
+  worker_image: string;
+  worker_disk: number;
+  onstart: string;
+  docker_options: string;
+  env_keys: string[];
+  env_count: number;
+  missing_required: string[];
+  api_key_set: boolean;
+  ready: boolean;
+};
+
+export async function loadVastTemplateStatus() {
+  try {
+    return await adminFetch<VastTemplateStatus>('/api/admin/settings/vast/template');
+  } catch (error) {
+    return { error: _error(error) };
+  }
+}
+
+/** Buat template Vast.ai dari image worker + env pipeline, lalu aktifkan. */
+export async function createVastTemplate(payload: {
+  name?: string;
+  image?: string;
+  disk_space?: number;
+  include_env?: boolean;
+  sync_env_vars?: boolean;
+  public?: boolean;
+  activate?: boolean;
+}) {
+  try {
+    const data = await adminFetch<{
+      ok: boolean;
+      template_hash: string;
+      template_id: number | null;
+      name: string;
+      image: string;
+      disk_space: number;
+      env_count: number;
+      env_keys: string[];
+      env_sync: Record<string, unknown>;
+      warnings: string[];
+      activated: boolean;
+    }>('/api/admin/settings/vast/template/create', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    revalidatePath('/dashboard/settings/vast');
+    return { ok: true, data };
+  } catch (error) {
+    return { error: _error(error) };
+  }
+}
+
 export async function exportVastEnv(reveal: boolean) {
   try {
     return await adminFetch<{ text: string; reveal: boolean }>(

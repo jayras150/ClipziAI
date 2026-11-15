@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shlex
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -18,6 +19,15 @@ from app.services.vast_worker import (
 logger = logging.getLogger(__name__)
 
 RESERVED_ENV = {"PORT", "HOST"}
+
+# Path script onstart di dalam image worker (lihat deployments/pipeline_onstart.sh).
+# Template memakai path exec-safe: Vast menjalankan onstart tanpa shell.
+TEMPLATE_ONSTART = "/app/deployments/pipeline_onstart.sh"
+# Docker options dasar template (port service pipeline; aman & sama seperti CLI lama).
+TEMPLATE_DOCKER_OPTIONS = "-p 8000:8000"
+# Env yang diisi PER TASK — jangan dibekukan di template.
+TEMPLATE_ENV_SKIP = {"CLIPZI_TASK_ID"}
+TEMPLATE_DESC = "ClipziAI worker (dibuat otomatis dari admin) — jangan diedit manual."
 
 
 def _client():
@@ -422,3 +432,224 @@ async def sync_env_to_vast(
     for row in results:
         summary[row["action"]] = summary.get(row["action"], 0) + 1
     return {"dry_run": dry_run, "results": results, "summary": summary}
+
+
+# =============================================================================
+# Template worker otomatis (image + env pipeline → hash siap dipakai dispatch)
+# =============================================================================
+
+
+def _template_env_items(env: Dict[str, str]) -> List[tuple]:
+    """Pasangan (nama, nilai) env template yang terisi & aman untuk shell."""
+    items: List[tuple] = []
+    for name in sorted(env):
+        if name in TEMPLATE_ENV_SKIP:
+            continue
+        value = str(env.get(name) or "").strip()
+        if not value or "\n" in value or "\r" in value:
+            continue
+        items.append((name, value))
+    return items
+
+
+def template_env_string(env: Dict[str, str]) -> str:
+    """Susun field "Docker options" template Vast: ``-p 8000:8000 -e KEY=VALUE …``.
+
+    Nilai di-quote dengan `shlex.quote` karena Vast menyisipkan string ini ke
+    perintah ``docker run``. Nilai secret tidak pernah dikembalikan ke UI.
+    """
+    parts: List[str] = [TEMPLATE_DOCKER_OPTIONS]
+    for name, value in _template_env_items(env):
+        parts.append(f"-e {name}={shlex.quote(value)}")
+    return " ".join(parts)
+
+
+def _template_hash_from(created: Any) -> str:
+    """Ambil ``hash_id`` dari respons ``POST /template/`` (bentuknya bisa beda)."""
+    if isinstance(created, dict):
+        for key in ("hash_id", "hash", "template_hash"):
+            value = created.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        inner = created.get("template")
+        if isinstance(inner, str) and inner.strip():
+            return inner.strip()
+        if isinstance(inner, dict):
+            found = _template_hash_from(inner)
+            if found:
+                return found
+    if isinstance(created, str) and len(created.strip()) in {32, 40}:
+        return created.strip()
+    return ""
+
+
+def _template_id_from(created: Any) -> Optional[int]:
+    """Ambil id numerik template bila respons menyertakannya."""
+    if isinstance(created, dict):
+        for key in ("id", "template_id"):
+            try:
+                return int(created[key])  # type: ignore[arg-type]
+            except (KeyError, TypeError, ValueError):
+                continue
+        inner = created.get("template")
+        if isinstance(inner, dict):
+            return _template_id_from(inner)
+    return None
+
+
+async def _find_template_hash(name: str) -> str:
+    """Cari hash template berdasarkan nama (fallback bila respons tanpa hash)."""
+    client = _client()
+    rows: Any = []
+    for query in ({"name": {"eq": name}}, f"name={name}"):
+        try:
+            rows = await asyncio.to_thread(client.search_templates, query)
+            break
+        except Exception as exc:  # pragma: no cover - bentuk query bisa berubah
+            logger.debug("search_templates(%s) gagal: %s", query, exc)
+    newest_hash = ""
+    newest_ts = float("-inf")
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("name") or "").strip() != name:
+            continue
+        hash_id = str(row.get("hash_id") or "").strip()
+        if not hash_id:
+            continue
+        try:
+            created_at = float(row.get("created_at") or 0)
+        except (TypeError, ValueError):
+            created_at = 0.0
+        if created_at >= newest_ts:
+            newest_hash = hash_id
+            newest_ts = created_at
+    return newest_hash
+
+
+def worker_template_spec() -> Dict[str, Any]:
+    """Ringkasan template yang dipakai dispatch (tanpa nilai secret)."""
+    settings = get_settings()
+    env = build_worker_env()
+    items = _template_env_items(env)
+    template_hash = (settings.VAST_TEMPLATE_HASH or "").strip()
+    image = (settings.VAST_WORKER_IMAGE or "").strip()
+    api_key = (settings.VAST_API_KEY or "").strip()
+    return {
+        "template_hash": template_hash,
+        "template_name": (settings.VAST_TEMPLATE_NAME or "clipzi-worker").strip(),
+        "worker_image": image,
+        "worker_disk": int(settings.VAST_WORKER_DISK or 40),
+        "onstart": TEMPLATE_ONSTART,
+        "docker_options": TEMPLATE_DOCKER_OPTIONS,
+        "env_keys": [name for name, _ in items],
+        "env_count": len(items),
+        "missing_required": [name for name in WORKER_ENV_REQUIRED if not env.get(name)],
+        "api_key_set": bool(api_key),
+        "ready": bool(api_key) and bool(template_hash or image),
+    }
+
+
+async def worker_template_status() -> Dict[str, Any]:
+    """Status template untuk panel admin (tanpa panggilan jaringan ke Vast)."""
+    return worker_template_spec()
+
+
+async def create_worker_template(
+    name: Optional[str] = None,
+    image: Optional[str] = None,
+    disk_space: Optional[int] = None,
+    include_env: bool = True,
+    sync_env_vars: bool = True,
+    public: bool = False,
+) -> Dict[str, Any]:
+    """Buat template Vast.ai dari image worker + env pipeline (sekali klik).
+
+    Env diambil dari `build_worker_env()` — sumber yang sama dengan dispatch
+    instance — jadi template selalu cocok dengan kebutuhan pipeline
+    (DATABASE_URL, ENCRYPTION_KEY, SECRET_KEY, token callback, storage, dll.).
+    """
+    settings = get_settings()
+    client = _client()
+
+    resolved_image = (image or settings.VAST_WORKER_IMAGE or "").strip()
+    if not resolved_image:
+        raise RuntimeError(
+            "VAST_WORKER_IMAGE belum diisi. Isi 'Worker image / tag' lebih dulu, "
+            "mis. sujinwo555/clipzi-backend:worker."
+        )
+    if any(ch.isspace() for ch in resolved_image):
+        raise ValueError(f"Image tidak valid: {resolved_image!r}")
+
+    resolved_name = (name or settings.VAST_TEMPLATE_NAME or "clipzi-worker").strip()
+    if not resolved_name:
+        raise ValueError("Nama template tidak boleh kosong.")
+
+    try:
+        disk = int(disk_space or settings.VAST_WORKER_DISK or 40)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Storage template harus berupa angka (GB).") from exc
+    if disk < 10 or disk > 500:
+        raise ValueError("Storage template harus antara 10 dan 500 GB.")
+
+    env = build_worker_env()
+    env.pop("CLIPZI_TASK_ID", None)
+    env_items = _template_env_items(env)
+    env_string = template_env_string(env) if include_env else TEMPLATE_DOCKER_OPTIONS
+
+    warnings: List[str] = []
+    missing = [key for key in WORKER_ENV_REQUIRED if not env.get(key)]
+    if missing:
+        warnings.append(f"Env wajib belum diisi di backend: {', '.join(missing)}.")
+
+    env_sync: Dict[str, Any] = {"skipped": True}
+    if sync_env_vars:
+        try:
+            env_sync = await sync_env_to_vast(keys=None, dry_run=False)
+            env_sync["skipped"] = False
+        except Exception as exc:
+            env_sync = {"skipped": False, "error": str(exc)[:300]}
+            warnings.append(f"Sinkron env ke akun Vast gagal: {str(exc)[:160]}")
+
+    created = await asyncio.to_thread(
+        client.create_template,
+        name=resolved_name,
+        image=resolved_image,
+        env=env_string,
+        onstart_cmd=TEMPLATE_ONSTART,
+        disk_space=float(disk),
+        desc=TEMPLATE_DESC,
+        public=bool(public),
+    )
+
+    template_hash = _template_hash_from(created)
+    if not template_hash:
+        template_hash = await _find_template_hash(resolved_name)
+    if not template_hash:
+        warnings.append(
+            "Template dibuat tetapi hash tidak terbaca otomatis. Ambil dari dashboard "
+            "Vast (Templates) lalu isi manual di kolom 'Template hash'."
+        )
+
+    logger.info(
+        "Template Vast dibuat: name=%s image=%s hash=%s env=%s",
+        resolved_name,
+        resolved_image,
+        template_hash or "-",
+        len(env_items),
+    )
+    return {
+        "ok": bool(template_hash),
+        "template_hash": template_hash,
+        "template_id": _template_id_from(created),
+        "name": resolved_name,
+        "image": resolved_image,
+        "disk_space": disk,
+        "onstart": TEMPLATE_ONSTART,
+        "docker_options": TEMPLATE_DOCKER_OPTIONS,
+        "env_count": len(env_items),
+        "env_keys": [key for key, _ in env_items],
+        "env_included": bool(include_env),
+        "env_sync": env_sync,
+        "warnings": warnings,
+    }

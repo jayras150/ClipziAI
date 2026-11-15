@@ -486,6 +486,11 @@ Setup di admin: **Settings › Download Runner** → isi `owner`, `repo`, nama f
   isinya berbeda, sistem tidak menimpa kecuali opsi **Timpa** dicentang.
 - Cookies **tidak** disimpan di repo/secrets. Workflow mengambil cookies + presigned
   upload dari backend memakai job token one-time, lalu menghapus file sementara.
+- Semua panggilan HTTP workflow mengirim `User-Agent: ClipziAI-Downloader/1.0`:
+  Cloudflare di depan domain publik **menolak** UA default `Python-urllib/3.x`
+  (`error code: 1010` → HTTP 403), dan request diulang 3x untuk galat 5xx/408/429.
+  Bila ingin melewati Cloudflare sepenuhnya, set repository variable
+  `DOWNLOADER_API_BASE` (dipakai sebelum `callback_url`).
 - Setelah upload selesai, workflow memanggil callback; backend menyimpan
   `source_asset_url` dan meneruskan task ke Vast untuk clipping.
 
@@ -502,6 +507,13 @@ berbahasa **Inggris**. UI admin internal tetap berbahasa Indonesia.
 - API key Vast bisa disimpan dari admin (terenkripsi AES-256-GCM); nilai asli tidak pernah
   dikembalikan API. Tombol **Tes koneksi** menampilkan saldo, total spend, dan jumlah instance.
 - **Tes filter offer** menampilkan offer termurah yang cocok (tanpa membuat instance).
+- **Template worker otomatis** (sejak 15 Nov 2026): satu tombol membuat template Vast.ai dari
+  `VAST_WORKER_IMAGE` + **seluruh env pipeline** (`build_worker_env`: `DATABASE_URL`,
+  `ENCRYPTION_KEY`, `SECRET_KEY`, token callback, storage, dll.), dengan `onstart` =
+  `/app/deployments/pipeline_onstart.sh` dan disk = `VAST_WORKER_DISK`. Hash hasilnya otomatis
+  disimpan sebagai `VAST_TEMPLATE_HASH` sehingga dispatch **oneshot** langsung memakainya
+  (`POST /api/admin/settings/vast/template/create`, status: `GET …/vast/template`).
+  Nama, image, dan storage bisa diubah dari panel; nilai secret tidak pernah ditampilkan.
 
 **Tab Environment** menampilkan env worker yang dibangun dari **sumber yang sama** dengan
 dispatch instance (`build_worker_env`): `DATABASE_URL`, `ENCRYPTION_KEY`, `SECRET_KEY`,
@@ -741,6 +753,7 @@ clone source dari `repo.bundle` bila repo belum ada -> `pg_restore --clean --if-
 | File ada di mirror tapi hilang di primary | Settings › Storage → **Cari file** (lihat lokasi) lalu Sync mode **Pulihkan primary** (*heal*). |
 | URL klip `cdn.domain.com` 403/404 | Settings › Storage › **Cloudflare CDN** → **Uji domain**: badge DNS/Sertifikat/HTTP menunjukkan bagian yang gagal (CNAME belum propagate, sertifikat belum Active, atau bucket salah). |
 | Worker log: `callback boot gagal: HTTP Error 403` | Cloudflare memblokir POST dari IP datacenter Vast ke `CLIPZI_CALLBACK_URL`. **Tidak fatal**: pipeline menulis progres & hasil langsung ke database, supervisor memantau instance lewat Vast API. Ingin callback hidup? Buat DNS `worker.<domain>` mode **DNS only (grey cloud)** lalu arahkan `CLIPZI_CALLBACK_URL` ke host itu. |
+| Workflow `downloader_video.yml`: `HTTP Error 403: Forbidden` / `error code: 1010` | Cloudflare memblokir **User-Agent** `Python-urllib/3.x` (bot signature) di depan domain publik, bukan error backend. Sejak 15 Nov 2026 workflow selalu mengirim `User-Agent: ClipziAI-Downloader/1.0` + retry 3x. Bila masih 403 (WAF/bot-fight rule baru), pasang ulang workflow lewat Settings › Download Runner › **Pasang workflow**, atau set repository variable `DOWNLOADER_API_BASE` ke host API tanpa Cloudflare. |
 | Klip selesai tapi URL `r2.dev` → **403** | Bucket R2 belum punya Public Access. Cloudflare → R2 → bucket → Settings → **Public access** → aktifkan *Public Development URL* (atau pasang custom domain). Tanpa itu sistem memakai presigned URL 7 hari (otomatis, sejak 13 Nov 2026). |
 | Instance GPU dobel / tagihan 2x | Sudah diperbaiki 13 Nov 2026: galat jaringan tidak dihitung "instance hilang", 404 butuh 5 konfirmasi, task `processing` tidak dibunuh, baris `destroyed` menghentikan supervisor, dan hapus instance toleran 404. Cek `System → Worker instances`: normalnya hanya 1 aktif per task. |
 | Unduhan sukses tapi transkripsi kosong | Video terunduh tanpa stream audio (fallback `b*`). Worker otomatis mengulang dengan format audio wajib; kalau tetap gagal → pesan task menyarankan unggah cookies. |

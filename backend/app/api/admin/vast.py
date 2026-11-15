@@ -1,4 +1,4 @@
-"""Admin API - panel operasional Vast.ai (config, env, billing, logs)."""
+"""Admin API - panel operasional Vast.ai (config, env, template, billing, logs)."""
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -18,6 +18,18 @@ router = APIRouter(dependencies=[Depends(get_current_admin)])
 class EnvSyncIn(BaseModel):
     keys: Optional[List[str]] = None
     dry_run: bool = False
+
+
+class TemplateCreateIn(BaseModel):
+    """Opsi pembuatan template worker (default = nilai konfigurasi yang aktif)."""
+
+    name: Optional[str] = None
+    image: Optional[str] = None
+    disk_space: Optional[int] = None
+    include_env: bool = True
+    sync_env_vars: bool = True
+    public: bool = False
+    activate: bool = True
 
 
 def _audit(
@@ -225,6 +237,66 @@ async def sync_worker_env(
             {"summary": result.get("summary")},
         )
         await db.commit()
+    return result
+
+
+@router.get("/template")
+async def read_worker_template():
+    """Status template worker: hash aktif, image, onstart, dan env yang dibekukan."""
+    return await vast_admin.worker_template_status()
+
+
+@router.post("/template/create")
+async def create_worker_template(
+    payload: TemplateCreateIn,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Buat template Vast.ai (image + env pipeline) lalu aktifkan untuk dispatch."""
+    try:
+        result = await vast_admin.create_worker_template(
+            name=payload.name,
+            image=payload.image,
+            disk_space=payload.disk_space,
+            include_env=payload.include_env,
+            sync_env_vars=payload.sync_env_vars,
+            public=payload.public,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    if payload.activate and result.get("template_hash"):
+        try:
+            await vast_config.save_vast_config(
+                db,
+                {
+                    "template_hash": result["template_hash"],
+                    "worker_image": result["image"],
+                    "worker_disk": result["disk_space"],
+                },
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        result["activated"] = True
+    else:
+        result["activated"] = False
+
+    _audit(
+        db,
+        request,
+        current_admin,
+        "vast_template_created",
+        {
+            "name": result.get("name"),
+            "template_hash": result.get("template_hash"),
+            "env_count": result.get("env_count"),
+            "activated": result.get("activated"),
+        },
+    )
+    await db.commit()
     return result
 
 
