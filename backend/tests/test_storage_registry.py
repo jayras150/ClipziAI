@@ -121,6 +121,37 @@ def test_url_presigned_dipakai_bila_bucket_privat(monkeypatch):
     assert "pub.example" not in url
 
 
+def test_object_key_from_url_hanya_untuk_storage_sendiri(monkeypatch):
+    from app.services import storage_registry as reg
+
+    resolved = reg.ResolvedStorage(
+        item={"id": "p1", "endpoint": "https://account.r2.cloudflarestorage.com"},
+        client=object(),
+        bucket="files",
+        public_domain="https://pub.example",
+        path_prefix="",
+    )
+    service = reg.StorageService()
+    monkeypatch.setattr(service, "_handle", lambda: (resolved.item, resolved))
+    assert service.object_key_from_url("https://pub.example/clips/a.srt") == "clips/a.srt"
+    assert (
+        service.object_key_from_url(
+            "https://account.r2.cloudflarestorage.com/files/clips/a.srt?sign=abc"
+        )
+        == "clips/a.srt"
+    )
+    assert service.object_key_from_url("https://evil.example/clips/a.srt") == ""
+
+
+def test_srt_tidak_termasuk_kategori_cleanup_otomatis():
+    from app.services.cleanup_manager import _TEMP_KINDS
+
+    assert "source" in _TEMP_KINDS
+    assert "audio" in _TEMP_KINDS
+    assert "temp" in _TEMP_KINDS
+    assert "subtitle" not in _TEMP_KINDS
+
+
 def test_public_url_reachable_false_saat_403(monkeypatch):
     from app.services import storage_registry as reg
 
@@ -139,6 +170,8 @@ def test_public_url_reachable_false_saat_403(monkeypatch):
     monkeypatch.setattr(reg.urllib.request, "urlopen", fake_urlopen)
     assert reg.public_url_reachable("https://pub.example/x") is False
 
+
+def test_get_storage_tidak_memuat_ulang_bila_sudah_terisi(monkeypatch):
     """Worker: `get_storage()` wajib lazy-load konfigurasi.
 
     Regresi: dulu worker tidak pernah memanggil `load_storage_config()` (hanya

@@ -2,9 +2,11 @@
 Cleanup cloud storage yang aman & idempotent.
 
 Aturan:
-  - Hanya `task_assets` kind source/audio/temp yang boleh dihapus.
+  - Hanya `task_assets` kind source/audio/temp yang boleh dihapus otomatis.
+  - SRT disimpan sebagai kind `subtitle` + protected; tidak pernah ikut sweep.
   - Klip hasil, thumbnail, dan aset berstatus protected TIDAK pernah dihapus.
   - File sumber dipertahankan bila clipping gagal (menunggu retry/TTL).
+  - Project hanya dibersihkan dari storage saat user menghapus project.
   - Scheduler menghapus sisa file yatim lebih tua dari TEMP_TTL_HOURS.
 """
 from __future__ import annotations
@@ -39,12 +41,14 @@ async def register_asset(
     storage_key: str,
     kind: str = "temp",
     size_bytes: Optional[int] = None,
+    protected: bool = False,
 ) -> TaskAsset:
     asset = TaskAsset(
         task_id=task_id,
         storage_key=storage_key,
         kind=kind,
         size_bytes=size_bytes,
+        protected=protected,
     )
     db.add(asset)
     await db.commit()

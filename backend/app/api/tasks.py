@@ -1,6 +1,7 @@
 """
 Task endpoints - Create, get, list, delete tasks
 """
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -13,6 +14,7 @@ from app.api.deps import get_db_session, get_current_user
 from app.models.user import User
 from app.models.task import Task, TaskStatus
 from app.models.clip import Clip
+from app.models.task_asset import TaskAsset
 from app.models.user_profile import UserProfile
 from app.schemas.task import (
     ComposeRequest,
@@ -25,6 +27,7 @@ from app.schemas.clip import ClipResponse
 from app.schemas.common import MessageResponse
 from app.services.vast_worker import destroy_task_instances, dispatch_mode, submit_task
 from app.services.download_errors import is_retryable, user_message_for
+from app.services.storage_registry import get_storage
 from app.services.viral import score_clip
 
 logger = logging.getLogger(__name__)
@@ -377,6 +380,45 @@ async def list_tasks(
     )
 
 
+async def _delete_project_storage(db: AsyncSession, task_id: UUID) -> dict:
+    """Hapus file project dari semua provider storage setelah user memilih delete.
+
+    SRT tetap disimpan selama project ada (protected), tetapi saat project
+    dihapus user, file klip/thumbnail/SRT/aset task ikut dibersihkan.
+    """
+    clip_rows = (
+        await db.execute(select(Clip).where(Clip.task_id == task_id))
+    ).scalars().all()
+    asset_rows = (
+        await db.execute(select(TaskAsset).where(TaskAsset.task_id == task_id))
+    ).scalars().all()
+
+    storage = get_storage()
+    keys: set[str] = set()
+    for clip in clip_rows:
+        for url in (clip.download_url, clip.subtitle_url, clip.thumbnail_url):
+            key = storage.object_key_from_url(url or "")
+            if key:
+                keys.add(key)
+    for asset in asset_rows:
+        if asset.storage_key and not asset.deleted_at:
+            keys.add(asset.storage_key)
+
+    deleted = 0
+    failed = 0
+    for key in sorted(keys):
+        try:
+            count = await asyncio.to_thread(storage.delete_everywhere, key)
+        except Exception as exc:
+            logger.warning("Gagal hapus project asset %s: %s", key, exc)
+            count = 0
+        if count:
+            deleted += 1
+        else:
+            failed += 1
+    return {"objects": len(keys), "deleted": deleted, "failed": failed}
+
+
 @router.delete("/{task_id}", response_model=MessageResponse)
 async def delete_task(
     task_id: UUID,
@@ -395,10 +437,20 @@ async def delete_task(
     if cleanup.get("errors"):
         logger.warning("Destroy instance task %s: %s", task_id, cleanup["errors"])
 
+    storage_cleanup = await _delete_project_storage(db, task_id)
+    if storage_cleanup.get("failed"):
+        logger.warning("Storage cleanup task %s: %s", task_id, storage_cleanup)
+
     await db.delete(task)
     await db.commit()
 
-    return MessageResponse(message="Task deleted successfully")
+    return MessageResponse(
+        message=(
+            "Task deleted successfully "
+            f"({storage_cleanup.get('deleted', 0)}/{storage_cleanup.get('objects', 0)} "
+            "files removed)"
+        )
+    )
 
 
 

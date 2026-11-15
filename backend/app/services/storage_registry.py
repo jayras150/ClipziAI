@@ -20,6 +20,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+from urllib.parse import unquote, urlparse
 
 import boto3
 from botocore.client import Config
@@ -532,6 +533,58 @@ class StorageService:
             return True
         except Exception:
             return False
+
+    def object_key_from_url(self, url: str) -> str:
+        """Ambil object key dari URL publik/presigned milik storage ini.
+
+        Return string kosong bila host bukan storage yang dikonfigurasi, supaya
+        menghapus project tidak pernah menyentuh objek eksternal.
+        """
+        text = str(url or "").strip()
+        if not text:
+            return ""
+        item, resolved = self._handle()
+        if not item or not resolved:
+            return ""
+        parsed = urlparse(text)
+        if not parsed.scheme or not parsed.netloc:
+            return ""
+        allowed_hosts = {
+            urlparse(resolved.public_domain).netloc.lower(),
+            urlparse(str(item.get("endpoint") or "")).netloc.lower(),
+        }
+        if parsed.netloc.lower() not in {host for host in allowed_hosts if host}:
+            return ""
+        key = unquote(parsed.path).lstrip("/")
+        bucket = str(resolved.bucket or "").strip("/")
+        if bucket and key.startswith(bucket + "/"):
+            key = key[len(bucket) + 1:]
+        prefix = str(resolved.path_prefix or "").strip("/")
+        if prefix and key.startswith(prefix + "/"):
+            key = key[len(prefix) + 1:]
+        return key
+
+    def delete_everywhere(self, object_key: str) -> int:
+        """Hapus key dari primary + semua mirror; return jumlah provider yang sukses."""
+        deleted = 0
+        for item in self.items:
+            if not item.get("enabled", True):
+                continue
+            try:
+                resolved = self._resolved(item)
+                resolved.client.delete_object(
+                    Bucket=resolved.bucket,
+                    Key=self._key(resolved, object_key),
+                )
+                deleted += 1
+            except Exception as exc:
+                logger.warning(
+                    "Gagal hapus %s dari storage %s: %s",
+                    object_key,
+                    item.get("name") or item.get("id"),
+                    exc,
+                )
+        return deleted
 
     def get_presigned_url(self, object_key: str, expiration: int = 3600) -> str:
         item, resolved = self._handle()

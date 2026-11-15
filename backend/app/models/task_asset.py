@@ -18,7 +18,7 @@ class TaskAsset(Base):
         PG_UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"), index=True
     )
     storage_key: Mapped[str] = mapped_column(String(500))
-    kind: Mapped[str] = mapped_column(String(20), default="temp", index=True)  # source/audio/temp
+    kind: Mapped[str] = mapped_column(String(20), default="temp", index=True)  # source/audio/temp/subtitle
     size_bytes: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     protected: Mapped[bool] = mapped_column(Boolean, default=False)
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

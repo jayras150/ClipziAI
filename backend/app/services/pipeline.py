@@ -1018,6 +1018,24 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
                             subtitle_url = storage.upload_bytes(
                                 Path(srt_path).read_bytes(), srt_key, "text/plain"
                             )
+                            try:
+                                from app.services.cleanup_manager import register_asset
+
+                                await register_asset(
+                                    db,
+                                    task.id,
+                                    srt_key,
+                                    kind="subtitle",
+                                    size_bytes=Path(srt_path).stat().st_size,
+                                    protected=True,
+                                )
+                            except Exception as exc:
+                                logger.warning(
+                                    "Gagal mendaftarkan SRT protected (task %s klip %s): %s",
+                                    task.id,
+                                    index,
+                                    exc,
+                                )
                         except Exception as exc:
                             logger.warning(
                                 "Upload SRT gagal (task %s klip %s): %s", task.id, index, exc
