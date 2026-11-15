@@ -127,6 +127,7 @@ export interface ClipEditStatusData {
   thumbnail_url?: string | null
 }
 
+/** URL sementara untuk upload langsung ke storage (browser → R2/S3). */
 export interface PresignUploadData {
   upload_url: string
   public_url: string

@@ -163,8 +163,8 @@ async def read_worker_env():
 
 @router.get("/env/export", response_class=PlainTextResponse)
 async def export_worker_env(
+    request: Request,
     reveal: bool = False,
-    request: Request = None,
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db_session),
 ):
@@ -184,8 +184,8 @@ async def export_worker_env(
 
 @router.get("/env/text")
 async def export_worker_env_json(
+    request: Request,
     reveal: bool = False,
-    request: Request = None,
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db_session),
 ):

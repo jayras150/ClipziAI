@@ -172,8 +172,8 @@ export function BrandMark({ size = 32 }: { size?: number }) {
   const { branding } = useBranding()
   const logo = withVersion(branding.logo_url, branding.version)
   if (logo) {
-    // eslint-disable-next-line @next/next/no-img-element
     return (
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={logo}
         alt={branding.app_name || "logo"}

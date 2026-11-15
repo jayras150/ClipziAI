@@ -158,10 +158,14 @@ def normalize_vast(raw: Optional[dict]) -> Dict[str, Any]:
         ("max_price_multiplier", 1.0, 10.0),
         ("target_util", 0.1, 1.0),
     ):
-        try:
-            number = float(merged.get(field))
-        except (TypeError, ValueError):
+        value = merged.get(field)
+        if value is None:
             number = float(DEFAULT_VAST[field])
+        else:
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                number = float(DEFAULT_VAST[field])
         merged[field] = round(max(low, min(high, number)), 3)
 
     mode = str(merged.get("dispatch_mode") or "").strip().lower()

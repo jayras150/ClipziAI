@@ -366,6 +366,11 @@ class YouTubeService:
             if video_path:
                 source_path = video_path
             else:
+                if not source_url:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="No video URL was provided for the upload.",
+                    )
                 fd, source_path = tempfile.mkstemp(prefix="yt-upload-", suffix=".mp4")
                 os.close(fd)
                 temp_path = source_path

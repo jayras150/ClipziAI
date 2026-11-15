@@ -1,5 +1,12 @@
-"use client"
-
+/**
+ * Popup satu klip: player video + metadata YouTube yang dibuat AI dari transkrip
+ * Whispers (judul, deskripsi, tag) + download + upload ke YouTube.
+ *
+ * Catatan: file ini SENGAJA tanpa directive `"use client"` karena hanya
+ * di-import oleh dashboard yang sudah merupakan client boundary. Dengan begitu
+ * callback props (onClose/onUpdated/onConnectYouTube) tidak dianggap sebagai
+ * props lintas Server→Client yang wajib serializable.
+ */
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import {

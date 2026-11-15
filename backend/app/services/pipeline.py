@@ -169,6 +169,14 @@ def _slice_segments(
     return sliced
 
 
+def _as_float(value: Any) -> Optional[float]:
+    """Konversi nilai JSON ke float tanpa melempar error tipe."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _normalise_segments(raw: Any) -> List[Dict[str, Any]]:
     """Validasi ``editing_options.segments`` menjadi daftar segmen aman.
 
@@ -182,10 +190,9 @@ def _normalise_segments(raw: Any) -> List[Dict[str, Any]]:
     for item in raw[:12]:
         if not isinstance(item, dict):
             continue
-        try:
-            start = float(item.get("start"))
-            end = float(item.get("end"))
-        except (TypeError, ValueError):
+        start = _as_float(item.get("start"))
+        end = _as_float(item.get("end"))
+        if start is None or end is None:
             continue
         if start < 0 or end <= start:
             continue

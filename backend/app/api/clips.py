@@ -306,8 +306,8 @@ async def get_clip_detail(
     """Detail satu klip (video, metadata AI, transkrip) untuk popup di dashboard."""
     clip, _task = await _load_clip(db, clip_id, current_user.id)
     return ClipDetailResponse(
-        id=str(clip.id),
-        task_id=str(clip.task_id),
+        id=clip.id,
+        task_id=clip.task_id,
         clip_index=clip.clip_index,
         start_time=clip.start_time,
         end_time=clip.end_time,
