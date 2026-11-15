@@ -23,6 +23,7 @@ from typing import Any, Dict, Mapping, Optional, cast
 
 from app.core.config import get_settings
 from app.services.download_errors import (
+    CATEGORY_BOT_CHECK,
     CATEGORY_COOKIES_MISSING,
     DownloadError,
     classify_download_error,
@@ -41,6 +42,10 @@ SUPPORTED_DOMAINS = (
     "facebook.com",
     "vimeo.com",
 )
+
+
+# Batas atas auto-format: video tidak lebih dari 1080p walau sumber 4K.
+AUTO_MAX_HEIGHT = 1080
 
 
 def format_ladder(height: int) -> list[str]:
@@ -459,6 +464,15 @@ class VideoDownloader:
             errors.append(f"{label} -> tidak ada file hasil unduhan")
             self._cleanup_partial(output_path)
 
+        # Fallback terakhir: baca daftar format lalu unduh otomatis yang tertinggi
+        # (maks AUTO_MAX_HEIGHT) - persis alur "--list-formats lalu pilih".
+        auto_path, auto_reason = await loop.run_in_executor(
+            None, self._auto_download, url, base_opts, output_path
+        )
+        if auto_path:
+            return auto_path
+        errors.append("auto-format - " + str(auto_reason))
+
         formats = self._describe_formats(url, base_opts)
         attempts_text = " || ".join(errors[-6:])
         hint = ""
@@ -469,6 +483,8 @@ class VideoDownloader:
                 "Unggah cookies YouTube di Settings > YouTube Cookies, lalu ulangi task. "
             )
         category = classify_download_error(attempts_text)
+        if "storyboard" in str(auto_reason or "").lower():
+            category = CATEGORY_BOT_CHECK
         message = (
             "yt-dlp gagal mengunduh setelah semua format/client dicoba | "
             f"yt-dlp={_ytdlp_version()} | formats_tersedia={formats}"
@@ -521,12 +537,151 @@ class VideoDownloader:
             return str(path)
         return None
 
+    def _probe_formats_sync(self, url, base_opts):
+        """Baca daftar format (setara `yt-dlp --list-formats`) DENGAN cookies."""
+        import yt_dlp
+
+        opts = dict(base_opts)
+        opts.update(
+            {
+                "quiet": True,
+                "no_warnings": True,
+                "skip_download": True,
+                "noplaylist": True,
+            }
+        )
+        opts.pop("format", None)
+        with yt_dlp.YoutubeDL(cast(Any, opts)) as ydl:
+            info = ydl.extract_info(url, download=False) or {}
+        return info, list(info.get("formats") or [])
+
+    def _pick_auto_format(self, formats, cap=AUTO_MAX_HEIGHT):
+        """Pilih kandidat format terbaik (tertinggi, maksimal cap) dari daftar yt-dlp."""
+
+        def height(fmt):
+            try:
+                return int(fmt.get("height") or 0)
+            except (TypeError, ValueError):
+                return 0
+
+        def tbr(fmt):
+            try:
+                return float(fmt.get("tbr") or 0)
+            except (TypeError, ValueError):
+                return 0.0
+
+        def has_video(fmt):
+            return str(fmt.get("vcodec") or "none") not in ("none", "")
+
+        def has_audio(fmt):
+            return str(fmt.get("acodec") or "none") not in ("none", "")
+
+        videos = [fmt for fmt in formats if has_video(fmt) and height(fmt)]
+        videos = [fmt for fmt in videos if height(fmt) <= cap] or videos
+        audios = [fmt for fmt in formats if not has_video(fmt) and has_audio(fmt)]
+        if not videos:
+            return [], []
+
+        pref_ext = {"mp4": 3, "webm": 2}
+        pref_vcodec = {"avc1": 4, "h264": 4, "vp9": 3, "vp09": 3, "av01": 1}
+
+        def video_key(fmt):
+            codec = str(fmt.get("vcodec") or "").split(".")[0]
+            return (
+                height(fmt),
+                1 if has_audio(fmt) else 0,
+                pref_vcodec.get(codec, 0),
+                pref_ext.get(str(fmt.get("ext") or ""), 0),
+                tbr(fmt),
+            )
+
+        videos.sort(key=video_key, reverse=True)
+        audios.sort(
+            key=lambda fmt: (pref_ext.get(str(fmt.get("ext") or ""), 0), tbr(fmt)),
+            reverse=True,
+        )
+
+        candidates = []
+        best = videos[0]
+        if has_audio(best):
+            candidates.append(str(best["format_id"]))
+        if audios:
+            audio_id = str(audios[0]["format_id"])
+            for video in videos[:4]:
+                candidates.append(str(video["format_id"]) + "+" + audio_id)
+        candidates.append("best[height<=" + str(cap) + "]")
+        candidates.append("best[ext=mp4]")
+        candidates.append("18")
+        candidates.append("best")
+
+        ordered = []
+        for candidate in candidates:
+            if candidate not in ordered:
+                ordered.append(candidate)
+        return ordered, videos
+
+    def _auto_download(self, url, base_opts, output_path, cap=AUTO_MAX_HEIGHT):
+        """Fallback terakhir: baca daftar format lalu unduh otomatis yang tertinggi."""
+        try:
+            info, formats = self._probe_formats_sync(url, base_opts)
+        except Exception as exc:
+            return None, "probe format gagal (" + type(exc).__name__ + ": " + str(exc)[:120] + ")"
+
+        candidates, videos = self._pick_auto_format(formats, cap)
+        summary = " | ".join(
+            str(fmt.get("format_id"))
+            + " ext=" + str(fmt.get("ext"))
+            + " h=" + str(fmt.get("height"))
+            + " v=" + str(fmt.get("vcodec"))
+            + " a=" + str(fmt.get("acodec"))
+            for fmt in (formats or [])[:20]
+        )
+        logger.warning(
+            "auto-format: %s format terdeteksi (judul=%s), kandidat=%s | %s",
+            len(formats or []),
+            str((info or {}).get("title"))[:60],
+            candidates[:4],
+            summary,
+        )
+        if not videos:
+            return None, (
+                "tidak ada format video (YouTube hanya memberi storyboard / bot-check) "
+                "| formats_tersedia=" + str(len(formats or []))
+            )
+
+        for selector in candidates[:5]:
+            ydl_opts = dict(base_opts)
+            ydl_opts.update(
+                {
+                    "format": selector,
+                    "merge_output_format": "mp4",
+                    "outtmpl": output_path + ".%(ext)s",
+                    "retries": 2,
+                    "fragment_retries": 2,
+                    "quiet": True,
+                    "no_warnings": True,
+                }
+            )
+            try:
+                self._download(url, ydl_opts)
+            except Exception as exc:
+                first = (str(exc).splitlines() or [""])[0][:160]
+                logger.warning("auto-format gagal [%s]: %s", selector, first)
+                self._cleanup_partial(output_path)
+                continue
+            found = self._locate_download(output_path)
+            if found:
+                logger.info("unduhan berhasil via auto-format [%s]", selector)
+                return found, ""
+            self._cleanup_partial(output_path)
+        return None, "semua kandidat auto-format gagal"
+
     def _describe_formats(self, url: str, ydl_opts: dict) -> str:
         """Ringkas daftar format yang tersedia (untuk pesan error + log)."""
         import yt_dlp
 
-        opts = {key: value for key, value in ydl_opts.items() if key != "cookiefile"}
-        opts = dict(opts)
+        # Cookies HARUS ikut: tanpa cookies daftar format bisa hanya storyboard.
+        opts = dict(ydl_opts)
         opts.update({"quiet": True, "no_warnings": True, "skip_download": True})
         opts.pop("format", None)
         try:
