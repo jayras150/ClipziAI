@@ -99,7 +99,6 @@ def download_model(repo: str, source: Path) -> None:
 def convert_to_ct2(source: Path, output: Path, quantization: str) -> None:
     if output.exists():
         shutil.rmtree(output)
-    output.mkdir(parents=True, exist_ok=True)
     converter = shutil.which("ct2-transformers-converter")
     if converter:
         command = [
@@ -110,6 +109,7 @@ def convert_to_ct2(source: Path, output: Path, quantization: str) -> None:
             str(output),
             "--quantization",
             quantization,
+            "--force",
         ]
     else:
         command = [
@@ -122,9 +122,17 @@ def convert_to_ct2(source: Path, output: Path, quantization: str) -> None:
             str(output),
             "--quantization",
             quantization,
+            "--force",
         ]
     print("[convert] " + " ".join(command))
-    subprocess.run(command, check=True)
+    try:
+        result = subprocess.run(command, check=True, capture_output=True, text=True)
+        if result.stdout:
+            print(result.stdout[-2000:])
+    except subprocess.CalledProcessError as exc:
+        print("[convert] STDOUT:\n", (exc.stdout or "")[-3000:])
+        print("[convert] STDERR:\n", (exc.stderr or "")[-5000:])
+        raise
     for name in COPY_EXTRA:
         candidate = source / name
         if candidate.exists() and not (output / name).exists():
