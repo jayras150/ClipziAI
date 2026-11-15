@@ -28,6 +28,9 @@ from app.models.worker_instance import WorkerInstance
 
 router = APIRouter(dependencies=[Depends(get_current_admin)])
 
+# Uptime proses API (dipakai tab System: "backend sudah jalan X").
+_API_STARTED = time.monotonic()
+
 # Status yang dianggap "gagal" untuk menghitung error rate.
 FAILED_STATUSES = (TaskStatus.ERROR.value, TaskStatus.CANCELLED.value)
 
@@ -274,6 +277,7 @@ async def system_host(db: AsyncSession = Depends(get_db_session)):
     5 detik; endpoint ini mengembalikan snapshot terbaru + histori ringkas
     untuk grafik, plus antrean task agar admin tahu beban saat itu.
     """
+    from app.core.config import get_settings
     from app.services import host_metrics as store
 
     data = store.snapshot()
@@ -291,6 +295,9 @@ async def system_host(db: AsyncSession = Depends(get_db_session)):
 
     return {
         **data,
+        "services": store.services_from((data.get("latest") or {}).get("containers") or []),
+        "api_uptime_seconds": int(max(0, time.monotonic() - _API_STARTED)),
+        "api_version": get_settings().APP_VERSION,
         "queue": {"queued": int(queued), "processing": int(processing)},
         "workers_active": int(workers_active),
     }

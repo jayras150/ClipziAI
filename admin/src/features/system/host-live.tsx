@@ -23,9 +23,32 @@ type ContainerRow = {
   name: string;
   state: string;
   status: string;
+  image?: string | null;
+  health?: string | null;
+  started_at?: string | null;
+  uptime_seconds?: number | null;
+  restarts?: number;
   cpu_percent: number | null;
   mem_usage: string | null;
   mem_percent: number | null;
+};
+
+type ServiceRow = {
+  key: string;
+  label: string;
+  container: string;
+  found: boolean;
+  state: string;
+  status: string | null;
+  health: string | null;
+  image: string | null;
+  started_at: string | null;
+  uptime_seconds: number | null;
+  restarts: number;
+  cpu_percent: number | null;
+  mem_usage: string | null;
+  mem_percent: number | null;
+  healthy: boolean;
 };
 
 type HostPayload = {
@@ -44,6 +67,9 @@ type HostPayload = {
     docker?: { total: number; running: number; disk_usage?: string[] };
   } | null;
   history?: HistoryPoint[];
+  services?: ServiceRow[];
+  api_uptime_seconds?: number;
+  api_version?: string;
   queue?: { queued: number; processing: number };
   workers_active?: number;
   error?: string;
@@ -98,6 +124,26 @@ const TONE_BAR: Record<'ok' | 'warn' | 'bad', string> = {
   warn: 'bg-amber-500',
   bad: 'bg-destructive'
 };
+
+const TONE_DOT: Record<'ok' | 'warn' | 'bad', string> = {
+  ok: 'bg-emerald-500',
+  warn: 'bg-amber-500',
+  bad: 'bg-destructive'
+};
+
+/** Nama image pendek: `sujinwo555/clipzi-backend:api` -> `clipzi-backend:api`. */
+function shortImage(image?: string | null): string {
+  if (!image) return '-';
+  const parts = image.split('/');
+  return parts[parts.length - 1];
+}
+
+function serviceTone(row: ServiceRow): 'ok' | 'warn' | 'bad' {
+  if (!row.found) return 'bad';
+  if (row.healthy) return 'ok';
+  if (row.state === 'running') return 'warn';
+  return 'bad';
+}
 
 function MetricCard({
   label,
@@ -207,8 +253,10 @@ export function HostLive() {
           {data.stale ? 'agent stale' : 'live'}
         </Badge>
         <span className='text-muted-foreground text-xs'>
-          {latest.hostname} · update {data.age_seconds}s lalu · {latest.cpu.cores} core · uptime{' '}
+          {latest.hostname} · update {data.age_seconds}s lalu · {latest.cpu.cores} core · host up{' '}
           {uptime(latest.uptime_seconds)}
+          {data.api_uptime_seconds ? ` · API up ${uptime(data.api_uptime_seconds)}` : ''}
+          {data.api_version ? ` (v${data.api_version})` : ''}
         </span>
         <Button size='sm' variant='ghost' className='ml-auto gap-2' onClick={() => void load()}>
           {loading ? <ClipzySpinner size='xs' variant='ring' /> : null}
@@ -246,6 +294,54 @@ export function HostLive() {
           }
         />
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Status layanan</CardTitle>
+          <CardDescription>
+            Backend, frontend, admin, dan Caddy — diperbarui tiap 3 detik dari agent host
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className='grid gap-2 sm:grid-cols-2 xl:grid-cols-4'>
+            {(data.services || []).map((row) => {
+              const level = serviceTone(row);
+              return (
+                <div key={row.key} className='rounded-lg border p-3'>
+                  <div className='flex items-center gap-2'>
+                    <span
+                      className={`size-2 shrink-0 rounded-full ${TONE_DOT[level]}`}
+                      aria-hidden
+                    />
+                    <span className='truncate text-sm font-medium'>{row.label}</span>
+                    <Badge variant='outline' className='ml-auto text-[10px]'>
+                      {row.found ? row.state : 'tidak ada'}
+                    </Badge>
+                  </div>
+                  <p className='text-muted-foreground mt-1 text-xs'>
+                    {row.found ? `up ${uptime(row.uptime_seconds)}` : 'container tidak ditemukan'}
+                    {' · '}
+                    <span className='font-mono text-[11px]'>{shortImage(row.image)}</span>
+                  </p>
+                  <div className='text-muted-foreground mt-1 flex flex-wrap gap-x-2 text-[11px]'>
+                    {row.health ? <span>health {row.health}</span> : null}
+                    {row.cpu_percent !== null && row.cpu_percent !== undefined ? (
+                      <span>cpu {row.cpu_percent}%</span>
+                    ) : null}
+                    {row.mem_usage ? <span>ram {row.mem_usage}</span> : null}
+                    {row.restarts ? <span>restart {row.restarts}×</span> : null}
+                  </div>
+                </div>
+              );
+            })}
+            {!(data.services || []).length ? (
+              <p className='text-muted-foreground text-xs'>
+                Belum ada data container dari agent host.
+              </p>
+            ) : null}
+          </div>
+        </CardContent>
+      </Card>
 
       <div className='grid gap-4 lg:grid-cols-7'>
         <Card className='lg:col-span-4'>
@@ -294,6 +390,7 @@ export function HostLive() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Nama</TableHead>
+                  <TableHead>Uptime</TableHead>
                   <TableHead>CPU</TableHead>
                   <TableHead>RAM</TableHead>
                   <TableHead>Status</TableHead>
@@ -303,7 +400,15 @@ export function HostLive() {
                 {latest.containers.length ? (
                   latest.containers.map((row) => (
                     <TableRow key={row.name}>
-                      <TableCell className='text-xs font-medium'>{row.name}</TableCell>
+                      <TableCell className='text-xs font-medium'>
+                        {row.name}
+                        <div className='text-muted-foreground font-mono text-[10px]'>
+                          {shortImage(row.image)}
+                        </div>
+                      </TableCell>
+                      <TableCell className='text-xs whitespace-nowrap tabular-nums'>
+                        {row.uptime_seconds ? uptime(row.uptime_seconds) : '-'}
+                      </TableCell>
                       <TableCell className='text-xs tabular-nums'>
                         {row.cpu_percent === null ? '-' : `${row.cpu_percent}%`}
                       </TableCell>
@@ -311,13 +416,14 @@ export function HostLive() {
                       <TableCell>
                         <Badge variant={row.state === 'running' ? 'secondary' : 'outline'}>
                           {row.state}
+                          {row.health ? ` · ${row.health}` : ''}
                         </Badge>
                       </TableCell>
                     </TableRow>
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={4} className='text-muted-foreground text-center'>
+                    <TableCell colSpan={5} className='text-muted-foreground text-center'>
                       Tidak ada container.
                     </TableCell>
                   </TableRow>

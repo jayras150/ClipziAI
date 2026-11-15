@@ -16,6 +16,14 @@ from typing import Any, Deque, Dict, Optional
 MAX_SAMPLES = 240
 _STALE_SECONDS = 20
 
+# Service inti yang statusnya selalu ditampilkan di tab System (nama container).
+SERVICE_DEFS = (
+    ("backend", "Backend API", "clipzi-api"),
+    ("frontend", "Frontend web", "clipzi-web"),
+    ("admin", "Admin panel", "clipzi-admin"),
+    ("caddy", "Reverse proxy (Caddy)", "clipzi-caddy"),
+)
+
 _samples: Deque[Dict[str, Any]] = deque(maxlen=MAX_SAMPLES)
 
 
@@ -71,9 +79,68 @@ def record(payload: Dict[str, Any]) -> Dict[str, Any]:
         "network": {**network, "rx_rate": rx_rate, "tx_rate": tx_rate},
         "containers": payload.get("containers") or [],
         "docker": payload.get("docker") or {},
+        "agent": payload.get("agent") or {},
     }
     _samples.append(sample)
     return sample
+
+
+def services_from(containers: Any) -> list[Dict[str, Any]]:
+    """Ringkas status service inti (backend/frontend/admin/caddy) dari container.
+
+    Dipakai tab System supaya admin langsung melihat "backend up 3 hari",
+    "caddy healthy", dsb. tanpa membaca tabel container mentah.
+    """
+    rows = [row for row in (containers or []) if isinstance(row, dict)]
+    by_name = {str(row.get("name") or "").strip(): row for row in rows}
+    result: list[Dict[str, Any]] = []
+    for key, label, container in SERVICE_DEFS:
+        row = by_name.get(container)
+        if not row:
+            result.append(
+                {
+                    "key": key,
+                    "label": label,
+                    "container": container,
+                    "found": False,
+                    "state": "missing",
+                    "status": None,
+                    "health": None,
+                    "image": None,
+                    "started_at": None,
+                    "uptime_seconds": None,
+                    "restarts": 0,
+                    "cpu_percent": None,
+                    "mem_usage": None,
+                    "mem_percent": None,
+                    "healthy": False,
+                }
+            )
+            continue
+        state = str(row.get("state") or "").strip().lower()
+        health = str(row.get("health") or "").strip().lower()
+        uptime = row.get("uptime_seconds")
+        result.append(
+            {
+                "key": key,
+                "label": label,
+                "container": container,
+                "found": True,
+                "state": state,
+                "status": row.get("status"),
+                "health": health or None,
+                "image": row.get("image"),
+                "started_at": row.get("started_at"),
+                "uptime_seconds": int(uptime) if isinstance(uptime, (int, float)) else None,
+                "restarts": int(row.get("restarts") or 0),
+                "cpu_percent": row.get("cpu_percent"),
+                "mem_usage": row.get("mem_usage"),
+                "mem_percent": row.get("mem_percent"),
+                # hijau hanya jika benar-benar berjalan dan (bila ada) healthy
+                "healthy": state == "running" and health in ("", "healthy"),
+            }
+        )
+    return result
 
 
 def latest() -> Optional[Dict[str, Any]]:

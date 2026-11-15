@@ -29,6 +29,7 @@ ENV_FILE = Path(os.environ.get("ENV_FILE", "/opt/clipzi/app/backend/.env"))
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://127.0.0.1:8000")
 INTERVAL = float(os.environ.get("INTERVAL", "5"))
 SAMPLE_SECONDS = 1.0
+AGENT_STARTED = time.time()
 
 
 def log(message: str) -> None:
@@ -152,13 +153,63 @@ def _num(text: str) -> float:
     return float(match.group()) if match else 0.0
 
 
+def parse_started(text: str) -> float | None:
+    """Ubah `State.StartedAt` docker (RFC3339, nanodetik) jadi epoch detik."""
+    value = (text or "").strip()
+    if not value or value.startswith("0001-01-01"):
+        return None
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    # Python hanya menerima maksimal 6 digit pecahan detik.
+    match = re.match(r"^(.*?)(?:\.(\d+))?([+-]\d{2}:\d{2})$", value)
+    if match:
+        head, frac, tz = match.groups()
+        value = f"{head}.{frac[:6]}{tz}" if frac else f"{head}{tz}"
+    try:
+        from datetime import datetime
+
+        return datetime.fromisoformat(value).timestamp()
+    except ValueError:
+        return None
+
+
+def read_container_details(names: list[str]) -> dict[str, dict]:
+    """Detail container (image, state, uptime, health, restart) via docker inspect."""
+    if not names:
+        return {}
+    fmt = (
+        "{{.Name}}|{{.Config.Image}}|{{.State.Status}}|{{.State.StartedAt}}|"
+        "{{if .State.Health}}{{.State.Health.Status}}{{else}}-{{end}}|{{.RestartCount}}"
+    )
+    output = run(["docker", "inspect", "--format", fmt, *names], timeout=15.0)
+    details: dict[str, dict] = {}
+    now = time.time()
+    for line in output.splitlines():
+        parts = line.split("|")
+        if len(parts) != 6:
+            continue
+        name = parts[0].lstrip("/")
+        started_ts = parse_started(parts[3])
+        details[name] = {
+            "image": parts[1] or None,
+            "state": parts[2] or None,
+            "started_at": parts[3] if started_ts else None,
+            "uptime_seconds": int(max(0, now - started_ts)) if started_ts else None,
+            "health": None if parts[4] in ("", "-") else parts[4],
+            "restarts": int(parts[5]) if parts[5].strip().isdigit() else 0,
+        }
+    return details
+
+
 def read_containers() -> tuple[list[dict], dict]:
     """Daftar container + CPU/RAM saat ini (docker stats sekali jalan)."""
     status_rows: dict[str, str] = {}
-    for line in run(["docker", "ps", "-a", "--format", "{{.Names}}|{{.State}}|{{.Status}}"]).splitlines():
+    for line in run(
+        ["docker", "ps", "-a", "--format", "{{.Names}}|{{.State}}|{{.Status}}|{{.Image}}"]
+    ).splitlines():
         parts = line.split("|")
-        if len(parts) == 3:
-            status_rows[parts[0]] = f"{parts[1]}|{parts[2]}"
+        if len(parts) == 4:
+            status_rows[parts[0]] = f"{parts[1]}|{parts[2]}|{parts[3]}"
 
     containers: list[dict] = []
     stats_output = run(
@@ -175,13 +226,15 @@ def read_containers() -> tuple[list[dict], dict]:
         parts = line.split("|")
         if len(parts) != 4:
             continue
-        state = status_rows.get(parts[0], "unknown|")
-        state_name, _, status_text = state.partition("|")
+        state = status_rows.get(parts[0], "unknown||")
+        state_name, _, rest = state.partition("|")
+        status_text, _, image = rest.partition("|")
         containers.append(
             {
                 "name": parts[0],
                 "state": state_name,
                 "status": status_text,
+                "image": image or None,
                 "cpu_percent": _num(parts[1]),
                 "mem_usage": parts[2],
                 "mem_percent": _num(parts[3]),
@@ -192,17 +245,38 @@ def read_containers() -> tuple[list[dict], dict]:
     for name, state in status_rows.items():
         if name in known:
             continue
-        state_name, _, status_text = state.partition("|")
+        state_name, _, rest = state.partition("|")
+        status_text, _, image = rest.partition("|")
         containers.append(
             {
                 "name": name,
                 "state": state_name,
                 "status": status_text,
+                "image": image or None,
                 "cpu_percent": None,
                 "mem_usage": None,
                 "mem_percent": None,
             }
         )
+
+    # Detail: image pasti, state, uptime (StartedAt), health, jumlah restart.
+    details = read_container_details([row["name"] for row in containers])
+    for row in containers:
+        found = details.get(row["name"])
+        if not found:
+            row.setdefault("started_at", None)
+            row.setdefault("uptime_seconds", None)
+            row.setdefault("health", None)
+            row.setdefault("restarts", 0)
+            continue
+        if found.get("image"):
+            row["image"] = found["image"]
+        if found.get("state"):
+            row["state"] = found["state"]
+        row["started_at"] = found.get("started_at")
+        row["uptime_seconds"] = found.get("uptime_seconds")
+        row["health"] = found.get("health")
+        row["restarts"] = found.get("restarts") or 0
 
     docker_info = run(["docker", "system", "df", "--format", "{{.Type}} {{.Size}} {{.Reclaimable}}"])
     return containers, {
@@ -217,6 +291,11 @@ def collect() -> dict:
     return {
         "ts": time.time(),
         "hostname": socket.gethostname(),
+        "agent": {
+            "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(AGENT_STARTED)),
+            "uptime_seconds": int(max(0, time.time() - AGENT_STARTED)),
+            "interval_seconds": INTERVAL,
+        },
         "cpu": read_cpu(),
         "memory": read_memory(),
         "disk": read_disk(),
