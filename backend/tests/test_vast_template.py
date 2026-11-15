@@ -98,7 +98,7 @@ def test_create_worker_template_calls_sdk_and_syncs_env(monkeypatch):
     monkeypatch.setattr(vast_admin, "_client", lambda: client)
     monkeypatch.setattr(vast_admin, "sync_env_to_vast", fake_sync)
 
-    result = asyncio.run(vast_admin.create_worker_template())
+    result = asyncio.run(vast_admin.create_worker_template(include_env=True))
 
     assert result["ok"] is True
     assert result["template_hash"] == "hash-abc"
@@ -137,6 +137,32 @@ def test_create_worker_template_without_env_only_docker_options(monkeypatch):
     assert result["env_included"] is False
     assert result["env_sync"]["skipped"] is True
     assert client.created["env"] == "-p 8000:8000"
+
+
+def test_create_worker_template_default_tanpa_env(monkeypatch):
+    """Default: env TIDAK dibekukan agar env per-task (CLIPZI_TASK_ID) menang."""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "VAST_WORKER_IMAGE", "user/clipzi:worker", raising=False)
+    monkeypatch.setattr(
+        vast_admin,
+        "build_worker_env",
+        lambda task_id=None: {"CLIPZI_ROLE": "worker", "DATABASE_URL": "koneksi"},
+    )
+
+    class FakeClient:
+        def create_template(self, **kwargs):
+            self.created = kwargs
+            return {"success": True, "template": {"hash_id": "hash-default"}}
+
+    client = FakeClient()
+    monkeypatch.setattr(vast_admin, "_client", lambda: client)
+
+    result = asyncio.run(vast_admin.create_worker_template(sync_env_vars=False))
+
+    assert result["env_included"] is False
+    assert result["env_count"] == 0
+    assert client.created["env"] == "-p 8000:8000"
+    assert client.created["onstart_cmd"] == "/app/deployments/pipeline_onstart.sh"
 
 
 def test_create_worker_template_falls_back_to_search(monkeypatch):

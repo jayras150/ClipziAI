@@ -26,7 +26,8 @@ class TemplateCreateIn(BaseModel):
     name: Optional[str] = None
     image: Optional[str] = None
     disk_space: Optional[int] = None
-    include_env: bool = True
+    # Env per-task harus menang saat instance dibuat dari template_hash.
+    include_env: bool = False
     sync_env_vars: bool = True
     public: bool = False
     activate: bool = True

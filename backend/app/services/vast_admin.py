@@ -616,15 +616,16 @@ async def create_worker_template(
     name: Optional[str] = None,
     image: Optional[str] = None,
     disk_space: Optional[int] = None,
-    include_env: bool = True,
+    include_env: bool = False,
     sync_env_vars: bool = True,
     public: bool = False,
 ) -> Dict[str, Any]:
-    """Buat template Vast.ai dari image worker + env pipeline (sekali klik).
+    """Buat template Vast.ai dari image worker + onstart pipeline (sekali klik).
 
-    Env diambil dari `build_worker_env()` — sumber yang sama dengan dispatch
-    instance — jadi template selalu cocok dengan kebutuhan pipeline
-    (DATABASE_URL, ENCRYPTION_KEY, SECRET_KEY, token callback, storage, dll.).
+    Env pipeline TIDAK dibekukan di template secara default: saat instance dibuat
+    dari `template_hash`, env per-task (`CLIPZI_TASK_ID`, DATABASE_URL, dll.) yang
+    dikirim `create_instance` harus menang. Env tetap tersimpan di akun Vast lewat
+    `sync_env_vars` (Environment Variables) sehingga tidak hilang.
     """
     settings = get_settings()
     client = _client()

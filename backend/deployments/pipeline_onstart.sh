@@ -12,9 +12,57 @@
 # =============================================================================
 set -eu
 
-if [ -z "${CLIPZI_TASK_ID:-}" ]; then
-    echo "[onstart] CLIPZI_TASK_ID kosong; tidak ada yang dikerjakan" >&2
+# -----------------------------------------------------------------------------
+# Diagnostik & validasi task id
+#
+# PENTING: kalau CLIPZI_TASK_ID kosong, jangan mati tanpa jejak. Instance dari
+# template (dibuat manual di dashboard Vast) memang tidak punya task id; dulu
+# script keluar exit 2 sehingga instance tampak "hidup" dengan CPU/GPU 0% dan
+# admin bingung. Sekarang semua kondisi dicetak ke log instance.
+# -----------------------------------------------------------------------------
+log() { echo "[onstart] $*"; }
+
+TASK_ID="${CLIPZI_TASK_ID:-}"
+log "start task=${TASK_ID:-<kosong>} role=${CLIPZI_ROLE:-} at=$(date -u +%FT%TZ)"
+
+if [ -z "$TASK_ID" ]; then
+    log "CLIPZI_TASK_ID kosong. Env terdeteksi:"
+    log "  DATABASE_URL=${DATABASE_URL:+<set>} ENCRYPTION_KEY=${ENCRYPTION_KEY:+<set>} SECRET_KEY=${SECRET_KEY:+<set>}"
+    log "  CLIPZI_CALLBACK_URL=${CLIPZI_CALLBACK_URL:+<set>} CLIPZI_WORKER_TOKEN=${CLIPZI_WORKER_TOKEN:+<set>}"
+    log "  GPU_WHISPER_MODEL=${GPU_WHISPER_MODEL:-} CLIPZI_RESTORE_MODEL_PATH=${CLIPZI_RESTORE_MODEL_PATH:-}"
+    if command -v nvidia-smi >/dev/null 2>&1; then
+        nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
+    else
+        log "nvidia-smi tidak tersedia"
+    fi
+    ls -la /workspace 2>/dev/null | head -20 || log "/workspace tidak bisa dibaca"
+    if [ "${CLIPZI_ALLOW_MANUAL:-0}" = "1" ]; then
+        log "CLIPZI_ALLOW_MANUAL=1: instance dibiarkan hidup untuk inspeksi; pipeline tidak dijalankan."
+        exit 0
+    fi
+    log "Keluar: set CLIPZI_TASK_ID (dikirim backend saat dispatch) atau CLIPZI_ALLOW_MANUAL=1 untuk tes manual."
     exit 2
+fi
+
+# Mode probe: verifikasi env/GPU/model tanpa menjalankan pipeline (biaya minimal).
+if [ "${CLIPZI_PROBE:-0}" = "1" ]; then
+    log "PROBE mode: env & runtime check"
+    log "  task_id=$TASK_ID"
+    log "  GPU_WHISPER_MODEL=${GPU_WHISPER_MODEL:-}"
+    log "  model_dir=${CLIPZI_RESTORE_MODEL_PATH:-/workspace/whisper_model}"
+    ls -la "${CLIPZI_RESTORE_MODEL_PATH:-/workspace/whisper_model}" 2>/dev/null | head -10 || log "  model_dir belum ada"
+    if command -v nvidia-smi >/dev/null 2>&1; then
+        nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader || true
+    fi
+    "$PYTHON_BIN" - <<'PY' || true
+import os
+keys = sorted(k for k in os.environ if k.startswith(("CLIPZI_", "DATABASE_URL", "ENCRYPTION_KEY", "SECRET_KEY", "GPU_", "TRANSCRIPTION_", "YTDLP_")))
+print("[onstart] PROBE env keys:", ",".join(keys))
+print("[onstart] PROBE task id:", os.environ.get("CLIPZI_TASK_ID"))
+print("[onstart] PROBE marker:", os.environ.get("CLIPZI_PROBE_MARKER"))
+PY
+    log "PROBE selesai; instance boleh dihapus."
+    exit 0
 fi
 
 cd /app || exit 1
@@ -45,6 +93,8 @@ request = urllib.request.Request(
     headers={
         "Content-Type": "application/json",
         "X-Clipzi-Signature": "sha256=" + signature,
+        # Cloudflare memblokir User-Agent default urllib (error 1010/403).
+        "User-Agent": "ClipziAI-Worker/1.0",
     },
 )
 try:
@@ -81,14 +131,22 @@ else
 fi
 
 # --- Restore model Whisper dari Google Drive --------------------------------
+# Model disalin backend lewat `cloud_copy` Cloud→Instance SETELAH instance dibuat.
+# Kalau path salah / copy gagal, jangan menunggu 900 s dengan CPU/GPU 0%: setelah
+# `CLIPZI_RESTORE_FAST_FAIL` detik tanpa model, cetak isi folder lalu unduh model.
 if [ -n "${CLIPZI_RESTORE_TIMEOUT:-}" ]; then
     MODEL_PATH="${CLIPZI_RESTORE_MODEL_PATH:-/workspace/whisper_model}"
+    FAST_FAIL="${CLIPZI_RESTORE_FAST_FAIL:-150}"
     export GPU_WHISPER_MODEL="$MODEL_PATH"
-    echo "[onstart] menunggu restore model di ${MODEL_PATH} (maks ${CLIPZI_RESTORE_TIMEOUT}s)"
-    deadline=$(( $(date +%s) + CLIPZI_RESTORE_TIMEOUT ))
+    started=$(date +%s)
+    deadline=$(( started + CLIPZI_RESTORE_TIMEOUT ))
+    fast_deadline=$(( started + FAST_FAIL ))
     prev_size=""
     stable=0
+    last_log=0
+    log "menunggu model di ${MODEL_PATH} (timeout ${CLIPZI_RESTORE_TIMEOUT}s, fast-fail ${FAST_FAIL}s)"
     while :; do
+        now=$(date +%s)
         if [ -f "$MODEL_PATH/model.bin" ]; then
             size=$(wc -c < "$MODEL_PATH/model.bin" 2>/dev/null | tr -d ' ' || echo 0)
             if [ "$size" = "$prev_size" ] && [ "${size:-0}" -gt 100000000 ]; then
@@ -98,12 +156,25 @@ if [ -n "${CLIPZI_RESTORE_TIMEOUT:-}" ]; then
             fi
             prev_size="$size"
             if [ "$stable" -ge 2 ]; then
-                echo "[onstart] restore selesai (${size} byte)"
+                log "restore selesai (${size} byte)"
                 break
             fi
+        elif [ "$now" -ge "$fast_deadline" ]; then
+            log "model belum ada setelah ${FAST_FAIL}s; isi ${MODEL_PATH}:"
+            ls -la "$MODEL_PATH" 2>/dev/null | head -12 || log "  folder ${MODEL_PATH} tidak ada"
+            log "fallback unduh model large-v3 (butuh ±3 GB; disk harus cukup)"
+            "$PYTHON_BIN" - <<PY || true
+from faster_whisper.utils import download_model
+download_model("large-v3", output_dir="$MODEL_PATH")
+PY
+            break
         fi
-        if [ "$(date +%s)" -ge "$deadline" ]; then
-            echo "[onstart] restore timeout; fallback unduh model"
+        if [ $(( now - last_log )) -ge 30 ]; then
+            log "menunggu model: ${prev_size:-0} byte, sisa $(( deadline - now ))s"
+            last_log=$now
+        fi
+        if [ "$now" -ge "$deadline" ]; then
+            log "restore timeout; fallback unduh model"
             "$PYTHON_BIN" - <<PY || true
 from faster_whisper.utils import download_model
 download_model("large-v3", output_dir="$MODEL_PATH")
@@ -114,7 +185,7 @@ PY
     done
 fi
 
-echo "[onstart] menjalankan pipeline untuk task ${CLIPZI_TASK_ID} (python: ${PYTHON_BIN})"
+log "menjalankan pipeline untuk task ${CLIPZI_TASK_ID} (python: ${PYTHON_BIN})"
 
 exec "$PYTHON_BIN" -u -c '
 import asyncio

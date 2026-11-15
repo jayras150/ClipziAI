@@ -85,7 +85,7 @@ export default function VastPanel({
   const [templateName, setTemplateName] = useState('');
   const [templateImage, setTemplateImage] = useState('');
   const [templateDisk, setTemplateDisk] = useState('');
-  const [templateIncludeEnv, setTemplateIncludeEnv] = useState(true);
+  const [templateIncludeEnv, setTemplateIncludeEnv] = useState(false);
   const [templateSyncEnv, setTemplateSyncEnv] = useState(true);
   const [templateMessage, setTemplateMessage] = useState('');
   const [templateError, setTemplateError] = useState('');
@@ -371,9 +371,10 @@ export default function VastPanel({
             <CardHeader>
               <CardTitle>Template worker otomatis</CardTitle>
               <CardDescription>
-                Buat template Vast.ai dari image worker + seluruh env pipeline (sumber sama dengan
-                dispatch instance), lalu hash-nya langsung disimpan sebagai Template hash dan dipakai
-                saat instance oneshot dibuat. Nilai secret tidak pernah ditampilkan di panel ini.
+                Buat template Vast.ai dari image worker + onstart pipeline, lalu hash-nya langsung
+                disimpan sebagai Template hash dan dipakai saat instance oneshot dibuat. Env pipeline
+                tetap dikirim per task oleh dispatcher dan disinkronkan ke Environment Variables akun
+                Vast — nilai secret tidak pernah ditampilkan di panel ini.
               </CardDescription>
             </CardHeader>
             <CardContent className='space-y-3'>
@@ -443,7 +444,7 @@ export default function VastPanel({
                     checked={templateIncludeEnv}
                     onChange={(event) => setTemplateIncludeEnv(event.target.checked)}
                   />
-                  Bekukan env pipeline di template
+                  Bekukan env pipeline di template (tidak disarankan)
                 </label>
                 <label className='text-muted-foreground flex items-center gap-2'>
                   <input
