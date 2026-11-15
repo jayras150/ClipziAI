@@ -177,14 +177,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         ca-certificates \
         gnupg \
+        unzip \
     && mkdir -p /run/sshd \
     # Node 22+ wajib: paket bgutil mensyaratkan engines.node >= 22 (Debian 12 masih 18).
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
+    # Deno = JavaScript runtime untuk yt-dlp menyelesaikan "JS challenge" YouTube
+    # (log: `[jsc:deno] Solving JS challenges using deno`). Tanpa deno, yt-dlp
+    # hanya menerima storyboard -> "Requested format is not available".
+    && curl -fsSL -o /tmp/deno.zip https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip \
+    && unzip -o /tmp/deno.zip -d /usr/local/bin \
+    && chmod 0755 /usr/local/bin/deno \
+    && rm -f /tmp/deno.zip \
     && rm -rf /var/lib/apt/lists/* \
     && ssh -V \
     && command -v sshd \
-    && node --version
+    && node --version \
+    && deno --version
 
 USER clipzi
 

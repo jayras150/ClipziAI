@@ -101,7 +101,9 @@ def read_memory() -> dict:
 
 
 def read_disk() -> dict:
-    stats = os.statvfs("/")
+    # statvfs tidak tersedia di Windows (script ini khusus Linux/VPS); abaikan
+    # peringatan type checker di editor Windows.
+    stats = os.statvfs("/")  # type: ignore[attr-defined]
     total = stats.f_blocks * stats.f_frsize
     free = stats.f_bavail * stats.f_frsize
     used = total - stats.f_bfree * stats.f_frsize

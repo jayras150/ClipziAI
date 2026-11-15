@@ -1,5 +1,6 @@
 """Tes template worker Vast.ai otomatis (env pipeline, hash, aktivasi dispatch)."""
 import asyncio
+from typing import Any, cast
 
 import pytest
 
@@ -78,7 +79,7 @@ def test_create_worker_template_calls_sdk_and_syncs_env(monkeypatch):
 
     class FakeClient:
         def __init__(self):
-            self.created = None
+            self.created: dict[str, Any] | None = None
 
         def create_template(self, **kwargs):
             self.created = kwargs
@@ -105,7 +106,7 @@ def test_create_worker_template_calls_sdk_and_syncs_env(monkeypatch):
     assert result["template_id"] == 11
     assert result["env_count"] == 6
     assert result["warnings"] == []
-    sent = client.created
+    sent = client.created or {}
     assert sent["name"] == "clipzi-worker"
     assert sent["image"] == "user/clipzi:worker"
     assert sent["onstart_cmd"] == "/app/deployments/pipeline_onstart.sh"
@@ -317,9 +318,9 @@ def test_admin_endpoint_activates_template(monkeypatch):
     result = asyncio.run(
         vast_api.create_worker_template(
             vast_api.TemplateCreateIn(),
-            FakeRequest(),
-            FakeAdmin(),
-            FakeDB(),
+            cast(Any, FakeRequest()),
+            cast(Any, FakeAdmin()),
+            cast(Any, FakeDB()),
         )
     )
 

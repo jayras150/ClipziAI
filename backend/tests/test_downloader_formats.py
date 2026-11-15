@@ -12,8 +12,11 @@ def test_format_ladder_urutan_dan_batas():
     ladder = format_ladder(720)
     assert ladder[0].startswith("bv*[height<=720]+ba/b[height<=720]/b")
     assert ladder[1] == "bv*+ba/b"
-    assert ladder[2] == "b"
-    assert ladder[3] == "b*"
+    # fallback eksplisit ala yt-dlp manual (mp4/m4a) lalu format gabungan 360p
+    assert ladder[2] == "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+    assert ladder[3] == "18"
+    assert ladder[4] == "b"
+    assert ladder[5] == "b*"
     # `bv*` wajib: menerima format gabungan (video+audio) juga.
     assert ladder[0].count("bv*") == 1
 

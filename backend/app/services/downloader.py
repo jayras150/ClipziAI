@@ -61,6 +61,10 @@ def format_ladder(height: int) -> list[str]:
     return [
         f"bv*[height<={limit}]+ba/b[height<={limit}]/b",
         "bv*+ba/b",
+        # Selector eksplisit ala yt-dlp manual: banyak video hanya punya mp4/m4a.
+        "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        # Format gabungan 360p (id 18) hampir selalu tersedia.
+        "18",
         "b",
         "b*",
     ]
