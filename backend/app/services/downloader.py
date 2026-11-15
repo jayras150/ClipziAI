@@ -550,7 +550,9 @@ class VideoDownloader:
                 "noplaylist": True,
             }
         )
-        opts.pop("format", None)
+        # "all" wajib: tanpa ini yt-dlp menerapkan seleksi format default dan
+        # melempar 'Requested format is not available' sebelum daftar bisa dibaca.
+        opts["format"] = "all"
         with yt_dlp.YoutubeDL(cast(Any, opts)) as ydl:
             info = ydl.extract_info(url, download=False) or {}
         return info, list(info.get("formats") or [])
@@ -683,7 +685,7 @@ class VideoDownloader:
         # Cookies HARUS ikut: tanpa cookies daftar format bisa hanya storyboard.
         opts = dict(ydl_opts)
         opts.update({"quiet": True, "no_warnings": True, "skip_download": True})
-        opts.pop("format", None)
+        opts["format"] = "all"  # jangan seleksi format saat membaca daftar
         try:
             with yt_dlp.YoutubeDL(cast(Any, opts)) as ydl:
                 info = ydl.extract_info(url, download=False) or {}

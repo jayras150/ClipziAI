@@ -11,13 +11,30 @@ def _line(name: str) -> str:
     return f".youtube.com\tTRUE\t/\tTRUE\t0\t{name}\tvalue\n"
 
 
+def _google(name: str) -> str:
+    """Cookie auth utama (SID/HSID/SSID) memang berada di domain .google.com."""
+    return f".google.com\tTRUE\t/\tFALSE\t0\t{name}\tvalue\n"
+
+
 def test_complete_cookie_accepted():
-    text = HEADER + _line("SID") + _line("HSID") + _line("__Secure-3PSID")
+    text = (
+        HEADER
+        + _google("SID")
+        + _google("HSID")
+        + _line("SID")
+        + _line("HSID")
+        + _line("__Secure-3PSID")
+    )
     cookie_store.validate_cookies_text(text)
 
 
 def test_incomplete_secure3_only_rejected():
-    text = HEADER + _line("__Secure-3PSID") + _line("__Secure-3PSIDTS")
+    text = (
+        HEADER
+        + _google("SID")
+        + _line("__Secure-3PSID")
+        + _line("__Secure-3PSIDTS")
+    )
     with pytest.raises(ValueError) as exc:
         cookie_store.validate_cookies_text(text)
     assert "tidak lengkap" in str(exc.value)
@@ -90,3 +107,11 @@ def test_save_global_base64_encrypts_and_injects(monkeypatch):
     assert store["youtube"]["cookies_base64_enc"] == f"enc:{expected}"
     assert store["youtube"]["label"] == "akun-1"
     assert store["youtube"]["summary"]["cookie_count"] == 3
+
+
+def test_cookie_tanpa_domain_google_ditolak():
+    """Hanya .youtube.com = sesi tidak lengkap (YouTube hanya kasih storyboard)."""
+    text = HEADER + _line("SID") + _line("HSID") + _line("SAPISID")
+    with pytest.raises(ValueError) as exc:
+        cookie_store.validate_cookies_text(text)
+    assert "google.com" in str(exc.value)

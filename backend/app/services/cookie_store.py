@@ -109,6 +109,23 @@ def validate_cookies_text(text: str) -> None:
         if len(parts) >= 6 and "youtube" in parts[0].lower():
             names.add(parts[5])
 
+    # Ekspor yang benar memuat .google.com (SID/HSID/SSID). Kalau hanya
+    # .youtube.com, sesi dianggap tidak lengkap: bot-check hilang tapi YouTube
+    # hanya memberi storyboard (tanpa format video).
+    domains = set()
+    for line in text.splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) >= 6:
+            domains.add(parts[0].lstrip(".").lower())
+    if not any(domain.endswith("google.com") for domain in domains):
+        raise ValueError(
+            "Cookies hanya memuat domain youtube.com. Ekspor ulang dari halaman youtube.com "
+            "saat benar-benar login dan pastikan domain .google.com (SID/HSID/SSID) ikut "
+            "tersimpan; tanpa itu YouTube hanya memberi storyboard (tanpa format video)."
+        )
+
     # Minimal satu cookie auth utama harus ada. Tanpa ini, sesi tidak lengkap.
     required_any = {"SID", "__Secure-1PSID", "SAPISID", "__Secure-1PAPISID"}
     if names and not (names & required_any):
