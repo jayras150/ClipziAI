@@ -661,7 +661,12 @@ async def create_worker_template(
     missing = [key for key in WORKER_ENV_REQUIRED if not env.get(key)]
     if missing:
         warnings.append(f"Env wajib belum diisi di backend: {', '.join(missing)}.")
-    if env_skipped:
+    if not include_env:
+        warnings.append(
+            "Env tidak dibekukan di template (opsi dimatikan). Dispatcher mengirim env lengkap "
+            "per task dan `sync_env_vars` menyimpannya di Environment Variables akun Vast."
+        )
+    elif env_skipped:
         shown = ", ".join(env_skipped[:6]) + ("…" if len(env_skipped) > 6 else "")
         warnings.append(
             f"{len(env_skipped)} env tidak dibekukan di template karena batas Vast "
