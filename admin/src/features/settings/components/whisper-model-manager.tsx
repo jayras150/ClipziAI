@@ -6,6 +6,8 @@ import { useState, useTransition } from 'react';
 import {
   activateWhisperModel,
   deleteWhisperModel,
+  downloadWhisperColabNotebook,
+  saveWhisperColabNotebook,
   scanWhisperModels
 } from '@/app/dashboard/settings/models/actions';
 import { Badge } from '@/components/ui/badge';
@@ -17,6 +19,8 @@ import {
   CardHeader,
   CardTitle
 } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+
 
 export type WhisperModelItem = {
   id: string;
@@ -46,6 +50,9 @@ export type WhisperModelsData = {
   active_model_id: string | null;
   active_model: WhisperModelItem | null;
   items: WhisperModelItem[];
+  notebook_file_id: string;
+  notebook_url: string;
+  folder_url: string;
 };
 
 function formatBytes(value: number): string {
@@ -76,6 +83,8 @@ export default function WhisperModelManager({ data }: { data: WhisperModelsData 
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [notebookId, setNotebookId] = useState(data.notebook_file_id || '');
+  const [colabUrl, setColabUrl] = useState(data.notebook_url || '');
 
   const runScan = () => {
     setError('');
@@ -94,6 +103,58 @@ export default function WhisperModelManager({ data }: { data: WhisperModelsData 
       );
       router.refresh();
     });
+  };
+
+  const runDownloadNotebook = () => {
+    setError('');
+    setMessage('');
+    startTransition(async () => {
+      const response = await downloadWhisperColabNotebook();
+      if ('error' in response || !response.data) {
+        setError(String(('error' in response && response.error) || 'Gagal mengunduh notebook.'));
+        return;
+      }
+      const data = response.data;
+      const blob = new Blob([data.content], { type: 'application/x-ipynb+json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = data.filename || 'clipzi-whisper-colab.ipynb';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setMessage('Notebook diunduh. Upload file .ipynb itu ke Google Drive sekali, lalu tempel file ID-nya di bawah.');
+    });
+  };
+
+  const runSaveNotebook = () => {
+    setError('');
+    setMessage('');
+    startTransition(async () => {
+      const response = await saveWhisperColabNotebook(notebookId);
+      if ('error' in response || !response.data) {
+        setError(String(('error' in response && response.error) || 'Gagal menyimpan file ID.'));
+        return;
+      }
+      const result = response.data as Record<string, unknown>;
+      setNotebookId(String(result.notebook_file_id || ''));
+      setColabUrl(String(result.notebook_url || ''));
+      setMessage(
+        result.notebook_url
+          ? 'File ID notebook tersimpan. Tombol Buka Colab sudah aktif.'
+          : 'File ID dikosongkan.'
+      );
+      router.refresh();
+    });
+  };
+
+  const openColab = () => {
+    if (!colabUrl) {
+      setError('Simpan file ID notebook Google Drive terlebih dahulu.');
+      return;
+    }
+    window.open(colabUrl, '_blank', 'noopener,noreferrer');
   };
 
   const runActivate = (item: WhisperModelItem) => {
@@ -186,6 +247,66 @@ export default function WhisperModelManager({ data }: { data: WhisperModelsData 
             {message ? <p className='text-muted-foreground text-sm'>{message}</p> : null}
             {error ? <p className='text-destructive text-sm'>{error}</p> : null}
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Upload model lewat Colab</CardTitle>
+          <CardDescription>
+            Notebook berisi kode lengkap untuk connect ke Drive, mengunduh model, konversi CT2,
+            dan menyimpan ke folder ID di atas. Upload notebook ke Drive sekali, lalu buka lewat
+            tombol Colab.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className='space-y-3'>
+          <div className='flex flex-wrap items-center gap-2'>
+            <Button type='button' disabled={pending} onClick={runDownloadNotebook}>
+              Unduh notebook
+            </Button>
+            <Button
+              type='button'
+              variant='outline'
+              disabled={pending || !colabUrl}
+              onClick={openColab}
+            >
+              Buka Colab
+            </Button>
+            {data.folder_url ? (
+              <a
+                href={data.folder_url}
+                target='_blank'
+                rel='noreferrer'
+                className='text-primary text-sm underline'
+              >
+                Buka folder Drive
+              </a>
+            ) : null}
+          </div>
+
+          <div className='grid gap-2 md:grid-cols-[1fr_auto]'>
+            <div className='space-y-1'>
+              <label className='text-muted-foreground text-xs'>Notebook Drive File ID</label>
+              <Input
+                value={notebookId}
+                onChange={(event) => setNotebookId(event.target.value)}
+                placeholder='Contoh: 1AbCdEfGhIjKlMnOpQrStUvWxYz'
+              />
+            </div>
+            <div className='flex items-end'>
+              <Button type='button' disabled={pending} onClick={runSaveNotebook}>
+                Simpan ID
+              </Button>
+            </div>
+          </div>
+
+          <ol className='text-muted-foreground list-decimal space-y-1 pl-5 text-sm'>
+            <li>Klik <strong>Unduh notebook</strong>.</li>
+            <li>Upload file <code>.ipynb</code> ke Google Drive (sekali saja).</li>
+            <li>Copy file ID dari URL Drive, tempel di kolom di atas, lalu simpan.</li>
+            <li>Klik <strong>Buka Colab</strong> → pilih model → <strong>Run all</strong>.</li>
+            <li>Setelah selesai, kembali ke sini → <strong>Scan Drive</strong> → <strong>Aktifkan</strong>.</li>
+          </ol>
         </CardContent>
       </Card>
 

@@ -555,6 +555,12 @@ status) plus riwayat lokal, dengan tombol **Logs** (termasuk opsi **debug/daemon
   ke folder root Drive. TensorFlow ditolak.
 - File CT2 wajib: `model.bin`, `config.json`, `tokenizer.json`,
   `preprocessor_config.json`, dan `vocabulary.json`/`vocabulary.txt`.
+- **Notebook Colab privat**: di **Settings › Whisper Models** klik **Unduh notebook**,
+  upload `.ipynb` ke Google Drive **sekali**, tempel **Notebook Drive File ID**, lalu
+  **Buka Colab**. Notebook `backend/app/templates/whisper_colab.ipynb` sudah berisi kode
+  connect Drive (OAuth akun pemilik), download model, konversi CT2, dan upload ke folder ID
+  `1H8eharRd98Poq8e2qYEkq9UYiOaPTNR4`. Tidak perlu membuat repo GitHub publik.
+
 
 
 ## Setelan ekosistem & ganti domain (1 klik)
