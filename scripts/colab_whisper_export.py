@@ -93,12 +93,7 @@ def download_model(repo: str, source: Path) -> None:
     except ImportError as exc:  # pragma: no cover - Colab
         raise SystemExit("huggingface_hub belum terpasang. Jalankan: pip install -q huggingface_hub") from exc
     print(f"[src] mengunduh {repo} ...")
-    snapshot_download(
-        repo_id=repo,
-        local_dir=str(source),
-        local_dir_use_symlinks=False,
-        resume_download=True,
-    )
+    snapshot_download(repo_id=repo, local_dir=str(source))
 
 
 def convert_to_ct2(source: Path, output: Path, quantization: str) -> None:
