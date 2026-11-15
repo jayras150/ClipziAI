@@ -175,6 +175,52 @@ def test_create_worker_template_requires_image(monkeypatch):
         asyncio.run(vast_admin.create_worker_template(sync_env_vars=False))
 
 
+def test_build_template_env_respects_vast_4096_limit():
+    """Vast: 'Param env greater than max length 4096 chars'."""
+    env = {
+        "CLIPZI_ROLE": "worker",
+        "DATABASE_URL": "postgresql+asyncpg://u:p@h:5432/db",
+        "CLIPZI_WORKER_TOKEN": "tok",
+        "YTDLP_COOKIES_BASE64": "x" * 6000,
+    }
+    text, included, skipped = vast_admin.build_template_env(env)
+
+    assert len(text) <= vast_admin.TEMPLATE_ENV_MAX_LEN
+    assert "DATABASE_URL" in included
+    assert "CLIPZI_WORKER_TOKEN" in included
+    assert "YTDLP_COOKIES_BASE64" in skipped
+    assert "YTDLP_COOKIES_BASE64" not in text
+
+
+def test_create_worker_template_wraps_vast_http_error(monkeypatch):
+    """HTTP 400 dari Vast tidak boleh jadi 500; pesannya harus terbaca."""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "VAST_WORKER_IMAGE", "user/clipzi:worker", raising=False)
+    monkeypatch.setattr(
+        vast_admin, "build_worker_env", lambda task_id=None: {"CLIPZI_ROLE": "worker"}
+    )
+
+    class FakeResponse:
+        status_code = 400
+        text = '{"error":"invalid_params","msg":"Param env greater than max length 4096 chars"}'
+
+    class FakeHTTPError(Exception):
+        response = FakeResponse()
+
+    class FakeClient:
+        def create_template(self, **kwargs):
+            raise FakeHTTPError("400 Client Error: Bad Request")
+
+    monkeypatch.setattr(vast_admin, "_client", lambda: FakeClient())
+
+    with pytest.raises(RuntimeError) as excinfo:
+        asyncio.run(vast_admin.create_worker_template(sync_env_vars=False))
+
+    message = str(excinfo.value)
+    assert "HTTP 400" in message
+    assert "max length 4096" in message
+
+
 def test_admin_endpoint_activates_template(monkeypatch):
     from app.api.admin import vast as vast_api
 

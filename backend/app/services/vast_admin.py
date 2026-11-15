@@ -28,6 +28,11 @@ TEMPLATE_DOCKER_OPTIONS = "-p 8000:8000"
 # Env yang diisi PER TASK — jangan dibekukan di template.
 TEMPLATE_ENV_SKIP = {"CLIPZI_TASK_ID"}
 TEMPLATE_DESC = "ClipziAI worker (dibuat otomatis dari admin) — jangan diedit manual."
+# Vast menolak field `env` template > 4096 char:
+#   {"error":"invalid_params","msg":"Param env greater than max length 4096 chars"}
+# Karena itu env dipotong berprioritas (env wajib dulu) dan sisanya tetap dikirim
+# per task lewat create_instance + Environment Variables akun Vast.
+TEMPLATE_ENV_MAX_LEN = 4096
 
 
 def _client():
@@ -452,16 +457,65 @@ def _template_env_items(env: Dict[str, str]) -> List[tuple]:
     return items
 
 
-def template_env_string(env: Dict[str, str]) -> str:
-    """Susun field "Docker options" template Vast: ``-p 8000:8000 -e KEY=VALUE …``.
+def _template_env_priority(name: str) -> tuple:
+    """Urutan prioritas env template: role → env wajib → sisanya (pendek dulu)."""
+    if name == "CLIPZI_ROLE":
+        return (0, 0, name)
+    if name in WORKER_ENV_REQUIRED:
+        return (1, WORKER_ENV_REQUIRED.index(name), name)
+    return (2, 0, name)
+
+
+def build_template_env(
+    env: Dict[str, str], max_len: int = TEMPLATE_ENV_MAX_LEN
+) -> tuple:
+    """Susun docker-options template dengan batas panjang Vast (4096 char).
+
+    Mengembalikan ``(env_string, included, skipped)``. Env yang tidak muat
+    dicatat di ``skipped``; nilainya TIDAK hilang karena tetap dikirim per task
+    (`create_instance(env=build_worker_env(task_id))`) dan disinkronkan ke
+    Environment Variables akun Vast.
+    """
+    items = _template_env_items(env)
+    items.sort(key=lambda kv: (_template_env_priority(kv[0]), len(kv[1]), kv[0]))
+    tokens: List[str] = [TEMPLATE_DOCKER_OPTIONS]
+    included: List[str] = []
+    skipped: List[str] = []
+    used = len(TEMPLATE_DOCKER_OPTIONS)
+    for name, value in items:
+        token = f"-e {name}={shlex.quote(value)}"
+        extra = 1 + len(token)  # spasi pemisah + token
+        if used + extra > max_len:
+            skipped.append(name)
+            continue
+        tokens.append(token)
+        included.append(name)
+        used += extra
+    return " ".join(tokens), included, skipped
+
+
+def template_env_string(env: Dict[str, str], max_len: int = TEMPLATE_ENV_MAX_LEN) -> str:
+    """Field "Docker options" template Vast (``-p 8000:8000 -e KEY=VALUE …``).
 
     Nilai di-quote dengan `shlex.quote` karena Vast menyisipkan string ini ke
     perintah ``docker run``. Nilai secret tidak pernah dikembalikan ke UI.
     """
-    parts: List[str] = [TEMPLATE_DOCKER_OPTIONS]
-    for name, value in _template_env_items(env):
-        parts.append(f"-e {name}={shlex.quote(value)}")
-    return " ".join(parts)
+    return build_template_env(env, max_len)[0]
+
+
+def vast_error_message(exc: BaseException) -> str:
+    """Ubah error SDK/HTTP Vast menjadi pesan yang bisa dibaca admin."""
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    body = ""
+    if response is not None:
+        try:
+            body = (response.text or "").strip()[:400]
+        except Exception:  # pragma: no cover - body tidak selalu tersedia
+            body = ""
+    if status:
+        return f"Vast menolak permintaan (HTTP {status}): {body or exc}"
+    return f"Gagal memanggil Vast: {exc}"
 
 
 def _template_hash_from(created: Any) -> str:
@@ -531,7 +585,7 @@ def worker_template_spec() -> Dict[str, Any]:
     """Ringkasan template yang dipakai dispatch (tanpa nilai secret)."""
     settings = get_settings()
     env = build_worker_env()
-    items = _template_env_items(env)
+    env_string, env_keys, env_skipped = build_template_env(env)
     template_hash = (settings.VAST_TEMPLATE_HASH or "").strip()
     image = (settings.VAST_WORKER_IMAGE or "").strip()
     api_key = (settings.VAST_API_KEY or "").strip()
@@ -542,8 +596,11 @@ def worker_template_spec() -> Dict[str, Any]:
         "worker_disk": int(settings.VAST_WORKER_DISK or 40),
         "onstart": TEMPLATE_ONSTART,
         "docker_options": TEMPLATE_DOCKER_OPTIONS,
-        "env_keys": [name for name, _ in items],
-        "env_count": len(items),
+        "env_keys": env_keys,
+        "env_count": len(env_keys),
+        "env_skipped": env_skipped,
+        "env_len": len(env_string),
+        "env_limit": TEMPLATE_ENV_MAX_LEN,
         "missing_required": [name for name in WORKER_ENV_REQUIRED if not env.get(name)],
         "api_key_set": bool(api_key),
         "ready": bool(api_key) and bool(template_hash or image),
@@ -594,13 +651,22 @@ async def create_worker_template(
 
     env = build_worker_env()
     env.pop("CLIPZI_TASK_ID", None)
-    env_items = _template_env_items(env)
-    env_string = template_env_string(env) if include_env else TEMPLATE_DOCKER_OPTIONS
+    if include_env:
+        env_string, env_keys, env_skipped = build_template_env(env)
+    else:
+        env_string, env_keys, env_skipped = TEMPLATE_DOCKER_OPTIONS, [], sorted(env)
 
     warnings: List[str] = []
     missing = [key for key in WORKER_ENV_REQUIRED if not env.get(key)]
     if missing:
         warnings.append(f"Env wajib belum diisi di backend: {', '.join(missing)}.")
+    if env_skipped:
+        shown = ", ".join(env_skipped[:6]) + ("…" if len(env_skipped) > 6 else "")
+        warnings.append(
+            f"{len(env_skipped)} env tidak dibekukan di template karena batas Vast "
+            f"{TEMPLATE_ENV_MAX_LEN} char ({shown}). Nilainya tetap dikirim per task dan "
+            "disinkronkan ke Environment Variables akun Vast."
+        )
 
     env_sync: Dict[str, Any] = {"skipped": True}
     if sync_env_vars:
@@ -611,16 +677,20 @@ async def create_worker_template(
             env_sync = {"skipped": False, "error": str(exc)[:300]}
             warnings.append(f"Sinkron env ke akun Vast gagal: {str(exc)[:160]}")
 
-    created = await asyncio.to_thread(
-        client.create_template,
-        name=resolved_name,
-        image=resolved_image,
-        env=env_string,
-        onstart_cmd=TEMPLATE_ONSTART,
-        disk_space=float(disk),
-        desc=TEMPLATE_DESC,
-        public=bool(public),
-    )
+    try:
+        created = await asyncio.to_thread(
+            client.create_template,
+            name=resolved_name,
+            image=resolved_image,
+            env=env_string,
+            onstart_cmd=TEMPLATE_ONSTART,
+            disk_space=float(disk),
+            desc=TEMPLATE_DESC,
+            public=bool(public),
+        )
+    except Exception as exc:
+        # Vast membalas 4xx/5xx lewat requests.HTTPError — jangan biarkan jadi 500.
+        raise RuntimeError(vast_error_message(exc)) from exc
 
     template_hash = _template_hash_from(created)
     if not template_hash:
@@ -632,11 +702,12 @@ async def create_worker_template(
         )
 
     logger.info(
-        "Template Vast dibuat: name=%s image=%s hash=%s env=%s",
+        "Template Vast dibuat: name=%s image=%s hash=%s env=%s skipped=%s",
         resolved_name,
         resolved_image,
         template_hash or "-",
-        len(env_items),
+        len(env_keys),
+        len(env_skipped),
     )
     return {
         "ok": bool(template_hash),
@@ -647,8 +718,11 @@ async def create_worker_template(
         "disk_space": disk,
         "onstart": TEMPLATE_ONSTART,
         "docker_options": TEMPLATE_DOCKER_OPTIONS,
-        "env_count": len(env_items),
-        "env_keys": [key for key, _ in env_items],
+        "env_count": len(env_keys),
+        "env_keys": env_keys,
+        "env_skipped": env_skipped,
+        "env_len": len(env_string),
+        "env_limit": TEMPLATE_ENV_MAX_LEN,
         "env_included": bool(include_env),
         "env_sync": env_sync,
         "warnings": warnings,
