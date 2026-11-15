@@ -71,7 +71,7 @@ def encrypt_api_key(value: str) -> str:
     return _fernet().encrypt(text.encode("utf-8")).decode("utf-8")
 
 
-def decrypt_api_key(value: str) -> str:
+def decrypt_api_key(value: Optional[str]) -> str:
     text = (value or "").strip()
     if not text:
         return ""
@@ -114,10 +114,14 @@ def normalize_ai(value: Optional[dict]) -> Dict[str, Any]:
         ("rerank_budget_seconds", 20, 600, 120),
         ("metadata_budget_seconds", 20, 900, 180),
     ):
-        try:
-            number = float(merged.get(field))
-        except (TypeError, ValueError):
+        raw_value = merged.get(field)
+        if raw_value is None:
             number = float(default)
+        else:
+            try:
+                number = float(raw_value)
+            except (TypeError, ValueError):
+                number = float(default)
         number = max(float(low), min(float(high), number))
         merged[field] = int(number) if field in _INT_FIELDS else round(number, 2)
 

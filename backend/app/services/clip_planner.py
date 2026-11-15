@@ -489,10 +489,14 @@ def rerank_with_llm(
         updated = dict(candidate)
         factors = dict(candidate["factors"])
         if item is not None:
-            try:
-                llm_score = max(0.0, min(100.0, float(item.get("score"))))
-            except (TypeError, ValueError):
+            raw_score = item.get("score")
+            if raw_score is None:
                 llm_score = None
+            else:
+                try:
+                    llm_score = max(0.0, min(100.0, float(raw_score)))
+                except (TypeError, ValueError):
+                    llm_score = None
             if llm_score is not None:
                 combined = 0.55 * llm_score + 0.45 * float(candidate["score"])
                 updated["score"] = round(max(0.0, min(96.0, combined)), 1)
