@@ -8,6 +8,7 @@ import { BrandLogo, BrandMark, BrandName } from "@/components/BrandingProvider"
 import { Mail, Lock } from "lucide-react"
 
 import { getApiBaseUrl } from "@/lib/env"
+import { notifyAuthChanged } from "@/lib/auth"
 import { readApiError } from "@/lib/api-errors"
 import { deviceFingerprintHeader } from "@/lib/device-fingerprint"
 import SocialButtons from "@/components/SocialButtons"
@@ -19,8 +20,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
 
   const finishLogin = (accessToken: string, refreshToken?: string) => {
-    localStorage.setItem("token", accessToken)
-    if (refreshToken) localStorage.setItem("refresh_token", refreshToken)
+    notifyAuthChanged()
     // Kembali ke halaman yang tadi diminta (mis. /dashboard dari redirect sesi).
     const next = new URLSearchParams(window.location.search).get("next")
     const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard"
@@ -35,6 +35,7 @@ export default function LoginPage() {
       const fingerprintHeader = await deviceFingerprintHeader()
       const response = await fetch(`${getApiBaseUrl()}/api/auth/login`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json", ...fingerprintHeader },
         body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
       })

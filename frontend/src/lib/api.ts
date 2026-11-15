@@ -1,7 +1,7 @@
 import axios, { AxiosInstance, InternalAxiosRequestConfig } from "axios"
 
 import { getApiBaseUrl } from "./env"
-import { clearSession, refreshAccessToken } from "./auth"
+import { clearSession, getCsrfToken, refreshAccessToken } from "./auth"
 
 
 export interface UserProfileData {
@@ -175,6 +175,7 @@ export class ApiClient {
       // bukan saat modul di-import. /runtime-env.js bisa saja baru dieksekusi
       // setelah bundle ini dimuat, dan itu akan membuat baseURL jatuh ke
       // http://localhost:8000 pada build produksi.
+      withCredentials: true,
       headers: {
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -183,6 +184,17 @@ export class ApiClient {
 
     this.client.interceptors.request.use((config) => {
       if (!config.baseURL) config.baseURL = getApiBaseUrl()
+      // Cookie HttpOnly adalah sumber auth utama. Buang Bearer legacy/null
+      // agar backend tidak menolak cookie yang valid karena header palsu.
+      const auth = config.headers?.Authorization
+      if (typeof auth === "string" && /^Bearer (cookie|null|undefined)?$/i.test(auth.trim())) {
+        delete config.headers.Authorization
+      }
+      const method = (config.method || "get").toUpperCase()
+      if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+        const csrf = getCsrfToken()
+        if (csrf) config.headers["X-CSRF-Token"] = csrf
+      }
       return config
     })
 
@@ -202,10 +214,9 @@ export class ApiClient {
           const result = await refreshAccessToken()
           if (result.token) {
             original._retried = true
-            original.headers = {
-              ...(original.headers || {}),
-              Authorization: `Bearer ${result.token}`,
-            } as InternalAxiosRequestConfig["headers"]
+            if (original.headers) {
+              delete (original.headers as Record<string, unknown>).Authorization
+            }
             return this.client.request(original)
           }
           if (result.transient) {

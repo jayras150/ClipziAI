@@ -6,7 +6,7 @@ import { CreditCard, LayoutDashboard, LogOut, Unlink } from "lucide-react"
 import YouTubeIcon from "@/components/YouTubeIcon"
 
 import { api, UserProfileData } from "@/lib/api"
-import { AUTH_EVENT, clearSession, hasSession } from "@/lib/auth"
+import { AUTH_EVENT, clearSession, getAccessToken, hasSession } from "@/lib/auth"
 
 /** Ikon profil (SVG yang diminta): kepala + bahu, mengikuti gaya Lucide. */
 function ProfileIcon({ size = 15 }: { size?: number }) {
@@ -49,7 +49,11 @@ export default function UserMenu({
   const boxRef = useRef<HTMLDivElement>(null)
 
   const loadProfile = useCallback(() => {
-    const token = window.localStorage.getItem("token")
+    if (!hasSession()) {
+      setProfile(null)
+      return
+    }
+    const token = getAccessToken()
     if (!token) {
       setProfile(null)
       return

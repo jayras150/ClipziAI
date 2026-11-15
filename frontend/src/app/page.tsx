@@ -198,7 +198,7 @@ export default function LandingPage() {
   // sekalian membawa link yang ditempel agar dashboard bisa prefil.
   const submitVideo = (event: React.FormEvent) => {
     event.preventDefault()
-    const loggedIn = typeof window !== "undefined" && Boolean(localStorage.getItem("token"))
+    const loggedIn = hasSession()
     const target = loggedIn ? "/dashboard" : "/register"
     const trimmed = videoUrl.trim()
     const query = trimmed ? `?video_url=${encodeURIComponent(trimmed)}` : ""

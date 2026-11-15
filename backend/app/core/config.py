@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     # supaya sesi tidak memaksa login ulang, tapi token bocor tetap cepat mati.
     ACCESS_TOKEN_MINUTES: int = 60
     REFRESH_TOKEN_DAYS: int = 30
+    # J9: token user disimpan di cookie HttpOnly; CSRF memakai double-submit.
+    COOKIE_SECURE: bool = True
+    COOKIE_DOMAIN: Optional[str] = None
     # Folder cache model Whisper lokal. Kosong = default HuggingFace
     # (~/.cache/huggingface). Di container API diisi /app/.cache/huggingface
     # supaya model tidak diunduh ulang setiap container dibuat.

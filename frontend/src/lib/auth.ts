@@ -1,40 +1,54 @@
 /**
  * Sumber tunggal status sesi Clipzy.
  *
- * Kenapa dipisah dari `api.ts`: komponen (Navbar/UserMenu/halaman) butuh tahu
- * status login tanpa memicu request, dan refresh token harus bisa dipakai ulang
- * oleh interceptor tanpa saling impor (hindari circular import).
+ * J9: access/refresh token tidak lagi disimpan di localStorage. Backend
+ * menaruhnya di cookie HttpOnly; file ini hanya membaca flag sesi non-HttpOnly
+ * dan menyediakan helper refresh/logout/CSRF.
  */
 import axios from "axios"
 
 import { getApiBaseUrl } from "./env"
 
 export const AUTH_EVENT = "clipzy:auth"
+export const SESSION_COOKIE = "clipzy_session"
+export const CSRF_COOKIE = "clipzy_csrf"
 
 export type RefreshResult = { token: string | null; transient: boolean }
 
-function storage(): Storage | null {
-  if (typeof window === "undefined") return null
-  try {
-    return window.localStorage
-  } catch {
-    return null
+function readCookie(name: string): string | null {
+  if (typeof document === "undefined") return null
+  const prefix = `${name}=`
+  for (const part of document.cookie.split(";")) {
+    const item = part.trim()
+    if (item.startsWith(prefix)) {
+      try {
+        return decodeURIComponent(item.slice(prefix.length))
+      } catch {
+        return item.slice(prefix.length)
+      }
+    }
   }
+  return null
 }
 
+export function getCsrfToken(): string | null {
+  return readCookie(CSRF_COOKIE)
+}
+
+/** Token Bearer legacy. Cookie auth tidak membutuhkan token ini. */
 export function getAccessToken(): string | null {
-  return storage()?.getItem("token") ?? null
+  return hasSession() ? "cookie" : null
 }
 
+/** Refresh token legacy. Refresh sekarang memakai cookie HttpOnly. */
 export function getRefreshToken(): string | null {
-  return storage()?.getItem("refresh_token") ?? null
+  return hasSession() ? "cookie" : null
 }
 
 export function hasSession(): boolean {
-  return Boolean(getAccessToken() || getRefreshToken())
+  return readCookie(SESSION_COOKIE) === "1"
 }
 
-/** Beri tahu semua tab/komponen bahwa status sesi berubah. */
 export function notifyAuthChanged(): void {
   if (typeof window === "undefined") return
   window.dispatchEvent(new Event(AUTH_EVENT))
@@ -43,74 +57,69 @@ export function notifyAuthChanged(): void {
     channel.postMessage({ type: "changed", at: Date.now() })
     channel.close()
   } catch {
-    /* BroadcastChannel tidak tersedia (browser lama) — event lokal tetap jalan */
+    /* BroadcastChannel tidak tersedia — event lokal tetap jalan */
   }
 }
 
-export function setSession(accessToken: string, refreshToken?: string | null): void {
-  const store = storage()
-  if (!store) return
-  store.setItem("token", accessToken)
-  if (refreshToken) store.setItem("refresh_token", refreshToken)
+function clearLegacyStorage(): void {
+  try {
+    window.localStorage.removeItem("token")
+    window.localStorage.removeItem("refresh_token")
+  } catch {
+    /* storage diblokir */
+  }
+}
+
+/** Dipertahankan untuk kompatibilitas; sesi sekarang ditulis backend sebagai cookie. */
+export function setSession(_accessToken: string, _refreshToken?: string | null): void {
+  clearLegacyStorage()
   notifyAuthChanged()
 }
 
 export function clearSession(): void {
-  const store = storage()
-  if (!store) return
-  store.removeItem("token")
-  store.removeItem("refresh_token")
+  clearLegacyStorage()
+  if (typeof window !== "undefined") {
+    const headers: Record<string, string> = {}
+    const csrf = getCsrfToken()
+    if (csrf) headers["X-CSRF-Token"] = csrf
+    void fetch(`${getApiBaseUrl()}/api/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+      headers,
+    }).catch(() => undefined)
+  }
   notifyAuthChanged()
 }
 
-/** Baca klaim `exp` dari JWT tanpa verifikasi (hanya untuk timing refresh). */
-export function decodeExp(token: string | null): number | null {
-  if (!token) return null
-  const payload = token.split(".")[1]
-  if (!payload) return null
-  try {
-    const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")))
-    return typeof json.exp === "number" ? json.exp : null
-  } catch {
-    return null
-  }
+/** Dipertahankan untuk kompatibilitas timing lama. */
+export function decodeExp(_token: string | null): number | null {
+  return null
 }
 
-/** True bila access token tidak ada atau tinggal < skewSeconds detik. */
-export function accessTokenNeedsRefresh(skewSeconds = 120): boolean {
-  const token = getAccessToken()
-  const exp = decodeExp(token)
-  if (!token || !exp) return true
-  return exp * 1000 - Date.now() <= skewSeconds * 1000
+export function accessTokenNeedsRefresh(): boolean {
+  return !hasSession()
 }
 
 let refreshing: Promise<RefreshResult> | null = null
 
-/**
- * Tukar refresh token dengan access token baru.
- *
- * PENTING: kegagalan sesaat (jaringan putus, 5xx, 429, timeout) TIDAK boleh
- * menghapus sesi — hanya 401/403 dari server yang berarti token benar-benar
- * tidak valid. Inilah penyebab "tiba-tiba logout" sebelumnya.
- */
 export function refreshAccessToken(): Promise<RefreshResult> {
-  const refreshToken = getRefreshToken()
-  if (!refreshToken) return Promise.resolve({ token: null, transient: false })
-
+  if (!hasSession()) return Promise.resolve({ token: null, transient: false })
   if (!refreshing) {
     refreshing = (async (): Promise<RefreshResult> => {
       for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
+          const headers: Record<string, string> = { "Content-Type": "application/json" }
+          const csrf = getCsrfToken()
+          if (csrf) headers["X-CSRF-Token"] = csrf
           const response = await axios.post(
             `${getApiBaseUrl()}/api/auth/refresh`,
-            { refresh_token: refreshToken },
-            { timeout: 12000 },
+            {},
+            { headers, withCredentials: true, timeout: 12000 },
           )
-          const access = response.data?.access_token as string | undefined
-          const nextRefresh = response.data?.refresh_token as string | undefined
-          if (!access) return { token: null, transient: false }
-          setSession(access, nextRefresh ?? refreshToken)
-          return { token: access, transient: false }
+          if (response.data?.access_token) {
+            return { token: "cookie", transient: false }
+          }
+          return { token: null, transient: false }
         } catch (error: any) {
           const status = error?.response?.status
           if (status === 401 || status === 403) return { token: null, transient: false }
@@ -126,21 +135,9 @@ export function refreshAccessToken(): Promise<RefreshResult> {
   return refreshing
 }
 
-/**
- * Pastikan ada access token yang masih berlaku.
- *
- * Return token (boleh `null` bila sesi benar-benar habis / tidak ada).
- */
 export async function ensureSession(): Promise<string | null> {
-  if (typeof window === "undefined") return null
-  const token = getAccessToken()
-  if (token && !accessTokenNeedsRefresh()) return token
-  if (!token && !getRefreshToken()) return null
-
+  if (typeof window === "undefined" || !hasSession()) return null
   const result = await refreshAccessToken()
-  if (result.token) return result.token
-  // Gangguan sesaat: tetap di halaman dan pakai token yang ada supaya pengguna
-  // tidak terlempar ke login hanya karena server/ jaringan sedang bermasalah.
-  if (result.transient) return token
+  if (result.token || result.transient) return "cookie"
   return null
 }

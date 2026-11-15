@@ -583,6 +583,21 @@ status) plus riwayat lokal, dengan tombol **Logs** (termasuk opsi **debug/daemon
   cukup dan false positive sudah dievaluasi.
 
 
+## Keamanan sesi (J9)
+
+- Token user disimpan di cookie **HttpOnly** `clipzy_access` dan `clipzy_refresh`
+  (`Secure`, `SameSite=Lax`); JavaScript tidak bisa membacanya.
+- Flag `clipzy_session` dipakai UI/middleware untuk status login.
+- Refresh/logout merotasi/menghapus cookie lewat `/api/auth/refresh` dan
+  `/api/auth/logout`.
+- Request API dengan cookie mengirim **CSRF double-submit** `clipzy_csrf` +
+  `X-CSRF-Token`; Bearer/API client lama tetap didukung.
+- Middleware Next menjaga `/dashboard` dan `/profile`; frontend memakai
+  `credentials: "include"` dan tidak menyimpan token di localStorage.
+- Development HTTP lokal: `COOKIE_SECURE=false`; produksi HTTPS wajib `true`.
+
+## Setelan ekosistem & ganti domain (1 klik)
+
 Semua nilai disimpan di `platform_settings` key `platform`:
 `site_url`, `admin_url`, `support_email`, `timezone`, `maintenance_mode`,
 `signup_enabled`, `google_client_id`, plus status domain

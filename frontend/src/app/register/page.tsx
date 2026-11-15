@@ -8,6 +8,7 @@ import { BrandLogo, BrandMark, BrandName } from "@/components/BrandingProvider"
 import { User, Mail, Lock } from "lucide-react"
 
 import { getApiBaseUrl } from "@/lib/env"
+import { notifyAuthChanged } from "@/lib/auth"
 import { readApiError } from "@/lib/api-errors"
 import { deviceFingerprintHeader } from "@/lib/device-fingerprint"
 import SocialButtons from "@/components/SocialButtons"
@@ -20,8 +21,7 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false)
 
   const finishSignup = (accessToken: string, refreshToken?: string) => {
-    localStorage.setItem("token", accessToken)
-    if (refreshToken) localStorage.setItem("refresh_token", refreshToken)
+    notifyAuthChanged()
     window.location.href = "/dashboard"
   }
 
@@ -39,6 +39,7 @@ export default function RegisterPage() {
       const fingerprintHeader = await deviceFingerprintHeader()
       const response = await fetch(`${getApiBaseUrl()}/api/auth/register`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json", ...fingerprintHeader },
         body: JSON.stringify({
           name: name.trim(),

@@ -4,10 +4,12 @@ Clipzi AI - FastAPI Application Entry Point
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
+from app.core.auth_cookies import ACCESS_COOKIE, CSRF_COOKIE, CSRF_HEADER, REFRESH_COOKIE
 from app.db.session import engine, init_db
 from app.api import tasks, health, formats, editing, youtube, clips, internal
 from app.api import auth, users, pricing, payment, credits
@@ -147,6 +149,30 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def csrf_guard(request: Request, call_next):
+    """Double-submit CSRF untuk request API yang memakai cookie user."""
+    path = request.url.path.rstrip("/")
+    unsafe = request.method in {"POST", "PUT", "PATCH", "DELETE"}
+    cookie_auth = bool(
+        request.cookies.get(ACCESS_COOKIE) or request.cookies.get(REFRESH_COOKIE)
+    )
+    public_auth = path in {
+        "/api/auth/login",
+        "/api/auth/register",
+        "/api/auth/social-login",
+    }
+    if unsafe and cookie_auth and not public_auth:
+        csrf_cookie = request.cookies.get(CSRF_COOKIE)
+        csrf_header = request.headers.get(CSRF_HEADER)
+        if not csrf_cookie or not csrf_header or csrf_header != csrf_cookie:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Invalid or missing CSRF token."},
+            )
+    return await call_next(request)
 
 
 @app.middleware("http")

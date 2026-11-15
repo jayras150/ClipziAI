@@ -11,6 +11,7 @@ from app.core.security import decode_token, verify_api_key
 from app.models.user import User
 from app.models.user_api_key import UserAPIKey
 from app.core.config import get_settings
+from app.core.auth_cookies import ACCESS_COOKIE
 
 settings = get_settings()
 security = HTTPBearer(auto_error=False)
@@ -29,15 +30,12 @@ async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: AsyncSession = Depends(get_db_session),
 ) -> User:
-    """Get current authenticated user from JWT token."""
-    if not credentials:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required",
-        )
-    
-    token = credentials.credentials
-    payload = decode_token(token)
+    """Get current authenticated user from Bearer token or HttpOnly cookie."""
+    bearer = credentials.credentials if credentials else ""
+    payload = decode_token(bearer) if bearer else None
+    if not payload or payload.get("type") != "access":
+        cookie_token = request.cookies.get(ACCESS_COOKIE)
+        payload = decode_token(cookie_token) if cookie_token else None
     if not payload or payload.get("type") != "access":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

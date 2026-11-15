@@ -2,7 +2,7 @@
 Authentication endpoints - Register, login, 2FA, social, password reset
 """
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -12,6 +12,12 @@ from app.core.security import (
     hash_password, verify_password, create_access_token, create_refresh_token,
     generate_totp_secret, get_totp_uri, generate_backup_codes, verify_totp,
     decode_token
+)
+from app.core.auth_cookies import (
+    CSRF_COOKIE,
+    REFRESH_COOKIE,
+    clear_auth_cookies,
+    set_auth_cookies,
 )
 from app.models.user import User, AuthProvider
 from app.models.user_profile import UserProfile
@@ -42,6 +48,7 @@ def _device_fingerprint(request: Request, body_value: str | None) -> str:
 async def register(
     user_data: UserRegister,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db_session),
 ):
     # Check if user exists
@@ -87,6 +94,7 @@ async def register(
     # Generate tokens
     access_token = create_access_token({"sub": str(user.id)})
     refresh_token = create_refresh_token({"sub": str(user.id)})
+    set_auth_cookies(response, access_token, refresh_token)
     
     return TokenResponse(
         access_token=access_token,
@@ -101,6 +109,7 @@ async def register(
 async def login(
     login_data: UserLogin,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db_session),
 ):
     result = await db.execute(select(User).where(User.email == login_data.email))
@@ -125,20 +134,27 @@ async def login(
     
     access_token = create_access_token({"sub": str(user.id)})
     refresh_token = create_refresh_token({"sub": str(user.id)})
+    set_auth_cookies(response, access_token, refresh_token)
     
     return TokenResponse(access_token=access_token, refresh_token=refresh_token)
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh_token(request: RefreshTokenRequest, db: AsyncSession = Depends(get_db_session)):
-    payload = decode_token(request.refresh_token)
+async def refresh_token(
+    body: RefreshTokenRequest,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db_session),
+):
+    refresh_value = (body.refresh_token or "").strip() or request.cookies.get(REFRESH_COOKIE, "")
+    payload = decode_token(refresh_value)
     if not payload or payload.get("type") != "refresh":
         raise HTTPException(status_code=401, detail="Invalid refresh token")
-    
+
     user_id = payload.get("sub")
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-    
+
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found")
 
@@ -150,8 +166,19 @@ async def refresh_token(request: RefreshTokenRequest, db: AsyncSession = Depends
 
     access_token = create_access_token({"sub": str(user.id)})
     new_refresh_token = create_refresh_token({"sub": str(user.id)})
-    
+    set_auth_cookies(
+        response,
+        access_token,
+        new_refresh_token,
+        csrf_token=request.cookies.get(CSRF_COOKIE),
+    )
     return TokenResponse(access_token=access_token, refresh_token=new_refresh_token)
+
+
+@router.post("/logout")
+async def logout(response: Response):
+    clear_auth_cookies(response)
+    return {"ok": True}
 
 
 @router.post("/2fa/setup", response_model=TwoFactorSetup)
@@ -283,6 +310,7 @@ async def social_providers():
 async def social_login(
     data: SocialLoginRequest,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db_session),
 ):
     """
@@ -354,6 +382,7 @@ async def social_login(
 
     access_token = create_access_token({"sub": str(user.id)})
     refresh_token = create_refresh_token({"sub": str(user.id)})
+    set_auth_cookies(response, access_token, refresh_token)
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,

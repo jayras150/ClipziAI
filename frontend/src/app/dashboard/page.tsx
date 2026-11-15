@@ -27,7 +27,7 @@ import {
 } from "lucide-react"
 
 import { api, ClipData, MusicTrackData, TaskData } from "@/lib/api"
-import { ensureSession } from "@/lib/auth"
+import { ensureSession, hasSession } from "@/lib/auth"
 import { SUBTITLE_STYLE_OPTIONS } from "@/lib/caption-styles"
 import StyleRail from "@/components/StyleRail"
 import PreviewDock from "@/components/PreviewDock"
@@ -258,7 +258,7 @@ export default function DashboardPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
 
-  const getToken = () => (typeof window === "undefined" ? null : localStorage.getItem("token"))
+  const getToken = () => (hasSession() ? "cookie" : null)
 
   /** Klip yang sedang dibuka di popup (selalu ambil versi terbaru dari state). */
   const modalClip = clips.find((item) => item.id === modalClipId) || null

@@ -48,7 +48,9 @@ export default function SocialButtons({ mode, onSuccess }: Props) {
   useEffect(() => {
     setGoogleClientId(getGoogleClientId())
 
-    fetch(`${getApiBaseUrl()}/api/auth/social-providers`)
+    fetch(`${getApiBaseUrl()}/api/auth/social-providers`, {
+      credentials: "include",
+    })
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (!data) return
@@ -90,6 +92,7 @@ export default function SocialButtons({ mode, onSuccess }: Props) {
         const fingerprintHeader = await deviceFingerprintHeader()
         const response = await fetch(`${getApiBaseUrl()}/api/auth/social-login`, {
           method: "POST",
+          credentials: "include",
           headers: { "Content-Type": "application/json", ...fingerprintHeader },
           body: JSON.stringify({ provider, access_token: googleToken }),
         })
