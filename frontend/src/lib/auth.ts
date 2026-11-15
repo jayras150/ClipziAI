@@ -46,7 +46,9 @@ export function getRefreshToken(): string | null {
 }
 
 export function hasSession(): boolean {
-  return readCookie(SESSION_COOKIE) === "1"
+  const active = readCookie(SESSION_COOKIE) === "1"
+  if (!active) clearLegacyStorage()
+  return active
 }
 
 export function notifyAuthChanged(): void {
