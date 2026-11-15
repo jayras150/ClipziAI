@@ -19,7 +19,9 @@ from app.core.config import get_settings
 logger = logging.getLogger(__name__)
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
-FILE_FIELDS = "id,name,mimeType,size,modifiedTime,md5Checksum,webViewLink,parents"
+FILE_FIELDS = (
+    "id,name,mimeType,size,modifiedTime,md5Checksum,webViewLink,parents,capabilities"
+)
 
 
 class DriveError(RuntimeError):
@@ -215,6 +217,25 @@ class DriveService:
             fileId=file_id,
             supportsAllDrives=True,
         ).execute()
+
+    def _trash_sync(self, file_id: str) -> Dict[str, Any]:
+        return (
+            self.client.files()
+            .update(
+                fileId=file_id,
+                body={"trashed": True},
+                fields="id,name,trashed",
+                supportsAllDrives=True,
+            )
+            .execute()
+        )
+
+    async def trash_file(self, file_id: str) -> Dict[str, Any]:
+        """Pindahkan file/folder ke trash (tidak butuh owner)."""
+        try:
+            return await asyncio.to_thread(self._trash_sync, file_id)
+        except Exception as exc:  # noqa: BLE001
+            raise DriveError(f"Gagal memindahkan folder Drive ke trash: {exc}") from exc
 
     def _delete_tree_sync(self, file_id: str) -> int:
         """Hapus folder beserta isinya; return jumlah objek yang dihapus."""

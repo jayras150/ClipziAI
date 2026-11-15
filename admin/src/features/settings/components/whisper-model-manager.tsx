@@ -187,13 +187,20 @@ export default function WhisperModelManager({ data }: { data: WhisperModelsData 
         setError(String(response.error));
         return;
       }
-      setMessage(
-        deleteDrive
-          ? `Model dan folder Drive dihapus (${String(
-              (response.data as Record<string, unknown> | undefined)?.drive_objects_removed ?? 0
-            )} objek).`
-          : 'Model dihapus dari daftar admin.'
-      );
+      const result = response.data as Record<string, unknown> | undefined;
+      if (deleteDrive) {
+        const driveDeleted = result?.drive_deleted !== false;
+        const driveError = String(result?.drive_error || '');
+        setMessage(
+          driveDeleted
+            ? `Model dan folder Drive dihapus (${String(
+                result?.drive_objects_removed ?? 0
+              )} objek).`
+            : `Model dihapus dari daftar. ${driveError || 'Folder Drive tidak dihapus.'}`
+        );
+      } else {
+        setMessage('Model dihapus dari daftar admin.');
+      }
       router.refresh();
     });
   };
@@ -316,7 +323,9 @@ export default function WhisperModelManager({ data }: { data: WhisperModelsData 
           <CardDescription>
             Hanya folder dengan <code>model.bin</code>, <code>config.json</code>,{' '}
             <code>tokenizer.json</code>, <code>preprocessor_config.json</code>, dan vocabulary
-            yang bisa diaktifkan.
+            yang bisa diaktifkan. Folder yang dibuat akun Google Anda tidak bisa dihapus permanen
+            oleh service account; gunakan <strong>Hapus daftar</strong> lalu hapus folder lewat
+            tautan Drive.
           </CardDescription>
         </CardHeader>
         <CardContent>

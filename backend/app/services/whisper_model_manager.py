@@ -179,7 +179,7 @@ async def scan_models(db: AsyncSession) -> Dict[str, Any]:
     for folder in folders:
         folder_id = str(folder.get("id") or "").strip()
         folder_name = str(folder.get("name") or "").strip()
-        if not folder_id or not folder_name:
+        if not folder_id or not folder_name or folder_name.startswith("."):
             continue
         seen.add(folder_id)
         try:
@@ -283,7 +283,12 @@ async def activate_model(db: AsyncSession, model_id: Any) -> WhisperModel:
 async def delete_model(
     db: AsyncSession, model_id: Any, *, delete_drive: bool = False
 ) -> Dict[str, Any]:
-    """Hapus registry; opsional hapus folder Drive beserta isinya."""
+    """Hapus registry; opsional hapus/trash folder Drive bila service account punya izin.
+
+    Folder yang dibuat akun Google pemilik Drive tidak bisa dihapus permanen oleh
+    service account (hanya writer), jadi jangan gagalkan seluruh operasi: hapus
+    baris registry dan beri pesan agar admin menghapus folder lewat Drive.
+    """
     row = await db.get(WhisperModel, model_id)
     if row is None:
         raise ValueError("Model tidak ditemukan.")
@@ -291,15 +296,46 @@ async def delete_model(
         raise ValueError("Model sedang aktif. Aktifkan model lain sebelum menghapus.")
 
     removed = 0
+    drive_deleted = False
+    drive_error = ""
+    drive_action = ""
     if delete_drive and row.status != "missing":
         drive = DriveService()
         if not drive.configured:
             raise DriveError("Google Drive belum siap; tidak bisa menghapus folder.")
-        removed = await drive.delete_tree(row.drive_folder_id)
+        try:
+            meta = await drive.get_file(row.drive_folder_id)
+            caps = meta.get("capabilities") or {}
+            if caps.get("canDelete"):
+                removed = await drive.delete_tree(row.drive_folder_id)
+                drive_deleted = True
+                drive_action = "deleted"
+            elif caps.get("canTrash"):
+                await drive.trash_file(row.drive_folder_id)
+                removed = 1
+                drive_deleted = True
+                drive_action = "trashed"
+            else:
+                drive_error = (
+                    "Folder Drive dimiliki akun Google Anda; service account hanya "
+                    "writer sehingga tidak bisa menghapus permanen. Folder tetap ada. "
+                    f"Hapus manual: https://drive.google.com/drive/folders/{row.drive_folder_id}"
+                )
+        except DriveError as exc:
+            drive_error = (
+                f"{exc} Folder tetap ada; hapus manual: "
+                f"https://drive.google.com/drive/folders/{row.drive_folder_id}"
+            )
 
     await db.delete(row)
     await db.commit()
-    return {"deleted": True, "drive_objects_removed": removed}
+    return {
+        "deleted": True,
+        "drive_objects_removed": removed,
+        "drive_deleted": drive_deleted,
+        "drive_action": drive_action,
+        "drive_error": drive_error,
+    }
 
 
 async def drive_status() -> Dict[str, Any]:
