@@ -36,6 +36,14 @@ export const navGroups: NavGroup[] = [
         shortcut: ['w', 'w'],
         isActive: false,
         items: []
+      },
+      {
+        title: 'Registration Abuse',
+        url: '/dashboard/registration-abuse',
+        icon: 'account',
+        shortcut: ['r', 'a'],
+        isActive: false,
+        items: []
       }
     ]
   },

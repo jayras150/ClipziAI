@@ -9,6 +9,7 @@ import { Mail, Lock } from "lucide-react"
 
 import { getApiBaseUrl } from "@/lib/env"
 import { readApiError } from "@/lib/api-errors"
+import { deviceFingerprintHeader } from "@/lib/device-fingerprint"
 import SocialButtons from "@/components/SocialButtons"
 
 export default function LoginPage() {
@@ -31,9 +32,10 @@ export default function LoginPage() {
     setError("")
     setLoading(true)
     try {
+      const fingerprintHeader = await deviceFingerprintHeader()
       const response = await fetch(`${getApiBaseUrl()}/api/auth/login`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...fingerprintHeader },
         body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
       })
       const payload = await response.json().catch(() => null)

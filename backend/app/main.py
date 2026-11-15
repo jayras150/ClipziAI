@@ -33,6 +33,7 @@ from app.api.admin import storage as admin_storage
 from app.api import branding as public_branding
 from app.api.admin import youtube as admin_youtube
 from app.api.admin import workers as admin_workers
+from app.api.admin import registration_abuse as admin_registration_abuse
 from app.api import multi_platform, clip_templates, bulk_jobs, analytics
 from app.api import api_keys, webhooks, compliance
 from app.api import scheduled_publish
@@ -246,6 +247,11 @@ app.include_router(
 app.include_router(public_branding.router, prefix="/api", tags=["Branding"])
 app.include_router(admin_youtube.router, prefix="/api/admin/youtube", tags=["Admin YouTube"])
 app.include_router(admin_workers.router, prefix="/api/admin/workers", tags=["Admin Workers"])
+app.include_router(
+    admin_registration_abuse.router,
+    prefix="/api/admin/registration-abuse",
+    tags=["Admin Registration Abuse"],
+)
 app.include_router(
     admin_ytdlp_cookies.router,
     prefix="/api/admin/ytdlp-cookies",

@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
+from uuid import UUID
 
 import pytest
 
@@ -17,7 +18,7 @@ _MISSING = object()
 class _FakeClient:
     def __init__(
         self,
-        sequence: List[Optional[Dict[str, Any]]],
+        sequence: List[Any],
         default: Any = _MISSING,
         existing_ids: Optional[List[int]] = None,
     ) -> None:
@@ -47,7 +48,7 @@ class _FakeClient:
 
 def _supervisor(
     client: _FakeClient,
-    status_sequence: List[str],
+    status_sequence: Sequence[Optional[str]],
     offers: Optional[List[Dict[str, Any]]] = None,
     create_ids: Optional[List[int]] = None,
 ) -> InstanceSupervisor:
@@ -256,7 +257,9 @@ def test_make_create_instance_meneruskan_env_dan_id(monkeypatch):
     monkeypatch.setattr(vast_worker.settings, "CLIPZI_CALLBACK_URL", "https://x/api/internal/worker/events")
     monkeypatch.setattr(vast_worker.settings, "CLIPZI_WORKER_TOKEN", "tok")
 
-    create = vast_worker._make_create_instance("00000000-0000-0000-0000-000000000002", _Client())
+    create = vast_worker._make_create_instance(
+        UUID("00000000-0000-0000-0000-000000000002"), _Client()
+    )
     instance_id = asyncio.run(create({"id": 99}))
 
     assert instance_id == 4242

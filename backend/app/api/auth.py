@@ -2,7 +2,7 @@
 Authentication endpoints - Register, login, 2FA, social, password reset
 """
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -16,7 +16,6 @@ from app.core.security import (
 from app.models.user import User, AuthProvider
 from app.models.user_profile import UserProfile
 from app.models.pricing_plan import PricingPlan
-from app.models.credit_transaction import CreditTransaction, CreditTransactionType
 from app.schemas.auth import (
     UserRegister, UserLogin, TokenResponse, RefreshTokenRequest,
     ForgotPasswordRequest, ResetPasswordRequest, TwoFactorSetup, TwoFactorVerify,
@@ -24,14 +23,27 @@ from app.schemas.auth import (
 )
 from app.schemas.user import UserProfileResponse, CreditBalanceResponse
 from app.core.config import get_settings
+from app.services import device_reputation
 
 router = APIRouter()
 security = HTTPBearer()
 settings = get_settings()
 
 
+def _device_fingerprint(request: Request, body_value: str | None) -> str:
+    return (
+        request.headers.get("X-Device-Fingerprint")
+        or body_value
+        or ""
+    ).strip()
+
+
 @router.post("/register", response_model=TokenResponse)
-async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db_session)):
+async def register(
+    user_data: UserRegister,
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+):
     # Check if user exists
     result = await db.execute(select(User).where(User.email == user_data.email))
     if result.scalar_one_or_none():
@@ -55,34 +67,42 @@ async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db_se
     profile = UserProfile(
         user_id=user.id,
         plan_type=free_plan.name if free_plan else "free",
-        credits_balance=5,  # Signup bonus
-        credits_total_earned=5,
+        credits_balance=0,
+        credits_total_earned=0,
         max_concurrent_tasks=free_plan.max_concurrent_tasks if free_plan else 1,
         watermark_enabled=free_plan.watermark if free_plan else True,
     )
     db.add(profile)
     
-    # Credit transaction for signup bonus
-    credit_tx = CreditTransaction(
-        user_id=user.id,
-        amount=5,
-        type=CreditTransactionType.SIGNUP_BONUS,
-        description={"en": "Signup bonus", "id": "Bonus pendaftaran"},
-        balance_after=5,
+    claim = await device_reputation.claim_signup_bonus(
+        db,
+        user,
+        _device_fingerprint(request, user_data.device_fingerprint),
+        ip=device_reputation.client_ip(request),
+        user_agent=device_reputation.client_user_agent(request),
     )
-    db.add(credit_tx)
-    
+
     await db.commit()
     
     # Generate tokens
     access_token = create_access_token({"sub": str(user.id)})
     refresh_token = create_refresh_token({"sub": str(user.id)})
     
-    return TokenResponse(access_token=access_token, refresh_token=refresh_token)
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        signup_bonus_granted=bool(claim.get("granted")),
+        credits_granted=int(claim.get("amount") or 0),
+        device_status=claim.get("status"),
+    )
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(login_data: UserLogin, db: AsyncSession = Depends(get_db_session)):
+async def login(
+    login_data: UserLogin,
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+):
     result = await db.execute(select(User).where(User.email == login_data.email))
     user = result.scalar_one_or_none()
     
@@ -94,6 +114,13 @@ async def login(login_data: UserLogin, db: AsyncSession = Depends(get_db_session
     
     # Update last login
     user.last_login_at = __import__("datetime").datetime.utcnow()
+    await device_reputation.associate_login(
+        db,
+        user,
+        _device_fingerprint(request, login_data.device_fingerprint),
+        ip=device_reputation.client_ip(request),
+        user_agent=device_reputation.client_user_agent(request),
+    )
     await db.commit()
     
     access_token = create_access_token({"sub": str(user.id)})
@@ -164,7 +191,6 @@ async def reset_password(request: ResetPasswordRequest):
 
 
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
-SIGNUP_BONUS_CREDITS = 5
 
 
 async def _fetch_google_profile(access_token: str) -> dict:
@@ -190,10 +216,17 @@ async def _fetch_google_profile(access_token: str) -> dict:
 
 
 async def _create_oauth_user(
-    db: AsyncSession, email: str, name: str, provider: AuthProvider, provider_id: str | None,
+    db: AsyncSession,
+    *,
+    email: str,
+    name: str,
+    provider: AuthProvider,
+    provider_id: str | None,
     avatar_url: str | None,
-) -> User:
-    """Buat user baru dari OAuth + profil + bonus kredit pendaftaran."""
+    request: Request,
+    fingerprint: str,
+) -> tuple[User, dict]:
+    """Buat user baru dari OAuth; bonus mengikuti aturan device."""
     result = await db.execute(select(PricingPlan).where(PricingPlan.name == "free"))
     free_plan = result.scalar_one_or_none()
 
@@ -213,23 +246,21 @@ async def _create_oauth_user(
         UserProfile(
             user_id=user.id,
             plan_type=free_plan.name if free_plan else "free",
-            credits_balance=SIGNUP_BONUS_CREDITS,
-            credits_total_earned=SIGNUP_BONUS_CREDITS,
+            credits_balance=0,
+            credits_total_earned=0,
             max_concurrent_tasks=free_plan.max_concurrent_tasks if free_plan else 1,
             watermark_enabled=free_plan.watermark if free_plan else True,
         )
     )
-    db.add(
-        CreditTransaction(
-            user_id=user.id,
-            amount=SIGNUP_BONUS_CREDITS,
-            type=CreditTransactionType.SIGNUP_BONUS,
-            description={"en": "Signup bonus", "id": "Bonus pendaftaran"},
-            balance_after=SIGNUP_BONUS_CREDITS,
-        )
+    claim = await device_reputation.claim_signup_bonus(
+        db,
+        user,
+        fingerprint,
+        ip=device_reputation.client_ip(request),
+        user_agent=device_reputation.client_user_agent(request),
     )
     await db.commit()
-    return user
+    return user, claim
 
 
 @router.get("/social-providers")
@@ -249,7 +280,11 @@ async def social_providers():
 
 @router.post("/social-login", response_model=TokenResponse)
 
-async def social_login(data: SocialLoginRequest, db: AsyncSession = Depends(get_db_session)):
+async def social_login(
+    data: SocialLoginRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+):
     """
     Login via penyedia OAuth.
 
@@ -284,10 +319,17 @@ async def social_login(data: SocialLoginRequest, db: AsyncSession = Depends(get_
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
 
+    claim: dict = {}
     if user is None:
-        user = await _create_oauth_user(
-            db, email=email, name=name, provider=auth_provider,
-            provider_id=provider_id, avatar_url=avatar_url,
+        user, claim = await _create_oauth_user(
+            db,
+            email=email,
+            name=name,
+            provider=auth_provider,
+            provider_id=provider_id,
+            avatar_url=avatar_url,
+            request=request,
+            fingerprint=_device_fingerprint(request, data.device_fingerprint),
         )
     else:
         if user.is_banned:
@@ -301,8 +343,21 @@ async def social_login(data: SocialLoginRequest, db: AsyncSession = Depends(get_
             user.avatar_url = avatar_url
         if not user.email_verified:
             user.email_verified = True
+        await device_reputation.associate_login(
+            db,
+            user,
+            _device_fingerprint(request, data.device_fingerprint),
+            ip=device_reputation.client_ip(request),
+            user_agent=device_reputation.client_user_agent(request),
+        )
         await db.commit()
 
     access_token = create_access_token({"sub": str(user.id)})
     refresh_token = create_refresh_token({"sub": str(user.id)})
-    return TokenResponse(access_token=access_token, refresh_token=refresh_token)
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        signup_bonus_granted=bool(claim.get("granted")),
+        credits_granted=int(claim.get("amount") or 0),
+        device_status=claim.get("status"),
+    )

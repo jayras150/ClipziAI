@@ -46,14 +46,24 @@ export default function PrivacyPolicyPage() {
           fulfilling your request.
         </p>
 
-        <h2>4. Data retention</h2>
+        <h2>4. Device security checks</h2>
+        <p>
+          To prevent repeated abuse of free credits, we use a privacy-preserving device signal
+          (a hashed combination of basic browser/device characteristics) and limited security
+          logs. We do not sell this data. The raw fingerprint is not stored; only a
+          server-side protected hash, account association, timestamp, and a hashed network
+          identifier are retained for fraud prevention. Device records are kept only as long as
+          needed for security and abuse review.
+        </p>
+
+        <h2>5. Data retention</h2>
         <p>
           Generated clips remain available while your account is active. Deleting a task removes
           its clips from storage. When you delete your account, personal data is removed within 30
           days, except records we must retain for legal or accounting reasons.
         </p>
 
-        <h2>5. Your rights</h2>
+        <h2>6. Your rights</h2>
         <ul>
           <li>Access, correct, or delete your personal data.</li>
           <li>Export a copy of your account data.</li>
@@ -61,13 +71,13 @@ export default function PrivacyPolicyPage() {
           <li>Lodge a complaint with your local data protection authority.</li>
         </ul>
 
-        <h2>6. Cookies</h2>
+        <h2>7. Cookies</h2>
         <p>
           We use only essential cookies and local storage required to keep you signed in. We do not
           sell data or use third-party advertising trackers.
         </p>
 
-        <h2>7. Contact</h2>
+        <h2>8. Contact</h2>
         <p>
           Questions about this policy? Email <a href="mailto:privacy@proxyai.live">privacy@proxyai.live</a>{" "}
           or use our <a href="/contact">contact page</a>.

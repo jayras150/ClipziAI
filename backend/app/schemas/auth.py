@@ -9,17 +9,22 @@ class UserRegister(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
     name: str = Field(min_length=2, max_length=255)
+    device_fingerprint: Optional[str] = Field(default=None, max_length=512)
 
 
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+    device_fingerprint: Optional[str] = Field(default=None, max_length=512)
 
 
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+    signup_bonus_granted: bool = False
+    credits_granted: int = 0
+    device_status: Optional[str] = None
 
 
 class RefreshTokenRequest(BaseModel):
@@ -49,3 +54,4 @@ class TwoFactorVerify(BaseModel):
 class SocialLoginRequest(BaseModel):
     provider: str  # google, x, facebook
     access_token: str
+    device_fingerprint: Optional[str] = Field(default=None, max_length=512)

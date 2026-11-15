@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 
 import { getApiBaseUrl, getGoogleClientId } from "@/lib/env"
 import { readApiError } from "@/lib/api-errors"
+import { deviceFingerprintHeader } from "@/lib/device-fingerprint"
 import { requestGoogleAccessToken } from "@/lib/social"
 
 type Provider = "google" | "x" | "facebook"
@@ -86,9 +87,10 @@ export default function SocialButtons({ mode, onSuccess }: Props) {
         }
 
         const googleToken = await requestGoogleAccessToken(googleClientId)
+        const fingerprintHeader = await deviceFingerprintHeader()
         const response = await fetch(`${getApiBaseUrl()}/api/auth/social-login`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...fingerprintHeader },
           body: JSON.stringify({ provider, access_token: googleToken }),
         })
         const payload = await response.json().catch(() => null)

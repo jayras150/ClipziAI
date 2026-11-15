@@ -567,7 +567,21 @@ status) plus riwayat lokal, dengan tombol **Logs** (termasuk opsi **debug/daemon
 
 
 
-## Setelan ekosistem & ganti domain (1 klik)
+## Device reputation & proteksi bonus Free
+
+- **Fase 1 (shadow)**: fingerprint perangkat dicatat, akun dihubungkan ke device, risk score
+  dihitung, tetapi semua registrasi tetap mendapat bonus. Default `enforce_device_claim=false`.
+- **Fase 2 (enforcement)**: satu device hanya boleh klaim bonus Free sekali seumur hidup.
+  Akun kedua tetap dibuat, tetapi bonus 0 dan device ditandai `SUSPICIOUS`/`HIGH_RISK`.
+- Fingerprint dikirim sebagai hash dari frontend (`X-Device-Fingerprint`), lalu di-HMAC
+  dengan `DEVICE_FINGERPRINT_SECRET`/`SECRET_KEY`. IP disimpan sebagai hash, bukan teks mentah.
+- Register email, Google signup, dan login sama-sama memakai service
+  `device_reputation`; jadi tidak ada jalur yang melewati aturan bonus.
+- Admin: **Operasional → Registration Abuse** menampilkan device, fingerprint sebagian,
+  akun terkait, claim, risk, event, serta aksi **Trust** dan **Reset claim**.
+- Setting enforcement dapat diubah dari halaman tersebut. Aktifkan setelah data shadow
+  cukup dan false positive sudah dievaluasi.
+
 
 Semua nilai disimpan di `platform_settings` key `platform`:
 `site_url`, `admin_url`, `support_email`, `timezone`, `maintenance_mode`,

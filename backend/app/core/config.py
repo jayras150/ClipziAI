@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     # Path folder model di sisi Vast Cloud Sync (bukan path lokal instance).
     GDRIVE_VAST_ROOT_PATH: str = "/vast-backup/Clipzy/whisper_models"
 
+    # Device reputation (Fase 1/2): secret HMAC untuk fingerprint & IP.
+    # Kosong = turunkan dari SECRET_KEY.
+    DEVICE_FINGERPRINT_SECRET: Optional[str] = None
+
     # Legacy OpenAI key (fallback for AI_API_KEY and TRANSCRIPTION_API_KEY)
     OPENAI_API_KEY: Optional[str] = None
     # Local faster-whisper fallback model (legacy-compatible)

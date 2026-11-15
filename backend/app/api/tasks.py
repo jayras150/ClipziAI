@@ -316,8 +316,8 @@ async def list_task_clips(
 
     return [
         ClipResponse(
-            id=str(clip.id),
-            task_id=str(clip.task_id),
+            id=clip.id,
+            task_id=clip.task_id,
             clip_index=clip.clip_index,
             start_time=clip.start_time,
             end_time=clip.end_time,

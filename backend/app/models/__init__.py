@@ -17,6 +17,17 @@ from app.models.copyright_check import CopyrightAction, CopyrightCheck, Copyrigh
 from app.models.credit_transaction import CreditTransaction, CreditTransactionType
 from app.models.download_log import DownloadAttempt, TaskLog
 from app.models.download_runner import DownloadRunner, RunnerJob
+from app.models.device import (
+    DEVICE_STATUS_HIGH,
+    DEVICE_STATUS_LOW,
+    DEVICE_STATUS_NEW,
+    DEVICE_STATUS_SUSPICIOUS,
+    DEVICE_STATUS_TRUSTED,
+    Device,
+    DeviceAccount,
+    DeviceEvent,
+    DeviceFreeClaim,
+)
 from app.models.encrypted_secret import EncryptedSecret
 from app.models.gdpr_request import GDPRRequest, GDPRRequestStatus, GDPRRequestType
 from app.models.invoice import Invoice, InvoiceStatus
@@ -59,4 +70,7 @@ __all__ = [
     "WhisperModel",
     "YtdlpCookie", "COOKIE_STATUS_ACTIVE", "COOKIE_STATUS_EXPIRED", "COOKIE_STATUS_DISABLED",
     "DownloadAttempt", "TaskLog", "DownloadRunner", "RunnerJob", "TaskAsset",
+    "Device", "DeviceAccount", "DeviceFreeClaim", "DeviceEvent",
+    "DEVICE_STATUS_NEW", "DEVICE_STATUS_TRUSTED", "DEVICE_STATUS_LOW",
+    "DEVICE_STATUS_SUSPICIOUS", "DEVICE_STATUS_HIGH",
 ]

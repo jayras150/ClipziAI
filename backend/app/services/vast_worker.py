@@ -37,12 +37,15 @@ import asyncio
 import logging
 import time
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TYPE_CHECKING
 from uuid import UUID
 
 import requests
 
 from app.core.config import get_settings
+
+if TYPE_CHECKING:
+    from app.services.instance_supervisor import InstanceSupervisor
 
 logger = logging.getLogger(__name__)
 
@@ -304,8 +307,6 @@ async def _reap_instance(instance_id: int, task_id: UUID) -> None:
 
 async def _supervise_safely(supervisor: "InstanceSupervisor") -> None:
     """Jalankan supervisor; exception apa pun dicatat, bukan hilang diam-diam."""
-    from app.services.instance_supervisor import InstanceSupervisor  # noqa: F401
-
     try:
         await supervisor.run()
     except Exception:
