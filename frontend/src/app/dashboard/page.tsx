@@ -232,6 +232,7 @@ export default function DashboardPage() {
   // Auto zoom follow-speaker
   const [autoZoom, setAutoZoom] = useState("off")
   const [zoomLevel, setZoomLevel] = useState("1.3")
+  const [autoZoomSplit, setAutoZoomSplit] = useState(true)
   // Musik latar
   const [musicLibrary, setMusicLibrary] = useState<MusicTrackData[]>([])
   const [musicUrl, setMusicUrl] = useState("")
@@ -480,6 +481,7 @@ export default function DashboardPage() {
       // Auto zoom follow-speaker
       if (autoZoom === "speaker") {
         editingOptions.auto_zoom = "speaker"
+        editingOptions.auto_zoom_split = autoZoomSplit
         const zoom = parseFloat(zoomLevel)
         if (!Number.isNaN(zoom) && zoom !== 1) editingOptions.zoom_level = zoom
       }
@@ -573,6 +575,7 @@ export default function DashboardPage() {
     setOutroUrl("")
     setAutoZoom("off")
     setZoomLevel("1.3")
+    setAutoZoomSplit(true)
     setMusicUrl("")
     setMusicVolume("0.22")
     setMusicDucking(true)
@@ -1194,20 +1197,36 @@ export default function DashboardPage() {
                         </select>
                       </div>
                       {autoZoom === "speaker" && (
-                        <div className="ui-opt">
-                          <label className="ui-opt-label" htmlFor="zoom-level">Level zoom</label>
-                          <select
-                            id="zoom-level"
-                            value={zoomLevel}
-                            onChange={(e) => setZoomLevel(e.target.value)}
-                            className="ui-input"
-                          >
-                            <option value="1">1.0×</option>
-                            <option value="1.3">1.3×</option>
-                            <option value="1.6">1.6×</option>
-                            <option value="2">2.0×</option>
-                          </select>
-                        </div>
+                        <>
+                          <div className="ui-opt">
+                            <label className="ui-opt-label" htmlFor="zoom-level">Level zoom</label>
+                            <select
+                              id="zoom-level"
+                              value={zoomLevel}
+                              onChange={(e) => setZoomLevel(e.target.value)}
+                              className="ui-input"
+                            >
+                              <option value="1">1.0×</option>
+                              <option value="1.3">1.3×</option>
+                              <option value="1.6">1.6×</option>
+                              <option value="2">2.0×</option>
+                            </select>
+                          </div>
+                          <div className="ui-opt">
+                            <label className="ui-opt-label" htmlFor="auto-zoom-split">
+                              Split 2 orang
+                            </label>
+                            <label className="ui-switch">
+                              <input
+                                type="checkbox"
+                                id="auto-zoom-split"
+                                checked={autoZoomSplit}
+                                onChange={(e) => setAutoZoomSplit(e.target.checked)}
+                              />
+                              <span>Atas/bawah jika berjauhan</span>
+                            </label>
+                          </div>
+                        </>
                       )}
                       <div className="ui-opt">
                         <label className="ui-opt-label" htmlFor="music-track">Music</label>

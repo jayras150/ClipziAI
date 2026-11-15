@@ -147,6 +147,7 @@ export default function RegistrationAbusePanel({ data }: { data: RegistrationAbu
 
   return (
     <div className='space-y-4'>
+      {/* Device reputation settings */}
       <Card>
         <CardHeader>
           <CardTitle>Device reputation settings</CardTitle>
@@ -188,6 +189,7 @@ export default function RegistrationAbusePanel({ data }: { data: RegistrationAbu
         </CardContent>
       </Card>
 
+      {/* Device list */}
       <Card>
         <CardHeader>
           <CardTitle>Devices</CardTitle>

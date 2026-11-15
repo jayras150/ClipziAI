@@ -158,7 +158,7 @@ def _slice_segments(
     return sliced
 
 
-async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
+async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignore[reportGeneralTypeIssues]
     """Jalankan seluruh pipeline untuk satu task.
 
     Mengembalikan dict ringkas: {"ok": bool, "clips": int, "error": str|None}.
@@ -254,6 +254,13 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
         # ---------- Auto zoom follow-speaker ----------
         auto_zoom = str(options.get("auto_zoom") or "").strip().lower()
         zoom_level = float(options.get("zoom_level", 1.0) or 1.0)
+        raw_auto_zoom_split = options.get("auto_zoom_split", True)
+        auto_zoom_split = str(raw_auto_zoom_split).strip().lower() not in {
+            "false",
+            "0",
+            "off",
+            "no",
+        }
         # ---------- Musik latar ----------
         music_url = options.get("music_url")
         music_volume = float(options.get("music_volume", 0.22) or 0.22)
@@ -683,6 +690,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:
                         aspect_ratio=aspect_ratio,
                         zoom=zoom_level,
                         filter_preset=filter_preset,
+                        split_screen=auto_zoom_split,
                     )
                 else:
                     await processor.render_clip(

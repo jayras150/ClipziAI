@@ -38,7 +38,7 @@ ALLOWED_EDITING_OPTIONS = {
     "caption_color", "caption_size", "caption_font", "speed",
     "filter_preset", "blur_fill", "remove_silence", "enhance_audio",
     "watermark_url", "watermark_position", "watermark_opacity", "watermark_scale",
-    "intro_url", "outro_url", "auto_zoom", "zoom_level",
+    "intro_url", "outro_url", "auto_zoom", "zoom_level", "auto_zoom_split",
     "music_url", "music_volume", "music_ducking",
     "max_clips", "burn_subtitle", "segments",
     "target_duration_min", "target_duration_max",

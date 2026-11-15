@@ -5,8 +5,11 @@ import os
 import asyncio
 import functools
 import logging
+import math
 import re
 import subprocess
+from collections import Counter
+from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 from uuid import uuid4
@@ -15,6 +18,85 @@ from app.core.config import get_settings
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _FaceDetection:
+    """Satu wajah pada satu frame sample (koordinat sumber)."""
+
+    x: float
+    y: float
+    w: float
+    h: float
+    score: float
+
+    @property
+    def cx(self) -> float:
+        return self.x + self.w / 2.0
+
+    @property
+    def cy(self) -> float:
+        return self.y + self.h / 2.0
+
+    @property
+    def area(self) -> float:
+        return max(0.0, self.w) * max(0.0, self.h)
+
+
+@dataclass
+class _FaceTrack:
+    """Track wajah sederhana berbasis IoU/centroid (tanpa library tracker)."""
+
+    track_id: int
+    x: float
+    y: float
+    w: float
+    h: float
+    score: float
+    hits: int = 1
+    misses: int = 0
+    last_seen: float = 0.0
+    observations: List[Tuple[float, float, float, float, float, float]] = field(
+        default_factory=list
+    )
+
+    @property
+    def cx(self) -> float:
+        return self.x + self.w / 2.0
+
+    @property
+    def cy(self) -> float:
+        return self.y + self.h / 2.0
+
+    @property
+    def area(self) -> float:
+        return max(0.0, self.w) * max(0.0, self.h)
+
+    def remember(self) -> None:
+        self.observations.append(
+            (self.last_seen, self.cx, self.cy, self.w, self.h, self.score)
+        )
+
+
+@dataclass
+class _SubjectState:
+    """State hysteresis pemilihan subjek utama."""
+
+    primary_id: Optional[int] = None
+    challenger_id: Optional[int] = None
+    challenger_count: int = 0
+    last_primary_seen: float = -999.0
+
+
+@dataclass
+class _SpeakerCropPlan:
+    """Hasil analisis: jalur crop utama dan opsional jalur kedua untuk split."""
+
+    primary: List[Tuple[float, float, float, float, float]] = field(default_factory=list)
+    secondary: List[Tuple[float, float, float, float, float]] = field(
+        default_factory=list
+    )
+    split: bool = False
 
 # ---------------------------------------------------------------------------
 # Preset gaya caption/subtitle (dipakai UI "Style subtitle").
@@ -805,6 +887,327 @@ class VideoProcessor:
         except Exception:
             return None
 
+    @staticmethod
+    def _crop_window(
+        src_w: int,
+        src_h: int,
+        target_ratio: float,
+        zoom: float,
+    ) -> Tuple[float, float]:
+        """Ukuran jendela crop (genap) yang muat di frame sumber."""
+        zoom = max(1.0, float(zoom or 1.0))
+        if src_w / src_h > target_ratio:
+            win_h = src_h / zoom
+            win_w = win_h * target_ratio
+        else:
+            win_w = src_w / zoom
+            win_h = win_w / target_ratio
+
+        win_w = min(float(src_w), win_w)
+        win_h = min(float(src_h), win_h)
+        win_w = max(2, int(win_w) - int(win_w) % 2)
+        win_h = max(2, int(win_h) - int(win_h) % 2)
+        return float(win_w), float(win_h)
+
+    @staticmethod
+    def _face_iou(a: Any, b: Any) -> float:
+        """IoU untuk objek yang punya atribut x/y/w/h."""
+        ax1, ay1 = a.x, a.y
+        ax2, ay2 = a.x + a.w, a.y + a.h
+        bx1, by1 = b.x, b.y
+        bx2, by2 = b.x + b.w, b.y + b.h
+        ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+        ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+        iw, ih = max(0.0, ix2 - ix1), max(0.0, iy2 - iy1)
+        intersection = iw * ih
+        union = a.w * a.h + b.w * b.h - intersection
+        return intersection / union if union > 0 else 0.0
+
+    @staticmethod
+    def _track_strength(track: _FaceTrack, src_w: int, src_h: int) -> float:
+        """Skor subjek: confidence + ukuran + kedekatan tengah + umur track."""
+        center_dist = math.hypot(track.cx - src_w / 2.0, track.cy - src_h / 2.0)
+        center_bonus = max(0.0, 1.0 - center_dist / max(1.0, 0.75 * src_w))
+        age_bonus = min(0.25, track.hits * 0.02)
+        area_bonus = min(0.20, track.area / max(1.0, src_w * src_h) * 10.0)
+        return track.score + 0.12 * center_bonus + age_bonus + area_bonus
+
+
+    def _update_face_tracks(
+        self,
+        active: Dict[int, _FaceTrack],
+        all_tracks: Dict[int, _FaceTrack],
+        detections: List[_FaceDetection],
+        now: float,
+        next_id: int,
+        max_missed: int = 6,
+        alpha: float = 0.65,
+    ) -> Tuple[Dict[int, _FaceTrack], int]:
+        """Cocokkan deteksi ke track lama dengan IoU/centroid, lalu buat track baru."""
+        pairs: List[Tuple[float, int, int]] = []
+        for track_id, track in active.items():
+            for det_index, det in enumerate(detections):
+                iou = self._face_iou(track, det)
+                distance = math.hypot(track.cx - det.cx, track.cy - det.cy)
+                max_distance = max(track.w, track.h, det.w, det.h, 1.0) * 0.8
+                if iou < 0.15 and distance > max_distance:
+                    continue
+                score = iou + max(0.0, 1.0 - distance / max_distance) * 0.25
+                pairs.append((score, track_id, det_index))
+
+        pairs.sort(reverse=True)
+        used_tracks: set[int] = set()
+        used_detections: set[int] = set()
+
+        for _, track_id, det_index in pairs:
+            if track_id in used_tracks or det_index in used_detections:
+                continue
+            track = active[track_id]
+            det = detections[det_index]
+            # EMA ringan supaya box tidak ikut jitter deteksi.
+            alpha = max(0.2, min(0.9, float(alpha)))
+            track.x = alpha * det.x + (1.0 - alpha) * track.x
+            track.y = alpha * det.y + (1.0 - alpha) * track.y
+            track.w = alpha * det.w + (1.0 - alpha) * track.w
+            track.h = alpha * det.h + (1.0 - alpha) * track.h
+            track.score = alpha * det.score + (1.0 - alpha) * track.score
+            track.hits += 1
+            track.misses = 0
+            track.last_seen = now
+            track.remember()
+            used_tracks.add(track_id)
+            used_detections.add(det_index)
+
+        for track_id, track in active.items():
+            if track_id not in used_tracks:
+                track.misses += 1
+
+        for det_index, det in enumerate(detections):
+            if det_index in used_detections:
+                continue
+            track = _FaceTrack(
+                track_id=next_id,
+                x=det.x,
+                y=det.y,
+                w=det.w,
+                h=det.h,
+                score=det.score,
+                last_seen=now,
+            )
+            track.remember()
+            active[next_id] = track
+            all_tracks[next_id] = track
+            next_id += 1
+
+        # Track yang sudah lama hilang tidak boleh menangani deteksi baru,
+        # tetapi objeknya tetap disimpan karena observations-nya mungkin
+        # masih dipakai untuk membangun jalur crop.
+        active = {
+            track_id: track
+            for track_id, track in active.items()
+            if track.misses <= max_missed
+        }
+        return active, next_id
+
+
+    def _choose_primary(
+        self,
+        active: Dict[int, _FaceTrack],
+        all_tracks: Dict[int, _FaceTrack],
+        state: _SubjectState,
+        now: float,
+        src_w: int,
+        src_h: int,
+        lost_grace: float = 0.8,
+        switch_hold: int = 5,
+    ) -> Optional[_FaceTrack]:
+        """Pilih subjek utama dengan lock/hysteresis, bukan wajah terbesar per frame."""
+        candidates = [
+            track
+            for track in active.values()
+            if track.hits >= 2 and abs(track.last_seen - now) < 1e-6
+        ]
+        if not candidates:
+            if (
+                state.primary_id is not None
+                and now - state.last_primary_seen <= lost_grace
+            ):
+                return all_tracks.get(state.primary_id)
+            state.primary_id = None
+            state.challenger_id = None
+            state.challenger_count = 0
+            return None
+
+        if state.primary_id is None or state.primary_id not in all_tracks:
+            chosen = max(
+                candidates,
+                key=lambda track: self._track_strength(track, src_w, src_h),
+            )
+            state.primary_id = chosen.track_id
+            state.last_primary_seen = now
+            state.challenger_id = None
+            state.challenger_count = 0
+            return chosen
+
+        current = all_tracks.get(state.primary_id)
+        if current is None:
+            state.primary_id = None
+            return self._choose_primary(
+                active, all_tracks, state, now, src_w, src_h, lost_grace, switch_hold
+            )
+
+        current_active = any(
+            track.track_id == current.track_id for track in candidates
+        )
+        if not current_active:
+            if now - state.last_primary_seen <= lost_grace:
+                return current
+            chosen = max(
+                candidates,
+                key=lambda track: self._track_strength(track, src_w, src_h),
+            )
+            state.primary_id = chosen.track_id
+            state.last_primary_seen = now
+            state.challenger_id = None
+            state.challenger_count = 0
+            return chosen
+
+        others = [track for track in candidates if track.track_id != current.track_id]
+        if not others:
+            state.challenger_id = None
+            state.challenger_count = 0
+            state.last_primary_seen = now
+            return current
+
+        challenger = max(
+            others, key=lambda track: self._track_strength(track, src_w, src_h)
+        )
+        current_strength = self._track_strength(current, src_w, src_h)
+        challenger_strength = self._track_strength(challenger, src_w, src_h)
+
+        if challenger_strength > current_strength * 1.25:
+            if state.challenger_id == challenger.track_id:
+                state.challenger_count += 1
+            else:
+                state.challenger_id = challenger.track_id
+                state.challenger_count = 1
+            if state.challenger_count >= switch_hold:
+                state.primary_id = challenger.track_id
+                state.last_primary_seen = now
+                state.challenger_id = None
+                state.challenger_count = 0
+                return challenger
+        else:
+            state.challenger_id = None
+            state.challenger_count = 0
+
+        state.last_primary_seen = now
+        return current
+
+
+    def _choose_split_pair(
+        self,
+        active: Dict[int, _FaceTrack],
+        primary: Optional[_FaceTrack],
+        src_w: int,
+        src_h: int,
+        now: float = 0.0,
+    ) -> Optional[Tuple[int, int]]:
+        """Kembalikan pasangan track untuk split atas/bawah bila cukup jauh."""
+        candidates = [
+            track
+            for track in active.values()
+            if track.hits >= 2
+            and track.score >= 0.55
+            and abs(track.last_seen - now) < 1e-6
+        ]
+        if len(candidates) < 2:
+            return None
+
+        if primary is not None and any(
+            track.track_id == primary.track_id for track in candidates
+        ):
+            first = primary
+            others = [
+                track for track in candidates if track.track_id != primary.track_id
+            ]
+            second = max(
+                others,
+                key=lambda track: self._track_strength(track, src_w, src_h),
+            )
+        else:
+            ordered = sorted(
+                candidates,
+                key=lambda track: self._track_strength(track, src_w, src_h),
+                reverse=True,
+            )
+            first, second = ordered[0], ordered[1]
+
+        # Kalau wajah terlalu berdekatan, satu crop masih cukup.
+        if abs(first.cx - second.cx) < 0.32 * src_w:
+            return None
+        # Urutkan ID agar pair_counts stabil walau status primary berganti.
+        first_id, second_id = sorted((first.track_id, second.track_id))
+        result: Tuple[int, int] = (int(first_id), int(second_id))
+        return result
+
+
+    @staticmethod
+    def _track_samples(
+        track: _FaceTrack,
+        duration: float,
+        src_w: int,
+        src_h: int,
+        win_w: float,
+        win_h: float,
+    ) -> List[Tuple[float, float, float, float, float]]:
+        """Ubah observations track menjadi sample crop (koordinat sumber)."""
+        center_x = min(max(0.0, src_w / 2.0 - win_w / 2.0), src_w - win_w)
+        center_y = min(max(0.0, src_h / 2.0 - win_h / 2.0), src_h - win_h)
+
+        observations = sorted(track.observations, key=lambda item: item[0])
+        if not observations:
+            return [(0.0, round(center_x), round(center_y), win_w, win_h)]
+
+        samples: List[Tuple[float, float, float, float, float]] = []
+        first_t = observations[0][0]
+        if first_t > 0.35:
+            # Jangan mulai dengan crop menempel ke wajah; beri transisi halus
+            # dari tengah frame menuju subjek.
+            samples.append((0.0, round(center_x), round(center_y), win_w, win_h))
+
+        last_x, last_y = center_x, center_y
+        for t_rel, cx, cy, _, _, _ in observations:
+            x = min(max(0.0, cx - win_w / 2.0), src_w - win_w)
+            y = min(max(0.0, cy - win_h / 2.0), src_h - win_h)
+            last_x, last_y = x, y
+            samples.append((float(t_rel), round(x), round(y), win_w, win_h))
+
+        last_t = observations[-1][0]
+        if last_t < duration - 0.15:
+            # Wajah hilang: tahan posisi sebentar, lalu kembali ke tengah.
+            samples.append(
+                (
+                    min(duration, last_t + 0.5),
+                    round(last_x),
+                    round(last_y),
+                    win_w,
+                    win_h,
+                )
+            )
+            samples.append(
+                (
+                    min(duration, last_t + 1.0),
+                    round(center_x),
+                    round(center_y),
+                    win_w,
+                    win_h,
+                )
+            )
+
+        return samples
+
+
     def _speaker_track_sync(
         self,
         input_path: str,
@@ -814,13 +1217,15 @@ class VideoProcessor:
         zoom: float,
         sample_fps: float,
         smooth: float,
-    ) -> List[Tuple[float, float, float, float, float]]:
+        split_screen: bool = True,
+    ) -> _SpeakerCropPlan:
         """
-        Deteksi wajah per sampel frame lalu bangun jalur crop.
+        Deteksi + track wajah, lalu bangun jalur crop utama dan pasangan split.
 
-        Mengembalikan (t_relatif, x, y, w, h) dalam piksel sumber. "Speaker" v1 =
-        wajah terbesar yang stabil antar frame. Bila tidak ada wajah, daftar
-        kosong (pemanggil memakai crop tengah).
+        Deteksi berjalan pada frame yang diperkecil (maksimal 960 px) dengan
+        sample 6-10 fps. Pemilihan subjek memakai track ID + hysteresis, bukan
+        wajah terbesar per sample. Bila dua wajah stabil dan berjauhan, plan
+        menyertakan jalur kedua untuk split atas/bawah.
         """
         import cv2
 
@@ -830,38 +1235,45 @@ class VideoProcessor:
 
         capture = cv2.VideoCapture(input_path)
         if not capture.isOpened():
-            return []
+            return _SpeakerCropPlan()
 
         src_w = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
         src_h = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
         fps = float(capture.get(cv2.CAP_PROP_FPS) or 30.0) or 30.0
         if src_w <= 0 or src_h <= 0:
             capture.release()
-            return []
+            return _SpeakerCropPlan()
 
-        # YuNet butuh ukuran input yang tetap; buat setelah dimensi diketahui.
-        detector = self._face_detector(src_w, src_h)
+        # Deteksi pada resolusi lebih kecil: lebih cepat dan false positive
+        # wajah kecil/background berkurang. Koordinat dikembalikan ke sumber.
+        detect_scale = min(1.0, 960.0 / max(src_w, src_h))
+        det_w = max(2, int(round(src_w * detect_scale)) & ~1)
+        det_h = max(2, int(round(src_h * detect_scale)) & ~1)
+        detector = self._face_detector(det_w, det_h)
         if detector is None:
             capture.release()
-            return []
+            return _SpeakerCropPlan()
+        detector.setInputSize((det_w, det_h))
 
-        # Jendela crop: area terbesar yang muat, diperkecil sesuai zoom.
-        if src_w / src_h > target_ratio:
-            win_h = src_h / zoom
-            win_w = win_h * target_ratio
-        else:
-            win_w = src_w / zoom
-            win_h = win_w / target_ratio
-        win_w = max(2, int(win_w) - int(win_w) % 2)
-        win_h = max(2, int(win_h) - int(win_h) % 2)
+        # Panel split atas/bawah memiliki rasio 2x rasio output. Untuk 9:16
+        # panel menjadi 9:8 (1080x960), sehingga crop tidak ditarik/distorsi.
+        normal_win = self._crop_window(src_w, src_h, target_ratio, zoom)
+        split_ratio = target_ratio * 2.0
+        split_win = self._crop_window(src_w, src_h, split_ratio, zoom)
 
         capture.set(cv2.CAP_PROP_POS_MSEC, max(0.0, start_time) * 1000.0)
-        step = max(1, int(round(fps / max(0.5, sample_fps))))
+        step = max(1, int(round(fps / max(0.5, float(sample_fps or 8.0)))))
         total_frames = int(duration * fps)
 
-        track: List[Tuple[float, float, float, float, float]] = []
-        cx = src_w / 2.0
-        cy = src_h / 2.0
+        all_tracks: Dict[int, _FaceTrack] = {}
+        active: Dict[int, _FaceTrack] = {}
+        state = _SubjectState()
+        next_id = 1
+        primary_ids: List[int] = []
+        pair_counts: Dict[Tuple[int, int], int] = {}
+        sample_count = 0
+        prev_gray = None
+        tracker_alpha = max(0.35, min(0.85, 0.5 + 0.4 * float(smooth)))
         alive = True
         frame_index = 0
 
@@ -870,87 +1282,267 @@ class VideoProcessor:
             if not alive or frame is None:
                 break
             if frame_index % step == 0:
-                # YuNet: faces = Nx15 [x, y, w, h, 5 landmark (x,y), score]
-                detector.setInputSize((src_w, src_h))
-                _, faces = detector.detect(frame)
-                if faces is not None and len(faces) > 0:
-                    fx, fy, fw, fh = max(
-                        faces, key=lambda box: float(box[2]) * float(box[3])
-                    )[:4]
-                    target_x = float(fx) + float(fw) / 2.0
-                    target_y = float(fy) + float(fh) / 2.0
-                    # EMA: gerakan halus, tanpa jitter.
-                    cx = (1 - smooth) * cx + smooth * target_x
-                    cy = (1 - smooth) * cy + smooth * target_y
-
-                x = min(max(0.0, cx - win_w / 2.0), src_w - win_w)
-                y = min(max(0.0, cy - win_h / 2.0), src_h - win_h)
-                track.append(
-                    (
-                        round(frame_index / fps, 3),
-                        float(int(x) - int(x) % 2),
-                        float(int(y) - int(y) % 2),
-                        float(win_w),
-                        float(win_h),
-                    )
+                small = cv2.resize(
+                    frame, (det_w, det_h), interpolation=cv2.INTER_AREA
                 )
+                gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+
+                # Scene cut sederhana: reset track supaya crop tidak meluncur
+                # dari subjek scene lama ke subjek scene baru.
+                if prev_gray is not None:
+                    diff = float(cv2.mean(cv2.absdiff(gray, prev_gray))[0]) / 255.0
+                    if diff > 0.35:
+                        active.clear()
+                        state = _SubjectState()
+                        # Subjek setelah cut bisa berbeda; jangan biarkan
+                        # track scene lama mendominasi pemilihan seluruh klip.
+                        primary_ids.clear()
+                        pair_counts.clear()
+                prev_gray = gray
+
+                # YuNet: faces = Nx15 [x, y, w, h, 5 landmark (x,y), score]
+                _, faces = detector.detect(small)
+                detections: List[_FaceDetection] = []
+                if faces is not None:
+                    scale_x = src_w / float(det_w)
+                    scale_y = src_h / float(det_h)
+                    min_area = max(1.0, src_w * src_h * 0.0008)
+                    for box in faces:
+                        score = float(box[-1])
+                        if score < 0.62:
+                            continue
+                        fx = float(box[0]) * scale_x
+                        fy = float(box[1]) * scale_y
+                        fw = float(box[2]) * scale_x
+                        fh = float(box[3]) * scale_y
+                        if fw < 2.0 or fh < 2.0 or fw * fh < min_area:
+                            continue
+                        detections.append(
+                            _FaceDetection(
+                                x=max(0.0, min(fx, src_w - 1.0)),
+                                y=max(0.0, min(fy, src_h - 1.0)),
+                                w=min(fw, src_w - max(0.0, fx)),
+                                h=min(fh, src_h - max(0.0, fy)),
+                                score=score,
+                            )
+                        )
+
+                now = frame_index / fps
+                active, next_id = self._update_face_tracks(
+                    active,
+                    all_tracks,
+                    detections,
+                    now,
+                    next_id,
+                    alpha=tracker_alpha,
+                )
+                primary = self._choose_primary(
+                    active, all_tracks, state, now, src_w, src_h
+                )
+                if primary is not None:
+                    primary_ids.append(primary.track_id)
+                pair = self._choose_split_pair(
+                    active, primary, src_w, src_h, now
+                )
+                if pair is not None:
+                    pair_counts[pair] = pair_counts.get(pair, 0) + 1
+                sample_count += 1
             frame_index += 1
 
         capture.release()
-        return track
+        if sample_count == 0 or not all_tracks:
+            return _SpeakerCropPlan()
 
-    async def track_speaker_crop(
+        split_pair: Optional[Tuple[int, int]] = None
+        if split_screen and pair_counts and target_ratio < 1.0:
+            pair, count = max(pair_counts.items(), key=lambda item: item[1])
+            # Split hanya kalau dua orang berjauhan cukup lama (>=50% klip
+            # dan minimal 8 sample), bukan karena satu frame kebetulan.
+            min_split = max(8, int(math.ceil(sample_count * 0.50)))
+            if count >= min_split:
+                split_pair = pair
+
+        if split_pair is not None:
+            first = all_tracks.get(split_pair[0])
+            second = all_tracks.get(split_pair[1])
+            if first is not None and second is not None:
+                # Panel atas = subjek yang lebih kiri, panel bawah = kanan.
+                ordered = sorted((first, second), key=lambda track: track.cx)
+                return _SpeakerCropPlan(
+                    primary=self._track_samples(
+                        ordered[0], duration, src_w, src_h, *split_win
+                    ),
+                    secondary=self._track_samples(
+                        ordered[1], duration, src_w, src_h, *split_win
+                    ),
+                    split=True,
+                )
+
+        if primary_ids:
+            primary_id = Counter(primary_ids).most_common(1)[0][0]
+        else:
+            primary_id = max(all_tracks, key=lambda key: all_tracks[key].hits)
+        primary_track = all_tracks.get(primary_id)
+        if primary_track is None:
+            return _SpeakerCropPlan()
+        return _SpeakerCropPlan(
+            primary=self._track_samples(
+                primary_track, duration, src_w, src_h, *normal_win
+            )
+        )
+
+    @staticmethod
+    def _interpolate_track_frames(
+        track: List[Tuple[float, float, float, float, float]],
+        duration: float,
+        output_fps: int,
+    ) -> List[Tuple[float, float, float, float, float]]:
+        """Interpolasi sampel deteksi ke posisi crop SETIAP frame output.
+
+        Deteksi boleh berjalan 2.5-10 fps, tetapi filter `crop` harus menerima
+        perubahan posisi per frame. Tanpa interpolasi, ffmpeg diam selama
+        beberapa frame lalu melompat ke nilai sample berikutnya (judder).
+        """
+        if not track:
+            return []
+
+        fps = max(1, int(output_fps or 30))
+        total_frames = max(1, int(round(max(0.0, float(duration)) * fps)))
+
+        # Sample bisa datang dari frame yang sama (mis. rounding timestamp);
+        # np.interp mensyaratkan xp menaik dan unik.
+        ordered = sorted(track, key=lambda item: item[0])
+        samples: List[Tuple[float, float, float, float, float]] = []
+        for item in ordered:
+            if samples and abs(item[0] - samples[-1][0]) < 1e-6:
+                samples[-1] = item
+            else:
+                samples.append(item)
+
+        if len(samples) == 1:
+            _, x, y, win_w, win_h = samples[0]
+            return [
+                (frame_index / fps, x, y, win_w, win_h)
+                for frame_index in range(total_frames)
+            ]
+
+        import numpy as np
+
+        sample_times = [item[0] for item in samples]
+        sample_x = [item[1] for item in samples]
+        sample_y = [item[2] for item in samples]
+        frame_times = np.arange(total_frames, dtype=np.float64) / fps
+        xs = np.interp(frame_times, sample_times, sample_x)
+        ys = np.interp(frame_times, sample_times, sample_y)
+        win_w = samples[0][3]
+        win_h = samples[0][4]
+
+        return [
+            (
+                float(frame_times[index]),
+                float(int(round(float(xs[index])))),
+                float(int(round(float(ys[index])))),
+                float(win_w),
+                float(win_h),
+            )
+            for index in range(total_frames)
+        ]
+
+    @staticmethod
+    def _stabilize_track_frames(
+        track: List[Tuple[float, float, float, float, float]],
+        window: int = 5,
+    ) -> List[Tuple[float, float, float, float, float]]:
+        """Smoothing dua arah + dead zone + batas kecepatan per frame.
+
+        Semua sample sudah tersedia sebelum render, jadi smoothing bisa
+        simetris (tidak menimbulkan lag seperti EMA satu arah).
+        """
+        if not track:
+            return []
+        if len(track) < 3 or window < 3:
+            return track
+
+        import numpy as np
+
+        window = window if window % 2 == 1 else window + 1
+        times = [item[0] for item in track]
+        xs = np.array([item[1] for item in track], dtype=np.float64)
+        ys = np.array([item[2] for item in track], dtype=np.float64)
+        win_w = float(track[0][3])
+        win_h = float(track[0][4])
+
+        pad = window // 2
+        kernel = np.ones(window, dtype=np.float64) / window
+        xs = np.convolve(np.pad(xs, (pad, pad), mode="edge"), kernel, mode="valid")
+        ys = np.convolve(np.pad(ys, (pad, pad), mode="edge"), kernel, mode="valid")
+
+        dead_x = max(1.0, win_w * 0.02)
+        dead_y = max(1.0, win_h * 0.02)
+        max_step_x = max(2.0, win_w * 0.006)
+        max_step_y = max(2.0, win_h * 0.006)
+
+        def limit_axis(target: float, current: float, dead: float, max_step: float) -> float:
+            delta = target - current
+            if abs(delta) <= dead:
+                return current
+            step = delta - math.copysign(dead, delta)
+            step = max(-max_step, min(max_step, step))
+            return current + step
+
+        out = [track[0]]
+        for index in range(1, len(track)):
+            x = limit_axis(float(xs[index]), out[-1][1], dead_x, max_step_x)
+            y = limit_axis(float(ys[index]), out[-1][2], dead_y, max_step_y)
+            out.append(
+                (
+                    times[index],
+                    float(int(round(x))),
+                    float(int(round(y))),
+                    win_w,
+                    win_h,
+                )
+            )
+        return out
+
+    @staticmethod
+    def _write_crop_commands(
+        cmd_path: str,
+        track: List[Tuple[float, float, float, float, float]],
+        target: str = "crop",
+    ) -> None:
+        """Tulis command sendcmd per frame untuk filter crop biasa/named."""
+        commands: List[str] = []
+        for t_rel, x, y, _, _ in track:
+            commands.append(f"{t_rel:.3f} {target} x {x:.0f};")
+            commands.append(f"{t_rel:.3f} {target} y {y:.0f};")
+        Path(cmd_path).write_text("\n".join(commands), encoding="utf-8")
+
+    async def _render_tracked_single(
         self,
         input_path: str,
         output_path: str,
-        start_time: float = 0,
-        duration: float = 60,
-        aspect_ratio: str = "9:16",
-        zoom: float = 1.0,
-        filter_preset: Optional[str] = None,
-        sample_fps: float = 2.5,
-        smoothing: float = 0.35,
+        track: List[Tuple[float, float, float, float, float]],
+        start_time: float,
+        duration: float,
+        width: int,
+        height: int,
+        output_fps: int,
+        filter_preset: Optional[str],
     ) -> str:
-        """
-        Render klip dengan jendela crop yang MENGIKUTI wajah pembicara
-        (auto zoom follow-speaker).
-
-        Posisi crop dianimasikan lewat `sendcmd` pada filter `crop` (opsi w/h/x/y
-        ffmpeg bertanda `T` = mendukung timeline command), lalu di-scale ke
-        resolusi target. Bila tidak ada wajah terdeteksi, kembali ke crop tengah.
-        """
-        width, height = self._dimensions_for_ratio(aspect_ratio)
-        loop = asyncio.get_event_loop()
-
-        track = await loop.run_in_executor(
-            None,
-            self._speaker_track_sync,
-            input_path, start_time, duration, aspect_ratio, zoom, sample_fps, smoothing,
-        )
-
-        if not track:
-            logger.warning("Track wajah kosong; memakai crop tengah: %s", input_path)
-            return await self.render_clip(
-                input_path, output_path,
-                start_time=start_time, duration=duration,
-                aspect_ratio=aspect_ratio, filter_preset=filter_preset,
-            )
-
         _, first_x, first_y, win_w, win_h = track[0]
-
-        # Format sendcmd: "<waktu> crop x <nilai>;" (waktu relatif terhadap klip).
-        commands: List[str] = []
-        for t_rel, x, y, _, _ in track:
-            commands.append(f"{t_rel:.3f} crop x {x:.0f};")
-            commands.append(f"{t_rel:.3f} crop y {y:.0f};")
-
         cmd_path = str(Path(output_path).with_name(f"track_{uuid4().hex}.cmd"))
-        Path(cmd_path).write_text("\n".join(commands), encoding="utf-8")
+        self._write_crop_commands(cmd_path, track, target="crop")
 
         preset_chain = self.filter_chain_for_preset(filter_preset)
+        # fps + setpts dulu supaya filter melihat frame output dan timeline
+        # sendcmd dimulai dari 0. Tanpa ini, sumber 24/25/60 fps bisa membuat
+        # command jatuh di frame yang tidak tepat.
         chain = (
+            f"fps={output_fps},setpts=PTS-STARTPTS,"
             f"sendcmd=f={self._escape_filter_path(cmd_path)},"
-            f"crop=w={int(win_w)}:h={int(win_h)}:x={int(first_x)}:y={int(first_y)},"
+            f"crop=w={int(win_w)}:h={int(win_h)}:"
+            f"x={int(round(first_x))}:y={int(round(first_y))},"
             f"scale={width}:{height}:flags=lanczos,setsar=1"
         )
         if preset_chain:
@@ -963,12 +1555,13 @@ class VideoProcessor:
             "-t", str(duration),
             "-vf", chain,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
-            "-r", str(settings.OUTPUT_FPS),
+            "-r", str(output_fps),
             "-c:a", "aac", "-b:a", "128k",
             "-movflags", "+faststart",
             output_path,
         ]
 
+        loop = asyncio.get_event_loop()
         try:
             await loop.run_in_executor(None, self._run_ffmpeg, cmd)
         finally:
@@ -977,6 +1570,166 @@ class VideoProcessor:
             except OSError:
                 pass
         return output_path
+
+    async def _render_tracked_split(
+        self,
+        input_path: str,
+        output_path: str,
+        top_track: List[Tuple[float, float, float, float, float]],
+        bottom_track: List[Tuple[float, float, float, float, float]],
+        start_time: float,
+        duration: float,
+        width: int,
+        height: int,
+        output_fps: int,
+        filter_preset: Optional[str],
+    ) -> str:
+        """Render dua panel atas/bawah dengan crop path masing-masing."""
+        panel_h = max(2, int(height) // 2)
+        panel_h -= panel_h % 2
+        _, top_x, top_y, top_w, top_h = top_track[0]
+        _, bottom_x, bottom_y, bottom_w, bottom_h = bottom_track[0]
+
+        top_cmd = str(Path(output_path).with_name(f"track_top_{uuid4().hex}.cmd"))
+        bottom_cmd = str(
+            Path(output_path).with_name(f"track_bottom_{uuid4().hex}.cmd")
+        )
+        self._write_crop_commands(top_cmd, top_track, target="crop@top")
+        self._write_crop_commands(bottom_cmd, bottom_track, target="crop@bottom")
+
+        preset_chain = self.filter_chain_for_preset(filter_preset)
+        graph = (
+            f"[0:v]fps={output_fps},setpts=PTS-STARTPTS,split=2[src_top][src_bottom];"
+            f"[src_top]sendcmd=f={self._escape_filter_path(top_cmd)},"
+            f"crop@top=w={int(top_w)}:h={int(top_h)}:"
+            f"x={int(round(top_x))}:y={int(round(top_y))},"
+            f"scale={width}:{panel_h}:flags=lanczos,setsar=1[top];"
+            f"[src_bottom]sendcmd=f={self._escape_filter_path(bottom_cmd)},"
+            f"crop@bottom=w={int(bottom_w)}:h={int(bottom_h)}:"
+            f"x={int(round(bottom_x))}:y={int(round(bottom_y))},"
+            f"scale={width}:{panel_h}:flags=lanczos,setsar=1[bottom];"
+            f"[top][bottom]vstack=inputs=2"
+            + (f",{preset_chain}" if preset_chain else "")
+            + "[v]"
+        )
+
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
+            "-ss", str(start_time),
+            "-i", input_path,
+            "-t", str(duration),
+            "-filter_complex", graph,
+            "-map", "[v]", "-map", "0:a?",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            "-r", str(output_fps),
+            "-c:a", "aac", "-b:a", "128k",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+
+        loop = asyncio.get_event_loop()
+        try:
+            await loop.run_in_executor(None, self._run_ffmpeg, cmd)
+        finally:
+            for path in (top_cmd, bottom_cmd):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+        return output_path
+
+
+
+    async def track_speaker_crop(
+        self,
+        input_path: str,
+        output_path: str,
+        start_time: float = 0,
+        duration: float = 60,
+        aspect_ratio: str = "9:16",
+        zoom: float = 1.0,
+        filter_preset: Optional[str] = None,
+        sample_fps: float = 8.0,
+        smoothing: float = 0.35,
+        split_screen: bool = True,
+    ) -> str:
+        """
+        Render klip dengan jendela crop yang MENGIKUTI wajah pembicara.
+
+        Deteksi/tracking berjalan 8 fps pada frame kecil, lalu jalur crop
+        diinterpolasi ke setiap frame output, di-smooth dua arah, diberi dead
+        zone dan batas kecepatan. Bila dua subjek stabil dan berjauhan, output
+        dibagi menjadi dua panel atas/bawah (khusus output portrait).
+        Bila tidak ada wajah terdeteksi, kembali ke crop tengah.
+        """
+        width, height = self._dimensions_for_ratio(aspect_ratio)
+        output_fps = max(1, int(settings.OUTPUT_FPS or 30))
+        loop = asyncio.get_event_loop()
+
+        plan = await loop.run_in_executor(
+            None,
+            self._speaker_track_sync,
+            input_path,
+            start_time,
+            duration,
+            aspect_ratio,
+            zoom,
+            sample_fps,
+            smoothing,
+            split_screen,
+        )
+
+        async def fallback() -> str:
+            logger.warning("Track wajah kosong; memakai crop tengah: %s", input_path)
+            return await self.render_clip(
+                input_path, output_path,
+                start_time=start_time, duration=duration,
+                aspect_ratio=aspect_ratio, filter_preset=filter_preset,
+            )
+
+        if not plan.primary:
+            return await fallback()
+
+        primary = self._interpolate_track_frames(
+            plan.primary, duration, output_fps
+        )
+        primary = self._stabilize_track_frames(primary)
+        if not primary:
+            return await fallback()
+
+        if plan.split and plan.secondary and height > width:
+            secondary = self._interpolate_track_frames(
+                plan.secondary, duration, output_fps
+            )
+            secondary = self._stabilize_track_frames(secondary)
+            if secondary:
+                logger.info(
+                    "Auto zoom split atas/bawah aktif: %s", input_path
+                )
+                return await self._render_tracked_split(
+                    input_path,
+                    output_path,
+                    primary,
+                    secondary,
+                    start_time,
+                    duration,
+                    width,
+                    height,
+                    output_fps,
+                    filter_preset,
+                )
+
+        return await self._render_tracked_single(
+            input_path,
+            output_path,
+            primary,
+            start_time,
+            duration,
+            width,
+            height,
+            output_fps,
+            filter_preset,
+        )
 
     async def split_clip(
         self,
