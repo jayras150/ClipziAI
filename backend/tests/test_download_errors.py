@@ -114,3 +114,14 @@ def test_http_status_extraction():
 )
 def test_misc_categories(text, expected):
     assert de.classify_download_error(text) == expected
+
+
+def test_classify_worker_unavailable():
+    """Task yang gagal dikirim ke worker BUKAN kegagalan download video."""
+    pesan = (
+        "Failed to send the task to the worker (mode oneshot): tidak ada offer GPU "
+        "yang diizinkan (RTX 3060); filter: gpu_ram>=12"
+    )
+    assert de.classify_download_error(pesan) == de.CATEGORY_WORKER_UNAVAILABLE
+    assert de.is_retryable(de.CATEGORY_WORKER_UNAVAILABLE) is True
+    assert "GPU worker" in de.user_message_for(de.CATEGORY_WORKER_UNAVAILABLE)

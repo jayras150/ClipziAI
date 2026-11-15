@@ -21,6 +21,9 @@ CATEGORY_FORMAT_UNAVAILABLE = "format_unavailable"
 CATEGORY_NETWORK = "network"
 CATEGORY_TIMEOUT = "timeout"
 CATEGORY_UNKNOWN = "unknown"
+# Task tidak pernah sampai ke worker (mis. tidak ada offer GPU / worker belum
+# dikonfigurasi). Bukan kegagalan video — user cukup mencoba lagi nanti.
+CATEGORY_WORKER_UNAVAILABLE = "worker_unavailable"
 
 _USER_MESSAGE = (
     "We couldn't process this video.\n\n"
@@ -55,6 +58,10 @@ _BY_CATEGORY_MESSAGE = {
         "This video isn't available from our server's location.\n\n"
         "Try a different video."
     ),
+    CATEGORY_WORKER_UNAVAILABLE: (
+        "Our GPU worker isn't available right now.\n\n"
+        "Your project hasn't started yet — please try again in a few minutes."
+    ),
 }
 
 # Retry otomatis hanya untuk kegagalan sementara.
@@ -65,6 +72,7 @@ _RETRYABLE = {
     CATEGORY_TIMEOUT,
     CATEGORY_FORMAT_UNAVAILABLE,
     CATEGORY_UNKNOWN,
+    CATEGORY_WORKER_UNAVAILABLE,
 }
 
 
@@ -73,6 +81,19 @@ def classify_download_error(text: Optional[str]) -> str:
     lowered = (text or "").lower()
     if not lowered:
         return CATEGORY_UNKNOWN
+
+    # Task tidak pernah sampai ke worker (bukan masalah video).
+    if any(
+        marker in lowered
+        for marker in (
+            "tidak ada offer gpu",
+            "no gpu offer",
+            "worker gpu belum terkonfigurasi",
+            "failed to send the task to the worker",
+            "vast_worker_image belum",
+        )
+    ):
+        return CATEGORY_WORKER_UNAVAILABLE
 
     if "unsupported url" in lowered or "is not a valid url" in lowered:
         return CATEGORY_INVALID_URL

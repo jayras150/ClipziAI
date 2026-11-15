@@ -26,7 +26,12 @@ from app.schemas.task import (
 from app.schemas.clip import ClipResponse
 from app.schemas.common import MessageResponse
 from app.services.vast_worker import destroy_task_instances, dispatch_mode, submit_task
-from app.services.download_errors import is_retryable, user_message_for
+from app.services.download_errors import (
+    CATEGORY_WORKER_UNAVAILABLE,
+    classify_download_error,
+    is_retryable,
+    user_message_for,
+)
 from app.services.storage_registry import get_storage
 from app.services.viral import score_clip
 
@@ -178,13 +183,18 @@ async def create_task(
         # Job tidak pernah sampai ke worker. Tandai error supaya frontend tidak
         # menampilkan "queued" selamanya (tidak ada scheduler yang me-retry
         # otomatis), dan pesan penyebabnya tersimpan untuk ditampilkan.
+        detail = str(dispatch.get("error") or "no details provided")
+        category = classify_download_error(detail)
         task.status = TaskStatus.ERROR
-        task.download_status = "failed"
+        task.error_category = category
         task.error_message = (
-            f"Failed to send the task to the worker (mode {dispatch_mode()}): "
-            f"{dispatch.get('error') or 'no details provided'}"
+            f"Failed to send the task to the worker (mode {dispatch_mode()}): {detail}"
         )
-        task.user_message = user_message_for(None)
+        task.user_message = user_message_for(category)
+        # Worker tidak tersedia BUKAN kegagalan download: video belum disentuh.
+        task.download_status = (
+            "queued" if category == CATEGORY_WORKER_UNAVAILABLE else "failed"
+        )
         await db.commit()
         await db.refresh(task)
         logger.error("Task %s gagal didispatch: %s", task.id, task.error_message)
