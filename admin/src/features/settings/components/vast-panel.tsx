@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState, useTransition } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -282,6 +283,12 @@ export default function VastPanel({
               </CardDescription>
             </CardHeader>
             <CardContent className='grid gap-3 md:grid-cols-3'>
+              <Link
+                href='/dashboard/settings/models'
+                className='text-primary text-xs underline md:col-span-3'
+              >
+                Kelola / tambah model Whisper dari Google Drive →
+              </Link>
               <label className='text-muted-foreground flex items-center gap-2 text-sm md:col-span-3'>
                 <input
                   type='checkbox'

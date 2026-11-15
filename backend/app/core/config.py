@@ -34,6 +34,17 @@ class Settings(BaseSettings):
     YOUTUBE_REDIRECT_URI: Optional[str] = None
     YOUTUBE_API_KEY: Optional[str] = None
 
+    # Google Drive untuk registry model Whisper (service account).
+    # `GDRIVE_SERVICE_ACCOUNT_B64` berisi JSON service account yang di-base64,
+    # alternatifnya `GDRIVE_SERVICE_ACCOUNT_FILE` menunjuk file JSON di container.
+    GDRIVE_ENABLED: bool = False
+    GDRIVE_SERVICE_ACCOUNT_B64: Optional[str] = None
+    GDRIVE_SERVICE_ACCOUNT_FILE: Optional[str] = None
+    GDRIVE_FOLDER_ID: Optional[str] = None
+    GDRIVE_SHARED_DRIVE_ID: Optional[str] = None
+    # Path folder model di sisi Vast Cloud Sync (bukan path lokal instance).
+    GDRIVE_VAST_ROOT_PATH: str = "/vast-backup/Clipzy/whisper_models"
+
     # Legacy OpenAI key (fallback for AI_API_KEY and TRANSCRIPTION_API_KEY)
     OPENAI_API_KEY: Optional[str] = None
     # Local faster-whisper fallback model (legacy-compatible)

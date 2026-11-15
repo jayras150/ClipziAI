@@ -125,6 +125,14 @@ export const navGroups: NavGroup[] = [
         items: []
       },
       {
+        title: 'Whisper Models',
+        url: '/dashboard/settings/models',
+        icon: 'sparkles',
+        shortcut: ['w', 'm'],
+        isActive: false,
+        items: []
+      },
+      {
         title: 'Storage',
         url: '/dashboard/settings/storage',
         icon: 'billing',

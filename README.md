@@ -531,6 +531,29 @@ status) plus riwayat lokal, dengan tombol **Logs** (termasuk opsi **debug/daemon
   menghilangkan unduhan model ±3 GB. Jika ingin menghilangkan transfer berulang,
   gunakan Vast volume (berbayar).
 
+### Dynamic Whisper model (tanpa deploy ulang)
+
+- Admin membuka **Settings › Whisper Models** untuk **Scan Drive**, melihat validasi CT2,
+  mengaktifkan model, atau menghapusnya. Model aktif otomatis mengarahkan
+  `VAST_RESTORE_SRC` ke folder Drive model tersebut; worker berikutnya memakai model itu.
+- Folder root default: **`/vast-backup/Clipzy/whisper_models`** (Drive folder ID
+  `1H8eharRd98Poq8e2qYEkq9UYiOaPTNR4`). Satu subfolder = satu model.
+- Backend memakai service account (`GDRIVE_SERVICE_ACCOUNT_B64` atau
+  `GDRIVE_SERVICE_ACCOUNT_FILE`, plus `GDRIVE_FOLDER_ID`) untuk list/download/delete.
+  Service account **tidak punya kuota upload**; upload model dilakukan oleh akun Drive
+  pemilik lewat Colab/OAuth.
+- Ekspor model dari Colab:
+  ```bash
+  !python scripts/colab_whisper_export.py \
+      --repo openai/whisper-large-v3-turbo --slug large-v3-turbo --overwrite
+  ```
+  Script menerima repo PyTorch atau CT2, selalu menghasilkan folder CT2 (model.bin,
+  config.json, tokenizer.json, preprocessor_config.json, vocabulary), lalu mengunggahnya
+  ke folder root Drive. TensorFlow ditolak.
+- File CT2 wajib: `model.bin`, `config.json`, `tokenizer.json`,
+  `preprocessor_config.json`, dan `vocabulary.json`/`vocabulary.txt`.
+
+
 ## Setelan ekosistem & ganti domain (1 klik)
 
 Semua nilai disimpan di `platform_settings` key `platform`:
