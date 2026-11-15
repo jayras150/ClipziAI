@@ -542,7 +542,7 @@ status) plus riwayat lokal, dengan tombol **Logs** (termasuk opsi **debug/daemon
 - Folder root default: **`/vast-backup/Clipzy/whisper_models`** (Drive folder ID
   `1H8eharRd98Poq8e2qYEkq9UYiOaPTNR4`). Satu subfolder = satu model.
 - Backend memakai service account (`GDRIVE_SERVICE_ACCOUNT_B64` atau
-  `GDRIVE_SERVICE_ACCOUNT_FILE`, plus `GDRIVE_FOLDER_ID`) untuk list/download/delete.
+  `GDRIVE_SERVICE_ACCOUNT_FILE`, plus `GDRIVE_FOLDER_ID`) untuk list/delete folder model.
   Service account **tidak punya kuota upload**; upload model dilakukan oleh akun Drive
   pemilik lewat Colab/OAuth.
 - Ekspor model dari Colab:
