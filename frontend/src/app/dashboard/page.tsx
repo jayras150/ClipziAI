@@ -211,6 +211,11 @@ export default function DashboardPage() {
   const [planType, setPlanType] = useState("")
   // Konfirmasi wajib sebelum memutus koneksi YouTube (menghapus token tersimpan).
   const [confirmDisconnect, setConfirmDisconnect] = useState(false)
+  // Konfirmasi hapus project lewat dialog aplikasi (bukan window.confirm).
+  const [confirmDeleteTask, setConfirmDeleteTask] = useState<{ id: string; label: string } | null>(
+    null,
+  )
+  const [deletingTask, setDeletingTask] = useState(false)
   // Dropdown kecil di tombol channel YouTube (isi: Disconnect).
   const [ytMenuOpen, setYtMenuOpen] = useState(false)
   const ytMenuRef = useRef<HTMLDivElement>(null)
@@ -721,16 +726,21 @@ export default function DashboardPage() {
   }
 
   const removeTask = async (taskId: string) => {
-    if (!window.confirm("Delete this project?")) return
+    setDeletingTask(true)
+    setTaskError("")
     try {
       await api.deleteTask(token, taskId)
       if (openTaskId === taskId) {
         setOpenTaskId("")
         setClips([])
       }
+      setNotice("Project deleted.")
       await refreshTasks(token)
     } catch (error: any) {
       setTaskError(readApiError(error.response?.data, "Could not delete the project."))
+    } finally {
+      setDeletingTask(false)
+      setConfirmDeleteTask(null)
     }
   }
   const toggleClipSelection = (clipId: string) => {
@@ -2031,7 +2041,7 @@ export default function DashboardPage() {
                       <button
                         className="ui-btn ui-btn-ghost"
                         style={{ fontSize: 12, padding: "8px 12px" }}
-                        onClick={() => removeTask(task.id)}
+                        onClick={() => setConfirmDeleteTask({ id: task.id, label: sourceHost(task.source_url) })}
                       >
                         <Trash2 size={13} /> Delete
                       </button>
@@ -2442,6 +2452,28 @@ export default function DashboardPage() {
         onConfirm={() => {
           setConfirmDisconnect(false)
           void disconnectYouTube()
+        }}
+      />
+
+      <ConfirmDialog
+        open={Boolean(confirmDeleteTask)}
+        title="Delete this project?"
+        description={
+          <>
+            <strong>{confirmDeleteTask?.label || "This project"}</strong> and all of its generated
+            clips will be removed permanently. Clips already uploaded to YouTube are not affected.
+            This action cannot be undone.
+          </>
+        }
+        confirmLabel="Delete project"
+        cancelLabel="Keep project"
+        danger
+        busy={deletingTask}
+        onCancel={() => {
+          if (!deletingTask) setConfirmDeleteTask(null)
+        }}
+        onConfirm={() => {
+          if (confirmDeleteTask) void removeTask(confirmDeleteTask.id)
         }}
       />
 

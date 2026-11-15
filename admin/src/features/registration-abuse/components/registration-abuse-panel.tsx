@@ -10,6 +10,7 @@ import {
 } from '@/app/dashboard/registration-abuse/actions';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Card,
   CardContent,
@@ -61,6 +62,9 @@ export type RegistrationAbuseData = {
   };
 };
 
+/** Aksi per-device yang menunggu konfirmasi di dialog aplikasi. */
+type PendingDeviceAction = { action: 'trust' | 'reset'; device: DeviceItem };
+
 function formatDate(value: string | null): string {
   if (!value) return '—';
   try {
@@ -87,6 +91,7 @@ export default function RegistrationAbusePanel({ data }: { data: RegistrationAbu
   const [bonus, setBonus] = useState(String(data.config.signup_bonus ?? 5));
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [confirmAction, setConfirmAction] = useState<PendingDeviceAction | null>(null);
 
   const runSave = () => {
     setError('');
@@ -110,11 +115,11 @@ export default function RegistrationAbusePanel({ data }: { data: RegistrationAbu
   };
 
   const runTrust = (device: DeviceItem) => {
-    if (!window.confirm(`Tandai device ${device.fingerprint_preview} sebagai TRUSTED?`)) return;
     setError('');
     setMessage('');
     startTransition(async () => {
       const response = await trustDevice(device.id);
+      setConfirmAction(null);
       if ('error' in response) {
         setError(String(response.error));
         return;
@@ -125,17 +130,11 @@ export default function RegistrationAbusePanel({ data }: { data: RegistrationAbu
   };
 
   const runReset = (device: DeviceItem) => {
-    if (
-      !window.confirm(
-        `Reset claim device ${device.fingerprint_preview}? Device bisa klaim bonus lagi.`
-      )
-    ) {
-      return;
-    }
     setError('');
     setMessage('');
     startTransition(async () => {
       const response = await resetDeviceClaim(device.id);
+      setConfirmAction(null);
       if ('error' in response) {
         setError(String(response.error));
         return;
@@ -143,6 +142,12 @@ export default function RegistrationAbusePanel({ data }: { data: RegistrationAbu
       setMessage('Claim device direset. Tindakan ini tercatat di audit log.');
       router.refresh();
     });
+  };
+
+  const confirmDevice = () => {
+    if (!confirmAction) return;
+    if (confirmAction.action === 'reset') runReset(confirmAction.device);
+    else runTrust(confirmAction.device);
   };
 
   return (
@@ -265,7 +270,7 @@ export default function RegistrationAbusePanel({ data }: { data: RegistrationAbu
                             size='sm'
                             variant='outline'
                             disabled={pending || device.reputation_status === 'TRUSTED'}
-                            onClick={() => runTrust(device)}
+                            onClick={() => setConfirmAction({ action: 'trust', device })}
                           >
                             Trust
                           </Button>
@@ -274,7 +279,7 @@ export default function RegistrationAbusePanel({ data }: { data: RegistrationAbu
                             size='sm'
                             variant='ghost'
                             disabled={pending || !device.claim}
-                            onClick={() => runReset(device)}
+                            onClick={() => setConfirmAction({ action: 'reset', device })}
                           >
                             Reset claim
                           </Button>
@@ -288,6 +293,39 @@ export default function RegistrationAbusePanel({ data }: { data: RegistrationAbu
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={Boolean(confirmAction)}
+        onOpenChange={(next) => {
+          if (!next && !pending) setConfirmAction(null);
+        }}
+        loading={pending}
+        tone={confirmAction?.action === 'reset' ? 'danger' : 'warning'}
+        title={
+          confirmAction?.action === 'reset' ? 'Reset claim device ini?' : 'Tandai device TRUSTED?'
+        }
+        description={
+          confirmAction?.action === 'reset'
+            ? 'Device bisa mengklaim bonus signup lagi. Aksi ini tercatat di audit log.'
+            : 'Device akan dianggap tepercaya sehingga tidak lagi dihitung sebagai penyalahgunaan registrasi.'
+        }
+        details={
+          confirmAction ? (
+            <div className='flex flex-wrap items-center gap-x-3 gap-y-1'>
+              <span className='font-mono text-foreground'>
+                {confirmAction.device.fingerprint_preview}…
+              </span>
+              <span>
+                akun: {confirmAction.device.account_count} · klaim:{' '}
+                {confirmAction.device.claim_count}
+              </span>
+            </div>
+          ) : null
+        }
+        confirmLabel={confirmAction?.action === 'reset' ? 'Reset claim' : 'Tandai TRUSTED'}
+        cancelLabel='Batal'
+        onConfirm={confirmDevice}
+      />
     </div>
   );
 }

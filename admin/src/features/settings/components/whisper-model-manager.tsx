@@ -12,6 +12,7 @@ import {
 } from '@/app/dashboard/settings/models/actions';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Card,
   CardContent,
@@ -55,6 +56,11 @@ export type WhisperModelsData = {
   folder_url: string;
 };
 
+/** Aksi model yang menunggu konfirmasi di dialog aplikasi. */
+type PendingModelAction =
+  | { action: 'activate'; item: WhisperModelItem }
+  | { action: 'delete'; item: WhisperModelItem; deleteDrive: boolean };
+
 function formatBytes(value: number): string {
   if (!value) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -85,6 +91,7 @@ export default function WhisperModelManager({ data }: { data: WhisperModelsData 
   const [message, setMessage] = useState('');
   const [notebookId, setNotebookId] = useState(data.notebook_file_id || '');
   const [colabUrl, setColabUrl] = useState(data.notebook_url || '');
+  const [confirmAction, setConfirmAction] = useState<PendingModelAction | null>(null);
 
   const runScan = () => {
     setError('');
@@ -158,13 +165,11 @@ export default function WhisperModelManager({ data }: { data: WhisperModelsData 
   };
 
   const runActivate = (item: WhisperModelItem) => {
-    if (!window.confirm(`Aktifkan model "${item.label}" untuk semua worker berikutnya?`)) {
-      return;
-    }
     setError('');
     setMessage('');
     startTransition(async () => {
       const response = await activateWhisperModel(item.id);
+      setConfirmAction(null);
       if ('error' in response) {
         setError(String(response.error));
         return;
@@ -175,14 +180,11 @@ export default function WhisperModelManager({ data }: { data: WhisperModelsData 
   };
 
   const runDelete = (item: WhisperModelItem, deleteDrive: boolean) => {
-    const suffix = deleteDrive
-      ? ' Folder dan semua file di Google Drive juga akan DIHAPUS permanen.'
-      : ' Model hanya dihapus dari daftar admin; folder Drive tetap ada.';
-    if (!window.confirm(`Hapus "${item.label}"?${suffix}`)) return;
     setError('');
     setMessage('');
     startTransition(async () => {
       const response = await deleteWhisperModel(item.id, deleteDrive);
+      setConfirmAction(null);
       if ('error' in response) {
         setError(String(response.error));
         return;
@@ -384,7 +386,7 @@ export default function WhisperModelManager({ data }: { data: WhisperModelsData 
                             size='sm'
                             variant='outline'
                             disabled={pending || item.is_active || item.status !== 'available'}
-                            onClick={() => runActivate(item)}
+                            onClick={() => setConfirmAction({ action: 'activate', item })}
                           >
                             {item.is_active ? 'Aktif' : 'Aktifkan'}
                           </Button>
@@ -393,7 +395,7 @@ export default function WhisperModelManager({ data }: { data: WhisperModelsData 
                             size='sm'
                             variant='ghost'
                             disabled={pending || item.is_active}
-                            onClick={() => runDelete(item, false)}
+                            onClick={() => setConfirmAction({ action: 'delete', item, deleteDrive: false })}
                           >
                             Hapus daftar
                           </Button>
@@ -402,7 +404,7 @@ export default function WhisperModelManager({ data }: { data: WhisperModelsData 
                             size='sm'
                             variant='destructive'
                             disabled={pending || item.is_active || item.status === 'missing'}
-                            onClick={() => runDelete(item, true)}
+                            onClick={() => setConfirmAction({ action: 'delete', item, deleteDrive: true })}
                           >
                             Hapus + Drive
                           </Button>
@@ -416,6 +418,55 @@ export default function WhisperModelManager({ data }: { data: WhisperModelsData 
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={Boolean(confirmAction)}
+        onOpenChange={(next) => {
+          if (!next && !pending) setConfirmAction(null);
+        }}
+        loading={pending}
+        tone={
+          confirmAction?.action === 'delete' && confirmAction.deleteDrive ? 'danger' : 'warning'
+        }
+        title={
+          confirmAction?.action === 'activate'
+            ? 'Aktifkan model ini?'
+            : confirmAction?.action === 'delete' && confirmAction.deleteDrive
+              ? 'Hapus model + folder Drive?'
+              : 'Hapus model dari daftar?'
+        }
+        description={
+          confirmAction?.action === 'activate'
+            ? 'Semua worker berikutnya akan memakai model ini saat restore Vast. Worker yang sedang berjalan tidak berubah.'
+            : confirmAction?.action === 'delete' && confirmAction.deleteDrive
+              ? 'Folder dan semua file model di Google Drive akan DIHAPUS permanen. Tindakan ini tidak bisa dibatalkan.'
+              : 'Model hanya dihapus dari daftar admin; folder di Google Drive tetap ada.'
+        }
+        details={
+          confirmAction ? (
+            <div className='space-y-1'>
+              <div className='text-foreground font-medium'>{confirmAction.item.label}</div>
+              <div className='font-mono break-all'>{confirmAction.item.drive_path}</div>
+              <div>
+                {formatBytes(confirmAction.item.size_bytes)} · {confirmAction.item.file_count} file
+              </div>
+            </div>
+          ) : null
+        }
+        confirmLabel={
+          confirmAction?.action === 'activate'
+            ? 'Aktifkan'
+            : confirmAction?.action === 'delete' && confirmAction.deleteDrive
+              ? 'Hapus permanen'
+              : 'Hapus dari daftar'
+        }
+        cancelLabel='Batal'
+        onConfirm={() => {
+          if (!confirmAction) return;
+          if (confirmAction.action === 'activate') runActivate(confirmAction.item);
+          else runDelete(confirmAction.item, confirmAction.deleteDrive);
+        }}
+      />
     </div>
   );
 }

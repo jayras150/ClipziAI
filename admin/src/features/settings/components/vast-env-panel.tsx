@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { exportVastEnv, syncVastEnv } from '@/app/dashboard/settings/vast/actions';
 
 export type WorkerEnvItem = {
@@ -22,6 +23,7 @@ export default function VastEnvPanel({ items }: { items: Array<Record<string, un
   const [text, setText] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [confirmReveal, setConfirmReveal] = useState(false);
   const [pending, startTransition] = useTransition();
 
   const toggle = (name: string) => {
@@ -33,16 +35,9 @@ export default function VastEnvPanel({ items }: { items: Array<Record<string, un
   const exportEnv = (reveal: boolean) => {
     setError('');
     setMessage('');
-    if (
-      reveal &&
-      !window.confirm(
-        'Tampilkan nilai asli (secret) di layar? Tindakan ini dicatat di audit log.'
-      )
-    ) {
-      return;
-    }
     startTransition(async () => {
       const result = await exportVastEnv(reveal);
+      setConfirmReveal(false);
       if ('error' in result && result.error) {
         setError(String(result.error));
         return;
@@ -120,7 +115,7 @@ export default function VastEnvPanel({ items }: { items: Array<Record<string, un
             <button
               type='button'
               disabled={pending}
-              onClick={() => exportEnv(true)}
+              onClick={() => setConfirmReveal(true)}
               className='hover:bg-muted rounded-md border px-3 py-1 text-xs disabled:opacity-50'
             >
               Export .env (nilai asli)
@@ -208,6 +203,21 @@ export default function VastEnvPanel({ items }: { items: Array<Record<string, un
           ) : null}
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={confirmReveal}
+        onOpenChange={(next) => {
+          if (!next && !pending) setConfirmReveal(false);
+        }}
+        loading={pending}
+        tone='warning'
+        title='Tampilkan nilai asli (secret)?'
+        description='Semua nilai .env akan terlihat di layar, termasuk API key dan token. Aksi ini dicatat di audit log.'
+        details='Gunakan hanya di perangkat tepercaya, lalu hapus salinan setelah selesai.'
+        confirmLabel='Tampilkan nilai asli'
+        cancelLabel='Batal'
+        onConfirm={() => exportEnv(true)}
+      />
     </div>
   );
 }
