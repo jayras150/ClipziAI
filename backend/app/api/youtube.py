@@ -108,6 +108,26 @@ async def _run_youtube_upload(
     menerima 202 lalu UI mem-poll status di bawah.
     """
     job = YOUTUBE_UPLOAD_JOBS.setdefault(str(clip_id), {})
+    job.update(
+        {
+            "status": "uploading",
+            "error": None,
+            "video_id": None,
+            "progress": 0,
+            "bytes_sent": 0,
+            "total_bytes": 0,
+        }
+    )
+
+    def on_progress(percent: int, sent: int, total: int) -> None:
+        job.update(
+            {
+                "progress": max(0, min(99, int(percent))),
+                "bytes_sent": int(sent),
+                "total_bytes": int(total),
+            }
+        )
+
     try:
         uploaded = await youtube_service.upload_video(
             access_token=access_token,
@@ -119,6 +139,7 @@ async def _run_youtube_upload(
             category_id=category_id,
             made_for_kids=made_for_kids,
             publish_at=publish_at,
+            progress_callback=on_progress,
         )
         async with AsyncSessionLocal() as bg_db:
             clip = (
@@ -128,7 +149,14 @@ async def _run_youtube_upload(
                 clip.youtube_uploaded = True
                 clip.youtube_video_id = uploaded["video_id"]
                 await bg_db.commit()
-        job.update({"status": "done", "error": None, "video_id": uploaded["video_id"]})
+        job.update(
+            {
+                "status": "done",
+                "error": None,
+                "video_id": uploaded["video_id"],
+                "progress": 100,
+            }
+        )
         logger.info(
             "YouTube upload OK: clip=%s video=%s category=%s privacy=%s",
             clip_id,
@@ -582,6 +610,9 @@ async def get_youtube_upload_status(
         "clip_id": str(clip.id),
         "status": status_value,
         "error": job.get("error"),
+        "progress": int(job.get("progress") or (100 if video_id else 0)),
+        "bytes_sent": int(job.get("bytes_sent") or 0),
+        "total_bytes": int(job.get("total_bytes") or 0),
         "youtube_video_id": video_id,
         "youtube_video_url": f"https://youtu.be/{video_id}" if video_id else None,
         "privacy_status": None,

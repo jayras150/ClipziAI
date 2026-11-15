@@ -186,6 +186,9 @@ export interface YouTubeUploadStatus {
   clip_id: string
   status: "idle" | "uploading" | "done" | "error" | string
   error?: string | null
+  progress?: number
+  bytes_sent?: number
+  total_bytes?: number
   youtube_video_id?: string | null
   youtube_video_url?: string | null
 }
@@ -661,13 +664,18 @@ export class ApiClient {
   async waitForYouTubeUpload(
     token: string,
     clipId: string,
-    options: { timeoutMs?: number; intervalMs?: number } = {},
+    options: {
+      timeoutMs?: number
+      intervalMs?: number
+      onProgress?: (status: YouTubeUploadStatus) => void
+    } = {},
   ): Promise<YouTubeUploadStatus> {
     const timeoutMs = options.timeoutMs ?? 15 * 60 * 1000
     const intervalMs = options.intervalMs ?? 4000
     const started = Date.now()
     while (Date.now() - started < timeoutMs) {
       const status = await this.getYouTubeUploadStatus(token, clipId)
+      options.onProgress?.(status)
       if (status.status === "done" || status.status === "error") return status
       await new Promise((resolve) => setTimeout(resolve, intervalMs))
     }

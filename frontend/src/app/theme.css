@@ -2575,3 +2575,64 @@ input[type="color"].ui-input {
   .clip-bulk-divider { display: none; }
   .clip-edit-grid { grid-template-columns: 1fr; }
 }
+/* YouTube upload progress: hanya satu kalimat status + bar animasi. */
+.yt-upload-progress {
+  display: grid;
+  gap: 10px;
+  padding: 14px 14px 15px;
+  border: 1px solid rgba(244, 199, 107, 0.28);
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(244, 199, 107, 0.09), rgba(255, 255, 255, 0.02));
+}
+.yt-upload-progress-text {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.45;
+  color: #ffe3a6;
+  letter-spacing: 0.01em;
+}
+.yt-upload-progress-track {
+  position: relative;
+  width: 100%;
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  border: 1px solid rgba(244, 199, 107, 0.22);
+  background: rgba(0, 0, 0, 0.38);
+  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+.yt-upload-progress-fill {
+  position: relative;
+  display: block;
+  height: 100%;
+  min-width: 2%;
+  overflow: hidden;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #b7791f 0%, #e9bd65 48%, #ffe3a6 100%);
+  box-shadow: 0 0 14px rgba(244, 199, 107, 0.55);
+  transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.yt-upload-progress-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-120%);
+  background: linear-gradient(
+    110deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.18) 35%,
+    rgba(255, 255, 255, 0.62) 50%,
+    rgba(255, 255, 255, 0.18) 65%,
+    transparent 100%
+  );
+  animation: ytUploadShimmer 1.25s linear infinite;
+}
+@keyframes ytUploadShimmer {
+  to { transform: translateX(120%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .yt-upload-progress-fill { transition: none; }
+  .yt-upload-progress-fill::after { animation: none; }
+}
+

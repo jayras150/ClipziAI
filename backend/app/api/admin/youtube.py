@@ -128,7 +128,16 @@ async def admin_upload_clip(
     _check_video_source(clip.download_url)
 
     job = YOUTUBE_UPLOAD_JOBS.setdefault(str(clip.id), {})
-    job.update({"status": "uploading", "error": None, "video_id": None})
+    job.update(
+        {
+            "status": "uploading",
+            "error": None,
+            "video_id": None,
+            "progress": 0,
+            "bytes_sent": 0,
+            "total_bytes": 0,
+        }
+    )
     background_tasks.add_task(
         _run_youtube_upload,
         clip.id,

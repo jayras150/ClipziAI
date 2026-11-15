@@ -20,6 +20,7 @@ import {
 import { api, ClipData, ClipThumbnailData } from "@/lib/api"
 import { ClipzySpinner } from "@/components/ClipzySpinner"
 import YouTubeIcon from "@/components/YouTubeIcon"
+import YouTubeUploadProgress from "@/components/YouTubeUploadProgress"
 import { readApiError } from "@/lib/api-errors"
 import { SUBTITLE_STYLE_OPTIONS } from "@/lib/caption-styles"
 
@@ -54,6 +55,7 @@ export default function ClipModal({
   const [generating, setGenerating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
   const [uploadUrl, setUploadUrl] = useState("")
@@ -255,8 +257,9 @@ export default function ClipModal({
       return
     }
     setUploading(true)
+    setUploadProgress(0)
     setError("")
-    setNotice("Uploading to YouTube… keep this popup open.")
+    setNotice("")
     try {
       const result = await api.uploadClipToYouTube(token, clipId, {
         title: title.trim(),
@@ -267,12 +270,19 @@ export default function ClipModal({
         force: Boolean(uploadUrl),
       })
       if ("accepted" in result && result.accepted) {
-        // 202: server mengunggah di background (klip panjang bisa >100 detik).
-        setNotice("Uploading to YouTube… this can take a couple of minutes.")
-        const final = await api.waitForYouTubeUpload(token, clipId)
+        // 202: server mengunggah di background. Progress di-poll dari backend;
+        // UI hanya menampilkan satu kalimat + bar sesuai permintaan produk.
+        const final = await api.waitForYouTubeUpload(token, clipId, {
+          onProgress: (status) => {
+            setUploadProgress((current) =>
+              Math.max(current, Math.min(99, Math.round(Number(status.progress) || 0))),
+            )
+          },
+        })
         if (final.status !== "done" || !final.youtube_video_id) {
           throw new Error(final.error || "Upload stopped before YouTube returned a video id.")
         }
+        setUploadProgress(100)
         setUploadUrl(final.youtube_video_url || "")
         setNotice("Uploaded to YouTube.")
         onUpdated(clipId, {
@@ -764,19 +774,17 @@ export default function ClipModal({
                 <option value="private">Private</option>
               </select>
 
-              {youtubeConnected ? (
+              {uploading ? (
+                <YouTubeUploadProgress progress={uploadProgress} />
+              ) : youtubeConnected ? (
                 <button
                   type="button"
                   className="ui-btn ui-btn-gold clip-modal-upload"
                   onClick={() => void upload()}
                   disabled={busy || !title.trim()}
                 >
-                  {uploading ? (
-                    <ClipzySpinner size="xs" />
-                  ) : (
-                    <YouTubeIcon size={15} />
-                  )}
                   {uploadUrl ? "Re-upload to YouTube" : "Upload to YouTube"}
+                  <YouTubeIcon size={15} />
                 </button>
               ) : (
                 <button
@@ -788,7 +796,7 @@ export default function ClipModal({
                 </button>
               )}
 
-              {youtubeConnected && (
+              {!uploading && youtubeConnected && (
                 <button
                   type="button"
                   className="ui-btn ui-btn-ghost clip-modal-upload"

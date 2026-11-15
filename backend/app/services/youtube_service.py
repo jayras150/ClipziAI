@@ -7,7 +7,7 @@ import os
 import tempfile
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Any, List, Optional
+from typing import Callable, Dict, Any, List, Optional
 from urllib.parse import urlencode
 
 import requests
@@ -18,6 +18,64 @@ from app.services.youtube_metadata import build_snippet, normalize_privacy
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
+
+# Callback progres: (persen 0-100, byte terkirim, total byte).
+ProgressCallback = Callable[[int, int, int], None]
+
+
+class _ProgressFile:
+    """File-like object yang melaporkan progres baca ke requests.
+
+    Dipakai untuk upload resumable YouTube agar UI bisa menampilkan bar 0-100%
+    tanpa mengubah cara requests mengirim body (Content-Length tetap akurat).
+    """
+
+    def __init__(
+        self,
+        path: str,
+        total: int,
+        callback: Optional[ProgressCallback],
+        base_percent: int = 40,
+        span_percent: int = 59,
+    ) -> None:
+        self._handle = open(path, "rb")
+        self._total = max(1, int(total))
+        self._callback = callback
+        self._base = max(0, min(100, int(base_percent)))
+        self._span = max(0, min(100 - self._base, int(span_percent)))
+        self._sent = 0
+        self._last_percent = -1
+
+    def __len__(self) -> int:
+        return self._total
+
+    def read(self, size: int = -1) -> bytes:
+        data = self._handle.read(size)
+        if not data:
+            return data
+        self._sent += len(data)
+        percent = self._base + int(self._span * self._sent / self._total)
+        percent = max(0, min(99, percent))
+        if percent != self._last_percent:
+            self._last_percent = percent
+            self._report(percent)
+        return data
+
+    def _report(self, percent: int) -> None:
+        if self._callback is None:
+            return
+        try:
+            self._callback(percent, self._sent, self._total)
+        except Exception:
+            # Progres tidak boleh menggagalkan upload.
+            pass
+
+    def close(self) -> None:
+        self._handle.close()
+
+    def __getattr__(self, name: str):
+        return getattr(self._handle, name)
+
 
 # Cache hasil preflight OAuth (redirect URI terdaftar atau tidak) selama 5 menit.
 PREFLIGHT_TTL_SECONDS = 300
@@ -209,6 +267,7 @@ class YouTubeService:
         made_for_kids: bool = False,
         source_url: Optional[str] = None,
         publish_at: Optional[datetime] = None,
+        progress_callback: Optional[ProgressCallback] = None,
     ) -> Dict[str, Any]:
         """
         Upload video ke YouTube memakai resumable upload Data API v3.
@@ -239,6 +298,7 @@ class YouTubeService:
             made_for_kids,
             source_url,
             publish_at,
+            progress_callback,
         )
 
     @staticmethod
@@ -279,8 +339,19 @@ class YouTubeService:
         made_for_kids: bool,
         source_url: Optional[str],
         publish_at: Optional[datetime] = None,
+        progress_callback: Optional[ProgressCallback] = None,
     ) -> Dict[str, Any]:
         """Bagian sinkron dari resumable upload (dijalankan di thread)."""
+
+        def report(percent: int, sent: int = 0, total: int = 0) -> None:
+            if progress_callback is None:
+                return
+            try:
+                progress_callback(max(0, min(100, int(percent))), int(sent), int(total))
+            except Exception:
+                pass
+
+        report(1)
         snippet = build_snippet(
             title=title,
             description=description,
@@ -356,6 +427,7 @@ class YouTubeService:
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="YouTube did not return an upload URL.",
             )
+        report(10)
 
         handle = None
         temp_path = None
@@ -376,10 +448,24 @@ class YouTubeService:
                 temp_path = source_path
                 with requests.get(source_url, stream=True, timeout=600) as download:
                     download.raise_for_status()
+                    try:
+                        download_total = int(download.headers.get("Content-Length") or 0)
+                    except (TypeError, ValueError):
+                        download_total = 0
+                    downloaded = 0
                     with open(source_path, "wb") as out:
                         for piece in download.iter_content(chunk_size=1024 * 1024):
                             if piece:
                                 out.write(piece)
+                                downloaded += len(piece)
+                                if download_total > 0:
+                                    report(
+                                        10 + int(25 * downloaded / download_total),
+                                        downloaded,
+                                        download_total,
+                                    )
+                                else:
+                                    report(min(34, 10 + downloaded // (1024 * 1024)), downloaded, 0)
 
             content_length = os.path.getsize(source_path)
             if content_length <= 0:
@@ -387,11 +473,19 @@ class YouTubeService:
                     status_code=status.HTTP_502_BAD_GATEWAY,
                     detail="The video size could not be determined, so the upload was cancelled.",
                 )
+            report(40, 0, content_length)
 
-            handle = open(source_path, "rb")
+            progress_handle = _ProgressFile(
+                source_path,
+                content_length,
+                progress_callback,
+                base_percent=40,
+                span_percent=59,
+            )
+            handle = progress_handle
             put_response = requests.put(
                 upload_url,
-                data=handle,
+                data=progress_handle,
                 headers={
                     "Content-Type": "video/mp4",
                     "Content-Length": str(content_length),
@@ -432,6 +526,7 @@ class YouTubeService:
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="YouTube did not return a video id.",
             )
+        report(100, content_length, content_length)
         return {
             "success": True,
             "video_id": video_id,

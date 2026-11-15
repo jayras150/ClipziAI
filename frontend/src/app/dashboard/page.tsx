@@ -36,6 +36,7 @@ import { requestYouTubeAccessToken } from "@/lib/social"
 import ConfirmDialog from "@/components/ConfirmDialog"
 import { ClipzySpinner, InlineSpinner, ProcessingBar } from "@/components/ClipzySpinner"
 import ClipModal from "@/components/ClipModal"
+import YouTubeUploadProgress from "@/components/YouTubeUploadProgress"
 import SiteFooter from "@/components/SiteFooter"
 import UserMenu from "@/components/UserMenu"
 import NavDrawer from "@/components/NavDrawer"
@@ -291,6 +292,7 @@ export default function DashboardPage() {
   const [bulkPrivacy, setBulkPrivacy] = useState("unlisted")
   const [bulkPublishAt, setBulkPublishAt] = useState("")
   const [cardUploading, setCardUploading] = useState<Record<string, boolean>>({})
+  const [cardUploadProgress, setCardUploadProgress] = useState<Record<string, number>>({})
   const [submitting, setSubmitting] = useState(false)
   const [taskError, setTaskError] = useState("")
   const [notice, setNotice] = useState("")
@@ -872,17 +874,27 @@ export default function DashboardPage() {
       return
     }
     setCardUploading((current) => ({ ...current, [clip.id]: true }))
+    setCardUploadProgress((current) => ({ ...current, [clip.id]: 0 }))
     setTaskError("")
     setNotice("")
     try {
       await api.quickUploadClipToYouTube(token, clip.id, bulkPrivacy)
       patchClip(clip.id, { youtube_uploaded: true })
-      setNotice(`Clip #${clip.clip_index + 1} is uploading to YouTube in the background.`)
       const status = await api.waitForYouTubeUpload(token, clip.id, {
         timeoutMs: 10 * 60 * 1000,
         intervalMs: 5000,
+        onProgress: (next) => {
+          setCardUploadProgress((current) => ({
+            ...current,
+            [clip.id]: Math.max(
+              current[clip.id] || 0,
+              Math.min(99, Math.round(Number(next.progress) || 0)),
+            ),
+          }))
+        },
       })
       if (status.status === "done") {
+        setCardUploadProgress((current) => ({ ...current, [clip.id]: 100 }))
         patchClip(clip.id, {
           youtube_uploaded: true,
           youtube_video_id: status.youtube_video_id || null,
@@ -895,6 +907,11 @@ export default function DashboardPage() {
       setTaskError(readApiError(error.response?.data, "Could not upload this clip to YouTube."))
     } finally {
       setCardUploading((current) => {
+        const next = { ...current }
+        delete next[clip.id]
+        return next
+      })
+      setCardUploadProgress((current) => {
         const next = { ...current }
         delete next[clip.id]
         return next
@@ -2287,6 +2304,12 @@ export default function DashboardPage() {
                                   </>
                                 ) : null}
                               </div>
+
+                              {cardUploading[clip.id] && (
+                                <YouTubeUploadProgress
+                                  progress={cardUploadProgress[clip.id] || 0}
+                                />
+                              )}
 
                               <div className="clip-actions">
                                 <label className="clip-pick" title="Select for merge/upload">
