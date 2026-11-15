@@ -62,6 +62,14 @@ _BY_CATEGORY_MESSAGE = {
         "Our GPU worker isn't available right now.\n\n"
         "Your project hasn't started yet — please try again in a few minutes."
     ),
+    CATEGORY_BOT_CHECK: (
+        "YouTube asked us to verify this video request.\n\n"
+        "We're refreshing our access — please try again in a few minutes."
+    ),
+    CATEGORY_FORMAT_UNAVAILABLE: (
+        "YouTube is limiting the video quality we can fetch right now.\n\n"
+        "Please try again in a few minutes."
+    ),
 }
 
 # Retry otomatis hanya untuk kegagalan sementara.

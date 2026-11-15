@@ -140,7 +140,16 @@ fi
 if [ -n "${CLIPZI_RESTORE_TIMEOUT:-}" ]; then
     MODEL_PATH="${CLIPZI_RESTORE_MODEL_PATH:-/workspace/whisper_model}"
     FAST_FAIL="${CLIPZI_RESTORE_FAST_FAIL:-150}"
+    # Container jalan sebagai user non-root; /workspace milik root di banyak host
+    # Vast. Tanpa fallback ini, unduhan model gagal "PermissionError: /workspace".
+    mkdir -p "$MODEL_PATH" 2>/dev/null || true
+    if [ ! -w "$MODEL_PATH" ]; then
+        log "PERINGATAN: $MODEL_PATH tidak writable; fallback ke /app/whisper_model"
+        MODEL_PATH="/app/whisper_model"
+        mkdir -p "$MODEL_PATH" 2>/dev/null || true
+    fi
     export GPU_WHISPER_MODEL="$MODEL_PATH"
+    export HF_HOME="${HF_HOME:-/app/.cache/huggingface}"
     started=$(date +%s)
     deadline=$(( started + CLIPZI_RESTORE_TIMEOUT ))
     fast_deadline=$(( started + FAST_FAIL ))
