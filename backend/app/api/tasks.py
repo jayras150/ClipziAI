@@ -437,7 +437,11 @@ async def delete_task(
     if cleanup.get("errors"):
         logger.warning("Destroy instance task %s: %s", task_id, cleanup["errors"])
 
-    storage_cleanup = await _delete_project_storage(db, task_id)
+    storage_cleanup = {"objects": 0, "deleted": 0, "failed": 0}
+    try:
+        storage_cleanup = await _delete_project_storage(db, task_id)
+    except Exception as exc:
+        logger.warning("Storage cleanup task %s gagal: %s", task_id, exc)
     if storage_cleanup.get("failed"):
         logger.warning("Storage cleanup task %s: %s", task_id, storage_cleanup)
 
