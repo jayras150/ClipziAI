@@ -26,8 +26,8 @@ class TemplateCreateIn(BaseModel):
     name: Optional[str] = None
     image: Optional[str] = None
     disk_space: Optional[int] = None
-    # Env per-task harus menang saat instance dibuat dari template_hash.
-    include_env: bool = False
+    # Env pipeline ikut dibekukan di template (CLIPZI_TASK_ID tetap per task).
+    include_env: bool = True
     sync_env_vars: bool = True
     public: bool = False
     activate: bool = True

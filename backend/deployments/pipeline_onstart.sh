@@ -22,6 +22,11 @@ set -eu
 # -----------------------------------------------------------------------------
 log() { echo "[onstart] $*"; }
 
+# Binary python harus ditentukan SEBELUM dipakai (set -u akan abort bila kosong).
+cd /app 2>/dev/null || true
+PYTHON_BIN="${PYTHON_BIN:-/opt/venv/bin/python}"
+[ -x "$PYTHON_BIN" ] || PYTHON_BIN="python"
+
 TASK_ID="${CLIPZI_TASK_ID:-}"
 log "start task=${TASK_ID:-<kosong>} role=${CLIPZI_ROLE:-} at=$(date -u +%FT%TZ)"
 
@@ -66,8 +71,6 @@ PY
 fi
 
 cd /app || exit 1
-PYTHON_BIN="${PYTHON_BIN:-/opt/venv/bin/python}"
-[ -x "$PYTHON_BIN" ] || PYTHON_BIN="python"
 
 # --- Callback "boot" ke API (webhook milik kita; Vast tidak punya webhook) -----
 # Supervisor instance memakai sinyal ini untuk membedakan "container hidup" dari

@@ -85,7 +85,7 @@ export default function VastPanel({
   const [templateName, setTemplateName] = useState('');
   const [templateImage, setTemplateImage] = useState('');
   const [templateDisk, setTemplateDisk] = useState('');
-  const [templateIncludeEnv, setTemplateIncludeEnv] = useState(false);
+  const [templateIncludeEnv, setTemplateIncludeEnv] = useState(true);
   const [templateSyncEnv, setTemplateSyncEnv] = useState(true);
   const [templateMessage, setTemplateMessage] = useState('');
   const [templateError, setTemplateError] = useState('');
@@ -373,8 +373,9 @@ export default function VastPanel({
               <CardDescription>
                 Buat template Vast.ai dari image worker + onstart pipeline, lalu hash-nya langsung
                 disimpan sebagai Template hash dan dipakai saat instance oneshot dibuat. Env pipeline
-                tetap dikirim per task oleh dispatcher dan disinkronkan ke Environment Variables akun
-                Vast — nilai secret tidak pernah ditampilkan di panel ini.
+                ikut dibekukan di template (terlihat di web Vast, maks 4096 char) dan tetap dikirim
+                ulang per task — nilai per-task seperti CLIPZI_TASK_ID selalu menang. Nilai secret
+                tidak pernah ditampilkan di panel ini.
               </CardDescription>
             </CardHeader>
             <CardContent className='space-y-3'>
@@ -444,7 +445,7 @@ export default function VastPanel({
                     checked={templateIncludeEnv}
                     onChange={(event) => setTemplateIncludeEnv(event.target.checked)}
                   />
-                  Bekukan env pipeline di template (tidak disarankan)
+                  Bekukan env pipeline di template (muncul di web Vast)
                 </label>
                 <label className='text-muted-foreground flex items-center gap-2'>
                   <input
