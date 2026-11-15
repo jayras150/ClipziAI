@@ -37,7 +37,7 @@ import asyncio
 import logging
 import time
 from datetime import datetime
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from uuid import UUID
 
 import requests
@@ -352,17 +352,89 @@ def build_worker_env(task_id: Optional[UUID] = None) -> Dict[str, str]:
     return env
 
 
+def pick_connection_id(
+    connections: List[Dict[str, Any]],
+    configured: str = "",
+) -> str:
+    """Pilih ID Cloud Sync yang aman untuk restore.
+
+    Urutan:
+      1. ID tersimpan jika masih terdaftar.
+      2. Satu-satunya koneksi di akun.
+      3. Satu-satunya koneksi bernama gdrive/drive/google.
+    Selain itu lempar error agar admin memilih, bukan menebak akun.
+    """
+    ids = [
+        str(item.get("id") or "").strip()
+        for item in connections or []
+        if isinstance(item, dict) and str(item.get("id") or "").strip()
+    ]
+    current = str(configured or "").strip()
+    if current and current in ids:
+        return current
+    if len(ids) == 1:
+        return ids[0]
+    drive = [
+        str(item.get("id") or "").strip()
+        for item in connections or []
+        if isinstance(item, dict)
+        and any(
+            marker in str(item.get("name") or "").lower()
+            for marker in ("gdrive", "google", "drive")
+        )
+        and str(item.get("id") or "").strip()
+    ]
+    if len(drive) == 1:
+        return drive[0]
+    if not ids:
+        raise RuntimeError("Tidak ada koneksi Cloud Sync di akun Vast.")
+    available = ", ".join(
+        f"{item.get('id')} ({item.get('name') or '-'})"
+        for item in connections
+        if isinstance(item, dict) and item.get("id")
+    )
+    raise RuntimeError(
+        f"Connection Vast '{current or '(kosong)'}' tidak ditemukan. "
+        f"Pilih salah satu: {available}"
+    )
+
+
 async def _restore_workspace(instance_id: int) -> None:
     """Salin cache model dari Google Drive ke /workspace setelah instance hidup."""
     if not getattr(settings, "VAST_RESTORE_ENABLED", False):
         return
     src = (settings.VAST_RESTORE_SRC or "").strip()
     dst = (settings.VAST_RESTORE_DST or "/workspace").strip()
-    connection = (settings.VAST_RESTORE_CONNECTION or "").strip()
-    if not src or not connection:
-        logger.warning("Restore dilewati: src/connection kosong")
+    configured_connection = (settings.VAST_RESTORE_CONNECTION or "").strip()
+    if not src:
+        logger.warning("Restore dilewati: src kosong")
         return
     client = _get_vast_client()
+    connections: Optional[List[Dict[str, Any]]]
+    try:
+        connections = await asyncio.to_thread(client.show_connections)
+    except Exception as exc:
+        logger.warning("Gagal membaca koneksi Vast, memakai ID tersimpan: %s", exc)
+        connections = None
+    if connections is None:
+        # API daftar koneksi gagal: jangan blok restore; cloud_copy akan memberi
+        # error yang jelas kalau ID tersimpan ternyata sudah tidak valid.
+        if not configured_connection:
+            logger.error("Restore GDrive dibatalkan: connection kosong dan daftar tidak tersedia")
+            return
+        connection = configured_connection
+    else:
+        try:
+            connection = pick_connection_id(connections or [], configured_connection)
+        except RuntimeError as exc:
+            logger.error("Restore GDrive dibatalkan: %s", exc)
+            return
+    if connection != configured_connection:
+        logger.warning(
+            "VAST_RESTORE_CONNECTION %s tidak valid; memakai koneksi aktif %s",
+            configured_connection or "(kosong)",
+            connection,
+        )
     deadline = time.monotonic() + int(settings.VAST_RESTORE_TIMEOUT or 900)
     while time.monotonic() < deadline:
         try:

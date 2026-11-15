@@ -49,6 +49,33 @@ export async function testVastConnection() {
   }
 }
 
+export async function loadVastConnections() {
+  try {
+    return await adminFetch<{
+      connections: Array<{ id: string; name: string }>;
+      configured: string;
+      valid: boolean;
+      selected: string | null;
+      error: string | null;
+    }>('/api/admin/settings/vast/connections');
+  } catch (error) {
+    return { error: _error(error) };
+  }
+}
+
+export async function autoVastConnection() {
+  try {
+    const data = await adminFetch<Record<string, unknown>>(
+      '/api/admin/settings/vast/connections/auto',
+      { method: 'POST' }
+    );
+    revalidatePath('/dashboard/settings/vast');
+    return { ok: true, data };
+  } catch (error) {
+    return { error: _error(error) };
+  }
+}
+
 export async function testVastOffers(limit = 5) {
   try {
     return await adminFetch<Record<string, unknown>>(

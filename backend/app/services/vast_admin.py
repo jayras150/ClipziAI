@@ -29,6 +29,52 @@ def _client():
     return _get_vast_client()
 
 
+async def list_connections() -> List[Dict[str, str]]:
+    """Koneksi Cloud Sync milik akun Vast (hanya id + nama, tanpa token)."""
+    client = _client()
+    try:
+        rows = await asyncio.to_thread(client.show_connections)
+    except Exception as exc:
+        raise RuntimeError(f"Gagal mengambil koneksi Vast: {exc}") from exc
+    items: List[Dict[str, str]] = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        connection_id = str(row.get("id") or "").strip()
+        if not connection_id:
+            continue
+        items.append(
+            {
+                "id": connection_id,
+                "name": str(row.get("name") or connection_id).strip(),
+            }
+        )
+    items.sort(key=lambda item: item["id"])
+    return items
+
+
+async def detect_connection() -> Dict[str, Any]:
+    """Deteksi koneksi yang cocok dengan konfigurasi restore saat ini."""
+    from app.services.vast_worker import pick_connection_id
+
+    settings = get_settings()
+    configured = (settings.VAST_RESTORE_CONNECTION or "").strip()
+    connections = await list_connections()
+    try:
+        selected = pick_connection_id(connections, configured)
+        error = None
+    except RuntimeError as exc:
+        selected = None
+        error = str(exc)
+    return {
+        "connections": connections,
+        "configured": configured,
+        "valid": bool(configured) and any(item["id"] == configured for item in connections),
+        "selected": selected,
+        "error": error,
+    }
+
+
 def _number(value: Any) -> Optional[float]:
     try:
         return float(value)

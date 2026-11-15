@@ -41,7 +41,7 @@ DEFAULT_VAST: Dict[str, Any] = {
     "request_timeout": 600,
     "supervisor_interval": 5,
     "restore_enabled": False,
-    "restore_connection": "47108",
+    "restore_connection": "47129",
     "restore_src": "/vast-backup/Clipzy/whisper_model",
     "restore_dst": "/workspace/whisper_model",
     "restore_model_path": "/workspace/whisper_model",

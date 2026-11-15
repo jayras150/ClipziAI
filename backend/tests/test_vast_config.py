@@ -95,15 +95,62 @@ def test_normalize_restore_fields():
         {
             "restore_enabled": "true",
             "restore_timeout": 9999,
-            "restore_connection": "47108",
+            "restore_connection": "47129",
             "restore_src": "/vast-backup/Clipzy/whisper_model",
             "restore_model_path": "/workspace/whisper_model",
         }
     )
     assert cfg["restore_enabled"] is True
     assert cfg["restore_timeout"] == 3600
-    assert cfg["restore_connection"] == "47108"
+    assert cfg["restore_connection"] == "47129"
     assert cfg["restore_model_path"] == "/workspace/whisper_model"
+
+
+def test_pick_connection_prefers_saved_valid_id():
+    from app.services.vast_worker import pick_connection_id
+
+    rows = [
+        {"id": "47129", "name": "gdrive-sujinwo555"},
+        {"id": "999", "name": "other-drive"},
+    ]
+    assert pick_connection_id(rows, "47129") == "47129"
+
+
+def test_pick_connection_auto_uses_single_connection():
+    from app.services.vast_worker import pick_connection_id
+
+    rows = [{"id": "47129", "name": "gdrive-sujinwo555"}]
+    assert pick_connection_id(rows, "47108") == "47129"
+    assert pick_connection_id(rows, "") == "47129"
+
+
+def test_pick_connection_uses_unique_drive_when_multiple():
+    from app.services.vast_worker import pick_connection_id
+
+    rows = [
+        {"id": "1", "name": "s3-archive"},
+        {"id": "47129", "name": "gdrive-sujinwo555"},
+    ]
+    assert pick_connection_id(rows, "47108") == "47129"
+
+
+def test_pick_connection_refuses_ambiguous_account():
+    from app.services.vast_worker import pick_connection_id
+
+    rows = [
+        {"id": "1", "name": "gdrive-a"},
+        {"id": "2", "name": "gdrive-b"},
+    ]
+    with pytest.raises(RuntimeError):
+        pick_connection_id(rows, "47108")
+
+
+def test_pick_connection_refuses_empty_account():
+    from app.services.vast_worker import pick_connection_id
+
+    with pytest.raises(RuntimeError):
+        pick_connection_id([], "47108")
+
 
 
 def test_map_gpu_model_accepts_filesystem_path(tmp_path):

@@ -1,12 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import {
+  autoVastConnection,
+  loadVastConnections,
   resetVastConfig,
   saveVastConfig,
   testVastConnection,
@@ -70,10 +72,66 @@ export default function VastPanel({
   const [result, setResult] = useState('');
   const [error, setError] = useState('');
   const [pending, startTransition] = useTransition();
+  const [connections, setConnections] = useState<Array<{ id: string; name: string }>>([]);
+  const [connectionsBusy, setConnectionsBusy] = useState(false);
+  const [connectionsError, setConnectionsError] = useState('');
+  const [connectionsLoaded, setConnectionsLoaded] = useState(false);
 
   const set = (key: keyof VastConfigData, value: unknown) => {
     setForm((current) => ({ ...current, [key]: value }));
   };
+
+  const refreshConnections = async () => {
+    setConnectionsBusy(true);
+    setConnectionsError('');
+    try {
+      const response = await loadVastConnections();
+      if ('error' in response && response.error) {
+        setConnectionsError(String(response.error));
+        return;
+      }
+      const payload = response as {
+        connections: Array<{ id: string; name: string }>;
+      };
+      setConnections(payload.connections || []);
+      setConnectionsLoaded(true);
+    } finally {
+      setConnectionsBusy(false);
+    }
+  };
+
+  const applyAutoConnection = async () => {
+    setConnectionsBusy(true);
+    setError('');
+    setResult('');
+    try {
+      const response = await autoVastConnection();
+      if ('error' in response && response.error) {
+        setError(String(response.error));
+        return;
+      }
+      const data = (response as { data?: Record<string, unknown> }).data || {};
+      const selected = String(data.selected || '');
+      if (selected) {
+        setForm((current) => ({ ...current, restore_connection: selected }));
+      }
+      setResult(
+        selected
+          ? `Connection otomatis dipakai: ${selected}. Konfigurasi restore sudah disimpan.`
+          : 'Tidak ada koneksi yang bisa dipilih otomatis.'
+      );
+      await refreshConnections();
+    } finally {
+      setConnectionsBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshConnections();
+    // Muat sekali saat panel dibuka; tombol Refresh tersedia untuk memuat ulang.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
 
   const run = (kind: 'save' | 'test' | 'offers' | 'reset') => {
     setError('');
@@ -147,6 +205,10 @@ export default function VastPanel({
       if ('error' in response && response.error) setError(String(response.error));
     });
   };
+
+  const connectionKnown = connections.some(
+    (item) => item.id === String(form.restore_connection || '')
+  );
 
   return (
     <div className='space-y-4'>
@@ -298,8 +360,58 @@ export default function VastPanel({
                 Aktifkan restore workspace sebelum pipeline
               </label>
               <div className='space-y-1'>
-                <label className='text-muted-foreground text-xs'>Connection ID Vast</label>
-                <Input value={form.restore_connection} onChange={(event) => set('restore_connection', event.target.value)} placeholder='47108' />
+                <div className='flex items-center justify-between gap-2'>
+                  <label className='text-muted-foreground text-xs'>Connection ID Vast</label>
+                  <div className='flex gap-1'>
+                    <button
+                      type='button'
+                      className='rounded border px-2 py-1 text-[11px] hover:bg-muted'
+                      onClick={() => void refreshConnections()}
+                      disabled={connectionsBusy}
+                    >
+                      {connectionsBusy ? 'Memuat…' : 'Refresh'}
+                    </button>
+                    <button
+                      type='button'
+                      className='rounded border px-2 py-1 text-[11px] hover:bg-muted'
+                      onClick={() => void applyAutoConnection()}
+                      disabled={connectionsBusy}
+                      title='Pilih koneksi yang valid dan simpan otomatis'
+                    >
+                      Deteksi otomatis
+                    </button>
+                  </div>
+                </div>
+                <select
+                  className='border-input bg-background h-9 w-full rounded-md border px-3 text-sm'
+                  value={String(form.restore_connection || '')}
+                  onChange={(event) => set('restore_connection', event.target.value)}
+                >
+                  <option value=''>Auto-detect saat restore</option>
+                  {connections.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.id} — {item.name}
+                    </option>
+                  ))}
+                  {connectionsLoaded &&
+                  form.restore_connection &&
+                  !connectionKnown ? (
+                    <option value={String(form.restore_connection)}>
+                      {String(form.restore_connection)} — tidak ditemukan
+                    </option>
+                  ) : null}
+                </select>
+                {connectionsError ? (
+                  <p className='text-destructive text-[11px]'>{connectionsError}</p>
+                ) : connectionsLoaded && !connectionKnown && form.restore_connection ? (
+                  <p className='text-amber-600 text-[11px]'>
+                    ID ini tidak ada di akun Vast. Klik “Deteksi otomatis”.
+                  </p>
+                ) : connections.length === 0 && connectionsLoaded ? (
+                  <p className='text-amber-600 text-[11px]'>
+                    Belum ada Cloud Sync di akun Vast.
+                  </p>
+                ) : null}
               </div>
               <div className='space-y-1'>
                 <label className='text-muted-foreground text-xs'>Path model di instance</label>

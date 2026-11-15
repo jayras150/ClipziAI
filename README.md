@@ -524,7 +524,7 @@ status) plus riwayat lokal, dengan tombol **Logs** (termasuk opsi **debug/daemon
 - Backup sekali: script `deployments/whisper_backup_onstart.sh` mengunduh model ke folder
   nyata `/workspace/whisper_model` (tanpa symlink HuggingFace) lalu disimpan ke
   **`/vast-backup/Clipzy/whisper_model`** lewat Vast Cloud Sync
-  (connection `47108` / `gdrive-sujinwo555`). Verifikasi: 18 objek, 2,879 GiB.
+  (connection `47129` / `gdrive-sujinwo555`; auto-detect saat restore). Verifikasi: 18 objek, 2,879 GiB.
 - Restore: aktifkan **Settings › Vast.ai → Restore model dari Google Drive**.
   Setelah instance dibuat, backend menjalankan `cloud_copy` Cloud→Instance ke
   `/workspace/whisper_model`; `pipeline_onstart.sh` menunggu `model.bin` stabil
