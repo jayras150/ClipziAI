@@ -76,7 +76,7 @@ async def live_worker_instances(
 @router.get("/instances/{instance_id}/logs")
 async def worker_instance_logs(
     instance_id: int,
-    tail: int = 300,
+    tail: int = 1000,
     daemon: bool = False,
     current_user: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db_session),

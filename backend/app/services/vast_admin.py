@@ -143,10 +143,10 @@ async def live_instances() -> List[Dict[str, Any]]:
     return items
 
 
-async def instance_logs(instance_id: int, tail: int = 300, daemon: bool = False) -> str:
+async def instance_logs(instance_id: int, tail: int = 1000, daemon: bool = False) -> str:
     """Log container instance; `daemon=True` menampilkan daemon/engine logs."""
     client = _client()
-    size = max(50, min(2000, int(tail or 300)))
+    size = max(50, min(2000, int(tail or 1000)))
     try:
         text = await asyncio.to_thread(
             client.logs, int(instance_id), str(size), None, daemon

@@ -23,7 +23,7 @@ export type WorkerLogsResult = {
 
 export async function getInstanceLogs(
   instanceId: number,
-  tail = 300,
+  tail = 1000,
   daemon = false
 ): Promise<WorkerLogsResult> {
   try {
