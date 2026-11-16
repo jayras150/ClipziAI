@@ -3015,7 +3015,7 @@ html, body { max-width: 100%; overflow-x: clip; }
 .clip-media-stage{padding:0 !important;overflow:hidden;background:#000;border-radius:14px;display:block !important}
 .clip-media-stage video,.clip-media-stage .clip-modal-video{
   display:block;width:100% !important;height:auto !important;
-  max-height:min(56vh,420px) !important;object-fit:contain !important;
+  min-height:0 !important;max-height:min(56vh,420px) !important;object-fit:contain !important;
   background:#000;border:0 !important;border-radius:0 !important;aspect-ratio:auto !important
 }
 .cs-live-thumb img{width:150px !important;height:auto !important;aspect-ratio:16/9;object-fit:contain !important;background:#000;border-radius:8px;border:1px solid rgba(255,255,255,.18)}
