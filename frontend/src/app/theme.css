@@ -3030,3 +3030,8 @@ html, body { max-width: 100%; overflow-x: clip; }
 .clip-media-stage{position:relative !important;display:block !important;width:100% !important;max-height:70vh;padding:0 !important;overflow:hidden !important;background:#000 !important;border-radius:14px;border:1px solid var(--ui-line);margin:0 auto}
 .clip-media-stage video,.clip-media-stage .clip-modal-video{position:absolute !important;inset:0 !important;width:100% !important;height:100% !important;max-width:none !important;max-height:none !important;min-height:0 !important;aspect-ratio:auto !important;object-fit:contain !important;background:#000 !important;border:0 !important;border-radius:0 !important;display:block}
 .clip-video-fallback{position:relative !important;height:100% !important;min-height:220px !important}
+
+
+/* FINAL: preview thumbnail mengikuti rasio asli (9:16 tidak dipaksa 16:9) */
+.cs-live-thumb img{width:auto !important;max-width:100% !important;height:auto !important;max-height:150px !important;aspect-ratio:auto !important;object-fit:contain !important;border-radius:8px !important;border:1px solid rgba(255,255,255,.15) !important;background:#000 !important;display:block}
+.clip-video-fallback{background-size:contain !important;background-repeat:no-repeat !important;background-position:center !important}

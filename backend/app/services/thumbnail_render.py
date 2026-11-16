@@ -17,6 +17,28 @@ from app.services.caption_catalog import CAPTION_STYLES, FONT_FILES
 
 FONT_DIR = Path(__file__).resolve().parents[2] / "assets" / "fonts"
 OUT_W, OUT_H = 1280, 720
+PORTRAIT_W = 1080
+MAX_SIDE = 1920
+
+
+def target_size(size: Tuple[int, int]) -> Tuple[int, int]:
+    """Ukuran output mengikuti rasio ASLI frame (9:16 tetap 9:16).
+
+    Thumbnail tidak boleh digepengkan ke 16:9: frame portrait 9:16 keluar
+    1080x1920, landscape 16:9 keluar 1280x720. Sisi terpanjang dibatasi 1920.
+    """
+    width, height = int(size[0] or 0), int(size[1] or 0)
+    if width <= 0 or height <= 0:
+        return OUT_W, OUT_H
+    if height > width:
+        out_w, out_h = PORTRAIT_W, int(round(PORTRAIT_W * height / width))
+    else:
+        out_w, out_h = OUT_W, int(round(OUT_W * height / width))
+    longest = max(out_w, out_h)
+    if longest > MAX_SIDE:
+        factor = MAX_SIDE / longest
+        out_w, out_h = int(round(out_w * factor)), int(round(out_h * factor))
+    return max(2, out_w), max(2, out_h)
 ANCHORS = (
     "top-left", "top-center", "top-right",
     "center-left", "center", "center-right",
@@ -90,20 +112,22 @@ def render_caption_thumbnail(
     style_id: str,
     position: str = "bottom-center",
 ) -> bytes:
-    """Tempel caption bergaya ke frame dan kembalikan JPEG 1280x720."""
+    """Tempel caption bergaya ke frame, ukuran output mengikuti rasio frame."""
     style = CAPTION_STYLES.get(style_id) or CAPTION_STYLES["hormozi-pop"]
     base = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    if base.size != (OUT_W, OUT_H):
-        # Jangan distorsi: 9:16 tetap proporsional (center-crop ke 16:9 untuk YouTube).
-        base = ImageOps.fit(base, (OUT_W, OUT_H), method=Image.LANCZOS, centering=(0.5, 0.42))
+    out_w, out_h = target_size(base.size)
+    if base.size != (out_w, out_h):
+        # Rasio dipertahankan (resize proporsional), tidak ada distorsi.
+        base = base.resize((out_w, out_h), Image.LANCZOS)
 
     label = text.strip() or "Sample caption"
     if style["uppercase"]:
         label = label.upper()
 
-    font_size = max(24, int(OUT_H * float(style["size"])))
-    margin = int(OUT_W * 0.045)
-    max_text_width = int(OUT_W * 0.86)
+    short_side = min(out_w, out_h)
+    font_size = max(24, int(short_side * float(style["size"])))
+    margin = int(short_side * 0.045)
+    max_text_width = int(out_w * 0.86)
 
     probe = ImageDraw.Draw(Image.new("RGBA", (8, 8)))
     for _ in range(14):
@@ -171,13 +195,13 @@ def render_caption_thumbnail(
     vertical, _, horizontal = anchor.partition("-")
     x = {
         "left": margin,
-        "center": (OUT_W - layer.width) // 2,
-        "right": OUT_W - layer.width - margin,
+        "center": (out_w - layer.width) // 2,
+        "right": out_w - layer.width - margin,
     }.get(horizontal or "center", (OUT_W - layer.width) // 2)
     y_pos = {
         "top": margin,
-        "center": (OUT_H - layer.height) // 2,
-        "bottom": OUT_H - layer.height - margin,
+        "center": (out_h - layer.height) // 2,
+        "bottom": out_h - layer.height - margin,
     }.get(vertical or "bottom", OUT_H - layer.height - margin)
 
     composed = base.convert("RGBA")
@@ -187,6 +211,24 @@ def render_caption_thumbnail(
     return buffer.getvalue()
 
 
+def to_landscape(image_bytes: bytes, size: Tuple[int, int] = (OUT_W, OUT_H)) -> bytes:
+    """Konversi thumbnail apa pun ke JPEG 16:9 (center-crop, tanpa distorsi).
+
+    YouTube hanya menerima thumbnail 16:9. Thumbnail klip disimpan sesuai rasio
+    asli video (9:16), jadi versi 16:9 dibuat saat upload saja.
+    """
+    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    if image.size != size:
+        image = ImageOps.fit(image, size, method=Image.LANCZOS, centering=(0.5, 0.42))
+    for quality in (90, 82, 74):
+        buffer = io.BytesIO()
+        image.save(buffer, format="JPEG", quality=quality)
+        payload = buffer.getvalue()
+        if len(payload) <= 2_000_000:
+            return payload
+    return payload
+
+
 def style_options() -> List[dict]:
     return [
         {"id": key, "label": value["label"], "position": value["position"]}
@@ -194,4 +236,4 @@ def style_options() -> List[dict]:
     ]
 
 
-__all__ = ["ANCHORS", "render_caption_thumbnail", "style_options"]
+__all__ = ["ANCHORS", "render_caption_thumbnail", "style_options", "target_size", "to_landscape"]

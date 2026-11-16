@@ -32,6 +32,37 @@ def _frame() -> bytes:
     return buffer.getvalue()
 
 
+def _portrait_frame() -> bytes:
+    image = Image.new("RGB", (720, 1280), (44, 22, 70))
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
+def test_target_size_mengikuti_rasio():
+    assert thumbnail_render.target_size((1920, 1080)) == (1280, 720)
+    assert thumbnail_render.target_size((1080, 1920)) == (1080, 1920)
+    assert thumbnail_render.target_size((720, 1280)) == (1080, 1920)
+    assert thumbnail_render.target_size((1080, 1080)) == (1280, 1280)
+
+
+def test_portrait_9_16_tidak_digepengkan():
+    output = thumbnail_render.render_caption_thumbnail(
+        _portrait_frame(), "Viral portrait clip", "hormozi-pop", "bottom-center"
+    )
+    image = Image.open(io.BytesIO(output))
+    assert image.size == (1080, 1920)
+    assert abs(image.size[0] / image.size[1] - 9 / 16) < 0.01
+    assert image.format == "JPEG"
+
+
+def test_to_landscape_untuk_youtube():
+    output = thumbnail_render.to_landscape(_portrait_frame())
+    image = Image.open(io.BytesIO(output))
+    assert image.size == (1280, 720)
+    assert len(output) <= 2_000_000
+
+
 def test_render_menghasilkan_jpeg_1280x720():
     for style in ("acid-lime", "holo-chrome", "minimal-badge"):
         output = thumbnail_render.render_caption_thumbnail(

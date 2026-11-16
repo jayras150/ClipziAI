@@ -315,6 +315,14 @@ class YouTubeService:
                     "Thumbnail klip tidak bisa diunduh (status=%s)", image.status_code
                 )
                 return
+            payload = image.content
+            try:
+                # YouTube butuh 16:9: thumbnail 9:16 dikonversi (center-crop) di sini.
+                from app.services import thumbnail_render
+
+                payload = thumbnail_render.to_landscape(payload)
+            except Exception:  # noqa: BLE001 - fallback ke bytes asli
+                payload = image.content
             response = requests.post(
                 "https://www.googleapis.com/upload/youtube/v3/thumbnails/set",
                 params={"videoId": video_id, "uploadType": "media"},
@@ -322,7 +330,7 @@ class YouTubeService:
                     "Authorization": f"Bearer {access_token}",
                     "Content-Type": "image/jpeg",
                 },
-                data=image.content,
+                data=payload,
                 timeout=60,
             )
             if not response.ok:
