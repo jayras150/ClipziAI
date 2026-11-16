@@ -655,6 +655,92 @@ async def apply_thumbnail_caption(
     }
 
 
+@router.get("/{clip_id}/filmstrip")
+async def clip_filmstrip(
+    clip_id: str,
+    count: int = 8,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Frame nyata sepanjang klip untuk scrubber (di-cache di viral_factors)."""
+    clip, _task = await _load_clip(db, clip_id, current_user.id)
+    frames = max(4, min(12, int(count or 8)))
+    factors = dict(clip.viral_factors or {})
+    cached = factors.get("filmstrip")
+    if isinstance(cached, dict) and isinstance(cached.get("frames"), list) and cached.get("count") == frames:
+        return {"clip_id": str(clip.id), "duration": cached.get("duration"), "frames": cached["frames"]}
+    if not clip.download_url:
+        raise HTTPException(status_code=409, detail="This clip has no video file.")
+
+    storage = get_storage()
+    with tempfile.TemporaryDirectory() as work_dir:
+        source = os.path.join(work_dir, "source.mp4")
+        try:
+            await asyncio.to_thread(_download_clip, clip.download_url, source)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=502, detail=f"Could not download the clip: {str(exc)[:200]}"
+            ) from exc
+        processor = VideoProcessor(work_dir)
+        info = await processor.get_video_info(source)
+        duration = float(info.get("duration") or clip.duration or 1.0)
+        items = []
+        for index in range(frames):
+            at_second = round((duration / frames) * (index + 0.5), 3)
+            path = os.path.join(work_dir, f"strip_{index}.jpg")
+            result = await processor.extract_thumbnail(source, path, at_second=at_second)
+            if not result:
+                continue
+            key = storage.generate_object_key(
+                str(current_user.id),
+                f"strip_{index}.jpg",
+                folder=f"thumbs/{clip.task_id}/{clip.id}/strip",
+            )
+            url = storage.upload_file(result, key, "image/jpeg")
+            if url:
+                items.append({"at_second": at_second, "url": url})
+
+    if not items:
+        raise HTTPException(status_code=502, detail="No filmstrip frames could be extracted.")
+
+    factors["filmstrip"] = {"count": frames, "duration": duration, "frames": items}
+    clip.viral_factors = factors
+    await db.commit()
+    return {"clip_id": str(clip.id), "duration": duration, "frames": items}
+
+
+@router.post("/{clip_id}/thumbnail/youtube")
+async def push_thumbnail_to_youtube(
+    clip_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Pasang thumbnail klip saat ini ke video YouTube yang sudah diunggah."""
+    from app.core.security import decrypt_field
+    from app.models.youtube_credential import YouTubeCredential
+    from app.services.youtube_service import YouTubeService
+
+    clip, _task = await _load_clip(db, clip_id, current_user.id)
+    if not clip.thumbnail_url:
+        raise HTTPException(status_code=409, detail="This clip has no thumbnail yet.")
+    if not clip.youtube_video_id:
+        raise HTTPException(status_code=409, detail="This clip has not been uploaded to YouTube yet.")
+
+    credential = (
+        await db.execute(
+            select(YouTubeCredential).where(YouTubeCredential.user_id == current_user.id)
+        )
+    ).scalar_one_or_none()
+    if credential is None:
+        raise HTTPException(status_code=409, detail="Connect your YouTube account first.")
+    access_token = decrypt_field(credential.access_token_encrypted)
+
+    await asyncio.to_thread(
+        YouTubeService._set_thumbnail, access_token, str(clip.youtube_video_id), clip.thumbnail_url
+    )
+    return {"ok": True, "video_id": str(clip.youtube_video_id), "thumbnail_url": clip.thumbnail_url}
+
+
 @router.post("/{clip_id}/thumbnails", response_model=ClipThumbnailResponse)
 async def generate_clip_thumbnails(
     clip_id: str,

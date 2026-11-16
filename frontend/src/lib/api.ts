@@ -541,6 +541,30 @@ export class ApiClient {
     return response.data
   }
 
+  async getClipFilmstrip(
+    token: string,
+    clipId: string,
+    count = 8,
+  ): Promise<{ clip_id: string; duration: number; frames: { at_second: number; url: string }[] }> {
+    const response = await this.client.get(`/api/clips/${clipId}/filmstrip`, {
+      params: { count },
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    return response.data
+  }
+
+  async pushThumbnailToYouTube(
+    token: string,
+    clipId: string,
+  ): Promise<{ ok: boolean; video_id: string; thumbnail_url: string }> {
+    const response = await this.client.post(
+      `/api/clips/${clipId}/thumbnail/youtube`,
+      {},
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    return response.data
+  }
+
   async generateClipThumbnails(token: string, clipId: string): Promise<ClipThumbnailData> {
     const response = await this.client.post<ClipThumbnailData>(
       `/api/clips/${clipId}/thumbnails`,

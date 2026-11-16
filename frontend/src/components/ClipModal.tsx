@@ -102,6 +102,10 @@ export default function ClipModal({
   const [currentTime, setCurrentTime] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [videoDuration, setVideoDuration] = useState(0)
+  const [filmstrip, setFilmstrip] = useState<{ at_second: number; url: string }[]>([])
+  const [videoError, setVideoError] = useState(false)
+  const [ytThumbBusy, setYtThumbBusy] = useState(false)
+  const capTrackRef = useRef<HTMLDivElement | null>(null)
   const autoTried = useRef<Set<string>>(new Set())
   const clipId = clip?.id ?? ""
   const busy = generating || saving || uploading || thumbBusy || editBusy
@@ -385,6 +389,37 @@ export default function ClipModal({
   }
 
 
+  useEffect(() => {
+    if (!clipId || !token) return
+    let alive = true
+    api
+      .getClipFilmstrip(token, clipId, 8)
+      .then((data) => {
+        if (alive) setFilmstrip(Array.isArray(data.frames) ? data.frames : [])
+      })
+      .catch(() => {
+        /* filmstrip opsional: fallback ke sel kosong */
+      })
+    return () => {
+      alive = false
+    }
+  }, [clipId, token])
+
+  const pushThumbnailToYouTube = async () => {
+    if (!clipId) return
+    setYtThumbBusy(true)
+    setError("")
+    setNotice("")
+    try {
+      await api.pushThumbnailToYouTube(token, clipId)
+      setNotice("Thumbnail updated on YouTube.")
+    } catch (err: any) {
+      setError(readApiError(err.response?.data, "Could not set the YouTube thumbnail."))
+    } finally {
+      setYtThumbBusy(false)
+    }
+  }
+
   const seekTo = (seconds: number) => {
     const video = videoRef.current
     if (!video) return
@@ -567,13 +602,16 @@ export default function ClipModal({
                   FRAME #{Math.round(currentTime * 30)}
                 </span>
               </div>
-              {clip.download_url ? (
+              {clip.download_url && !videoError ? (
                 <video
                   ref={videoRef}
+                  key={clip.download_url}
                   className="cs-video"
                   src={clip.download_url}
                   poster={clip.thumbnail_url || undefined}
+                  preload="metadata"
                   playsInline
+                  onError={() => setVideoError(true)}
                   onLoadedMetadata={(event) => {
                     setVideoDuration(event.currentTarget.duration || 0)
                     setCurrentTime(event.currentTarget.currentTime || 0)
@@ -585,13 +623,13 @@ export default function ClipModal({
                 />
               ) : (
                 <div
-                  className="cs-video"
+                  className="cs-video cs-video-fallback"
                   style={{
-                    background: clip.thumbnail_url
-                      ? `url(${clip.thumbnail_url}) center / cover`
-                      : "linear-gradient(160deg,#2a2213,#141821)",
+                    backgroundImage: clip.thumbnail_url ? `url(${clip.thumbnail_url})` : undefined,
                   }}
-                />
+                >
+                  <span>Video preview unavailable — reopen the clip to refresh the link.</span>
+                </div>
               )}
               <div className="cs-stage-caption">
                 <span className={`${THUMBNAIL_CAPTION_STYLES.find((s) => s.id === capStyle)?.css || "cap-hormozi-pop"} cs-stage-caption-text`}>
@@ -621,22 +659,21 @@ export default function ClipModal({
             </div>
 
             <div className="cs-film" role="presentation">
-              {Array.from({ length: 12 }).map((_, index) => {
-                const seconds = ((videoDuration || clip.duration || 1) / 12) * index
-                const pct = ((videoDuration || clip.duration || 1) / 12) * (index + 1)
-                const active = currentTime >= seconds && currentTime < pct
-                return (
-                  <button
-                    key={index}
-                    type="button"
-                    className={`cs-cell${active ? " active" : ""}`}
-                    onClick={() => seekTo(seconds)}
-                    title={`Seek to ${formatClock(seconds)}`}
-                  >
-                    <span>{formatClock(seconds).slice(0, 5)}</span>
-                  </button>
-                )
-              })}
+              {filmstrip.map((frame, index) => (
+                <button
+                  key={`${frame.at_second}-${index}`}
+                  type="button"
+                  className="cs-cell"
+                  style={{ backgroundImage: `url(${frame.url})` }}
+                  onClick={() => seekTo(frame.at_second)}
+                  title={formatClock(frame.at_second)}
+                />
+              ))}
+              {filmstrip.length === 0
+                ? Array.from({ length: 8 }).map((_, index) => (
+                    <span key={`empty-${index}`} className="cs-cell" />
+                  ))
+                : null}
               <span
                 className="cs-playhead"
                 style={{
@@ -646,6 +683,39 @@ export default function ClipModal({
                   )}%`,
                 }}
               />
+            </div>
+            <input
+              className="cs-range"
+              type="range"
+              min={0}
+              max={Math.max(0.1, videoDuration || clip.duration || 1)}
+              step={0.04}
+              value={Math.min(currentTime, videoDuration || clip.duration || 1)}
+              onChange={(event) => seekTo(Number(event.target.value))}
+              aria-label="Clip timeline"
+            />
+            <div className="cs-capture-row">
+              <span className="cs-ms">
+                {formatClock(currentTime)} · frame {Math.round(currentTime * 30)}
+              </span>
+              <button
+                type="button"
+                className="cs-btn cs-btn-play"
+                onClick={() => void applyCaption()}
+                disabled={busy || capBusy}
+              >
+                {capBusy ? "Capturing…" : "Capture Thumbnail"}
+              </button>
+              {clip.youtube_video_id ? (
+                <button
+                  type="button"
+                  className="cs-btn"
+                  onClick={() => void pushThumbnailToYouTube()}
+                  disabled={ytThumbBusy}
+                >
+                  {ytThumbBusy ? "Setting…" : "Set on YouTube"}
+                </button>
+              ) : null}
             </div>
 
             <div className="clip-modal-files">
@@ -734,7 +804,15 @@ export default function ClipModal({
               </div>
 
               <div className="thcap-wrap">
-                <div className="thcap-track">
+                <button
+                  type="button"
+                  className="thcap-nav"
+                  onClick={() => capTrackRef.current?.scrollBy({ left: -320, behavior: "smooth" })}
+                  aria-label="Scroll caption styles left"
+                >
+                  ‹
+                </button>
+                <div className="thcap-track" ref={capTrackRef}>
                   {THUMBNAIL_CAPTION_STYLES.map((style) => (
                     <button
                       key={style.id}
@@ -749,6 +827,14 @@ export default function ClipModal({
                     </button>
                   ))}
                 </div>
+                <button
+                  type="button"
+                  className="thcap-nav"
+                  onClick={() => capTrackRef.current?.scrollBy({ left: 320, behavior: "smooth" })}
+                  aria-label="Scroll caption styles right"
+                >
+                  ›
+                </button>
               </div>
 
               <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
