@@ -220,7 +220,7 @@ export default function ProfilePage() {
             marginBottom: 26,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
             <div
               aria-hidden="true"
               style={{
@@ -275,7 +275,7 @@ export default function ProfilePage() {
             // 2 kolom di desktop (kartu kanan mengisi ruang kosong), 1 kolom di
             // mobile. Sebelumnya minmax(320px) membuat 3 kolom sempit sehingga
             // kartu "Security" jatuh sendirian dan menyisakan area kosong besar.
-            gridTemplateColumns: "repeat(auto-fit, minmax(430px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))",
             gap: 16,
             alignItems: "start",
           }}

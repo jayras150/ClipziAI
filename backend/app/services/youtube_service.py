@@ -268,6 +268,7 @@ class YouTubeService:
         source_url: Optional[str] = None,
         publish_at: Optional[datetime] = None,
         progress_callback: Optional[ProgressCallback] = None,
+        thumbnail_url: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Upload video ke YouTube memakai resumable upload Data API v3.
@@ -299,7 +300,39 @@ class YouTubeService:
             source_url,
             publish_at,
             progress_callback,
+            thumbnail_url,
         )
+
+
+    @staticmethod
+    def _set_thumbnail(access_token: str, video_id: str, thumbnail_url: str) -> None:
+        """Pasang thumbnail kustom (1280x720 JPEG). Gagal hanya dicatat."""
+        try:
+            headers = {"User-Agent": "ClipziAI-Backend/1.0"}
+            image = requests.get(thumbnail_url, headers=headers, timeout=30)
+            if image.status_code not in (200, 206) or not image.content:
+                logger.warning(
+                    "Thumbnail klip tidak bisa diunduh (status=%s)", image.status_code
+                )
+                return
+            response = requests.post(
+                "https://www.googleapis.com/upload/youtube/v3/thumbnails/set",
+                params={"videoId": video_id, "uploadType": "media"},
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "image/jpeg",
+                },
+                data=image.content,
+                timeout=60,
+            )
+            if not response.ok:
+                logger.warning(
+                    "YouTube menolak thumbnail %s: %s",
+                    video_id,
+                    YouTubeService._google_error(response),
+                )
+        except Exception as exc:  # noqa: BLE001 - thumbnail tidak boleh menggagalkan upload
+            logger.warning("Gagal memasang thumbnail %s: %s", video_id, exc)
 
     @staticmethod
     def _google_error(response: requests.Response) -> str:
@@ -340,6 +373,7 @@ class YouTubeService:
         source_url: Optional[str],
         publish_at: Optional[datetime] = None,
         progress_callback: Optional[ProgressCallback] = None,
+        thumbnail_url: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Bagian sinkron dari resumable upload (dijalankan di thread)."""
 
@@ -527,6 +561,8 @@ class YouTubeService:
                 detail="YouTube did not return a video id.",
             )
         report(100, content_length, content_length)
+        if thumbnail_url:
+            self._set_thumbnail(access_token, str(video_id), thumbnail_url)
         return {
             "success": True,
             "video_id": video_id,

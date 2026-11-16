@@ -11,7 +11,7 @@ def test_defaults_when_value_missing():
     config = normalize_watermark(None)
     assert config["enabled"] is False
     assert config["plans"] == ["free"]
-    assert config["position"] == "bottom-right"
+    assert config["position"] == "top-left"
     assert config["text"] == DEFAULT_WATERMARK["text"]
 
 
@@ -30,7 +30,7 @@ def test_values_are_clamped_and_sanitized():
     assert config["opacity"] == 1.0
     assert config["scale"] == 0.05
     assert config["margin"] == 200
-    assert config["position"] == "bottom-right"
+    assert config["position"] == "top-left"
     assert config["text_color"] == "#ffffff"
     assert config["plans"] == ["free", "pro"]
     assert len(config["text"]) == 60
@@ -56,5 +56,5 @@ def test_position_expressions_include_margin():
     assert _position_xy("bottom-right", 48) == ("w-text_w-48", "h-text_h-48")
     assert _position_xy("top-left", 10) == ("10", "10")
     assert _position_xy("center", 99) == ("(w-text_w)/2", "(h-text_h)/2")
-    # posisi tak dikenal jatuh ke kanan bawah
-    assert _position_xy("ngawur", 24) == ("w-text_w-24", "h-text_h-24")
+    # posisi tak dikenal jatuh ke default top-left
+    assert _position_xy("ngawur", 24) == ("24", "24")

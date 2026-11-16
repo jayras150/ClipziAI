@@ -12,6 +12,7 @@ import logging
 import os
 import re
 import tempfile
+from pathlib import Path
 from typing import Optional, Tuple
 from uuid import UUID
 
@@ -48,6 +49,8 @@ from app.services.metadata_generator import (
 from app.services.processor import VideoProcessor
 from app.services.storage_registry import get_storage
 from app.services.transcriber import AudioTranscriber
+from app.services import thumbnail_render
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -556,6 +559,95 @@ async def update_clip_metadata(
         generated_by="manual",
         regenerate_left=regen_left,
     )
+
+
+class ThumbnailCaptionIn(BaseModel):
+    text: str = ""
+    style: str = "hormozi-pop"
+    position: str = "bottom-center"
+
+
+@router.get("/caption-styles")
+async def read_caption_styles():
+    """50 gaya caption thumbnail + 9 anchor posisi (dipakai carousel UI)."""
+    return {
+        "styles": thumbnail_render.style_options(),
+        "anchors": list(thumbnail_render.ANCHORS),
+    }
+
+
+@router.post("/{clip_id}/thumbnail-caption")
+async def apply_thumbnail_caption(
+    clip_id: str,
+    payload: ThumbnailCaptionIn,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Tempel caption bergaya ke frame viral klip lalu jadikan thumbnail."""
+    clip, _task = await _load_clip(db, clip_id, current_user.id)
+    if not clip.download_url:
+        raise HTTPException(status_code=409, detail="This clip has no video file.")
+
+    storage = get_storage()
+    with tempfile.TemporaryDirectory() as work_dir:
+        source = os.path.join(work_dir, "source.mp4")
+        frame_path = os.path.join(work_dir, "frame.jpg")
+        try:
+            await asyncio.to_thread(_download_clip, clip.download_url, source)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=502, detail=f"Could not download the clip: {str(exc)[:200]}"
+            ) from exc
+
+        processor = VideoProcessor(work_dir)
+        info = await processor.get_video_info(source)
+        duration = float(info.get("duration") or clip.duration or 1.0)
+        factors = dict(clip.viral_factors or {})
+        hint = factors.get("hook_at")
+        try:
+            at_second = float(hint) if hint is not None else 0.0
+        except (TypeError, ValueError):
+            at_second = 0.0
+        if at_second <= 0:
+            at_second = round(max(0.5, duration * 0.45), 2)
+
+        extracted = await processor.extract_thumbnail(
+            source, frame_path, at_second=round(at_second, 2)
+        )
+        if not extracted:
+            raise HTTPException(status_code=502, detail="Could not extract a thumbnail frame.")
+
+        rendered = thumbnail_render.render_caption_thumbnail(
+            Path(extracted).read_bytes(),
+            payload.text or clip.title or "",
+            payload.style,
+            payload.position,
+        )
+        key = storage.generate_object_key(
+            str(current_user.id),
+            "thumbnail_caption.jpg",
+            folder=f"thumbs/{clip.task_id}/{clip.id}",
+        )
+        url = storage.upload_bytes(rendered, key, "image/jpeg")
+        if not url:
+            raise HTTPException(status_code=502, detail="Could not store the thumbnail.")
+
+    factors["thumbnail_caption"] = {
+        "style": payload.style,
+        "position": payload.position,
+        "text": payload.text,
+        "at_second": at_second,
+    }
+    clip.viral_factors = factors
+    clip.thumbnail_url = url
+    await db.commit()
+    return {
+        "ok": True,
+        "thumbnail_url": url,
+        "at_second": at_second,
+        "style": payload.style,
+        "position": payload.position,
+    }
 
 
 @router.post("/{clip_id}/thumbnails", response_model=ClipThumbnailResponse)

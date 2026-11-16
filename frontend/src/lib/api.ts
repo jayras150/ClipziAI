@@ -528,6 +528,19 @@ export class ApiClient {
   }
 
   /** Tiga kandidat thumbnail dari klip. */
+  async applyThumbnailCaption(
+    token: string,
+    clipId: string,
+    payload: { text: string; style: string; position: string },
+  ): Promise<{ ok: boolean; thumbnail_url: string; at_second: number; style: string; position: string }> {
+    const response = await this.client.post(
+      `/api/clips/${clipId}/thumbnail-caption`,
+      payload,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    return response.data
+  }
+
   async generateClipThumbnails(token: string, clipId: string): Promise<ClipThumbnailData> {
     const response = await this.client.post<ClipThumbnailData>(
       `/api/clips/${clipId}/thumbnails`,

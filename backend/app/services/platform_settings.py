@@ -26,7 +26,7 @@ DEFAULT_WATERMARK: Dict[str, Any] = {
     "plans": ["free"],
     "image_url": None,
     "text": "clipzy.ai",
-    "position": "bottom-right",
+    "position": "top-left",
     "opacity": 0.85,
     "scale": 0.18,
     "text_color": "#ffffff",
@@ -51,8 +51,8 @@ def normalize_watermark(value: Optional[dict]) -> Dict[str, Any]:
         plans = ["free"]
     merged["plans"] = [str(p).lower() for p in plans if str(p).lower() in PLANS] or ["free"]
 
-    position = str(merged.get("position") or "bottom-right").lower()
-    merged["position"] = position if position in POSITIONS else "bottom-right"
+    position = str(merged.get("position") or "top-left").lower()
+    merged["position"] = position if position in POSITIONS else "top-left"
 
     try:
         merged["opacity"] = min(1.0, max(0.1, float(merged.get("opacity") or 0.85)))

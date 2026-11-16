@@ -50,7 +50,7 @@ def _position_xy(position: str, margin: int) -> Tuple[str, str]:
         "bottom-left": (f"{m}", f"h-text_h-{m}"),
         "bottom-right": (f"w-text_w-{m}", f"h-text_h-{m}"),
         "center": ("(w-text_w)/2", "(h-text_h)/2"),
-    }.get(position, (f"w-text_w-{m}", f"h-text_h-{m}"))
+    }.get(position, (f"{m}", f"{m}"))  # default: top-left
 
 
 async def _download(url: str, dest: str) -> str:

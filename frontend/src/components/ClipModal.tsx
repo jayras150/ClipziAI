@@ -20,7 +20,13 @@ import {
 import { api, ClipData, ClipThumbnailData } from "@/lib/api"
 import { ClipzySpinner } from "@/components/ClipzySpinner"
 import YouTubeIcon from "@/components/YouTubeIcon"
-import YouTubeUploadProgress from "@/components/YouTubeUploadProgress"
+import YouTubeUploadCard from "@/components/YouTubeUploadCard"
+import {
+  DEFAULT_CAPTION_POSITION,
+  DEFAULT_CAPTION_STYLE,
+  THUMBNAIL_CAPTION_ANCHORS,
+  THUMBNAIL_CAPTION_STYLES,
+} from "@/lib/caption-catalog"
 import { readApiError } from "@/lib/api-errors"
 import { SUBTITLE_STYLE_OPTIONS } from "@/lib/caption-styles"
 
@@ -56,10 +62,20 @@ export default function ClipModal({
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
+  const [uploadStats, setUploadStats] = useState<{
+    status: string
+    bytesSent: number
+    totalBytes: number
+    error: string | null
+  }>({ status: "idle", bytesSent: 0, totalBytes: 0, error: null })
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
   const [uploadUrl, setUploadUrl] = useState("")
   const [thumbs, setThumbs] = useState<ClipThumbnailData | null>(null)
+  const [capStyle, setCapStyle] = useState(DEFAULT_CAPTION_STYLE)
+  const [capPosition, setCapPosition] = useState<string>(DEFAULT_CAPTION_POSITION)
+  const [capText, setCapText] = useState("")
+  const [capBusy, setCapBusy] = useState(false)
   const [thumbBusy, setThumbBusy] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [editBusy, setEditBusy] = useState(false)
@@ -258,6 +274,12 @@ export default function ClipModal({
     }
     setUploading(true)
     setUploadProgress(0)
+    setUploadStats({
+      status: "uploading",
+      bytesSent: 0,
+      totalBytes: Number(clip.file_size || 0),
+      error: null,
+    })
     setError("")
     setNotice("")
     try {
@@ -277,12 +299,24 @@ export default function ClipModal({
             setUploadProgress((current) =>
               Math.max(current, Math.min(99, Math.round(Number(status.progress) || 0))),
             )
+            setUploadStats({
+              status: status.status || "uploading",
+              bytesSent: Number(status.bytes_sent || 0),
+              totalBytes: Number(status.total_bytes || 0) || Number(clip.file_size || 0),
+              error: status.error || null,
+            })
           },
         })
         if (final.status !== "done" || !final.youtube_video_id) {
           throw new Error(final.error || "Upload stopped before YouTube returned a video id.")
         }
         setUploadProgress(100)
+        setUploadStats((prev) => ({
+          ...prev,
+          status: "done",
+          bytesSent: prev.totalBytes,
+          error: null,
+        }))
         setUploadUrl(final.youtube_video_url || "")
         setNotice("Uploaded to YouTube.")
         onUpdated(clipId, {
@@ -313,7 +347,9 @@ export default function ClipModal({
       })
     } catch (err: any) {
       setNotice("")
-      setError(readApiError(err.response?.data, err.message || "YouTube upload failed."))
+      const message = readApiError(err.response?.data, err.message || "YouTube upload failed.")
+      setError(message)
+      setUploadStats((prev) => ({ ...prev, status: "error", error: message }))
     } finally {
       setUploading(false)
     }
@@ -332,6 +368,27 @@ export default function ClipModal({
       setError(readApiError(err.response?.data, "Could not generate thumbnail candidates."))
     } finally {
       setThumbBusy(false)
+    }
+  }
+
+
+  const applyCaption = async () => {
+    if (!clipId) return
+    setCapBusy(true)
+    setError("")
+    setNotice("")
+    try {
+      const result = await api.applyThumbnailCaption(token, clipId, {
+        text: (capText || clip.ai_hook || clip.title || "Sample caption").trim(),
+        style: capStyle,
+        position: capPosition,
+      })
+      onUpdated(clipId, { thumbnail_url: result.thumbnail_url })
+      setNotice(`Thumbnail caption applied (${result.style}, ${result.position}).`)
+    } catch (err: any) {
+      setError(readApiError(err.response?.data, "Could not render the thumbnail caption."))
+    } finally {
+      setCapBusy(false)
     }
   }
 
@@ -532,6 +589,66 @@ export default function ClipModal({
                   ))}
                 </div>
               )}
+            </div>
+
+
+            <div className="clip-modal-thumbs">
+              <div className="clip-modal-thumbs-head">
+                <span className="clip-modal-label" style={{ margin: 0 }}>
+                  Thumbnail caption ({THUMBNAIL_CAPTION_STYLES.length} styles)
+                </span>
+                <button
+                  type="button"
+                  className="ui-btn ui-btn-gold"
+                  onClick={() => void applyCaption()}
+                  disabled={busy || capBusy}
+                >
+                  {capBusy ? <ClipzySpinner size="xs" /> : <Sparkles size={13} />}
+                  Apply to thumbnail
+                </button>
+              </div>
+
+              <div className="thcap-wrap">
+                <div className="thcap-track">
+                  {THUMBNAIL_CAPTION_STYLES.map((style) => (
+                    <button
+                      key={style.id}
+                      type="button"
+                      className={`thcap-card${capStyle === style.id ? " active" : ""}`}
+                      onClick={() => setCapStyle(style.id)}
+                    >
+                      <span className="thcap-label">{style.label}</span>
+                      <span className="thcap-preview">
+                        <span className={style.css}>Sample caption</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
+                <div className="thcap-pos">
+                  {THUMBNAIL_CAPTION_ANCHORS.map((anchor) => (
+                    <button
+                      key={anchor}
+                      type="button"
+                      className={capPosition === anchor ? "active" : ""}
+                      onClick={() => setCapPosition(anchor)}
+                      title={anchor}
+                    >
+                      {anchor.split("-").map((part) => part[0].toUpperCase()).join("")}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  className="ui-input"
+                  style={{ flex: 1, minWidth: 200 }}
+                  value={capText}
+                  maxLength={90}
+                  placeholder={clip.ai_hook || clip.title || "Caption text"}
+                  onChange={(event) => setCapText(event.target.value)}
+                />
+              </div>
             </div>
 
             {clip.ai_hook || clip.ai_viral_reason || clip.viral_score ? (
@@ -774,8 +891,19 @@ export default function ClipModal({
                 <option value="private">Private</option>
               </select>
 
-              {uploading ? (
-                <YouTubeUploadProgress progress={uploadProgress} />
+              {uploading || uploadStats.status === "error" ? (
+                <YouTubeUploadCard
+                  progress={uploadProgress}
+                  status={uploadStats.status}
+                  error={uploadStats.error}
+                  bytesSent={uploadStats.bytesSent}
+                  totalBytes={uploadStats.totalBytes || Number(clip.file_size || 0)}
+                  title={title || clip.title}
+                  durationSeconds={clip.duration}
+                  privacy={privacy}
+                  videoUrl={uploadUrl}
+                  onRetry={() => void upload()}
+                />
               ) : youtubeConnected ? (
                 <button
                   type="button"

@@ -1197,8 +1197,19 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
                 download_url = storage.upload_file(final_clip, clip_key, "video/mp4")
 
                 thumbnail_url: Optional[str] = None
+                # Ambil frame dari momen paling menarik, bukan selalu detik 1.
+                factors_hint = dict((clip.get("viral") or {}).get("factors") or {})
+                hook_at = factors_hint.get("hook_at")
+                try:
+                    thumb_at = float(hook_at) if hook_at is not None else 0.0
+                except (TypeError, ValueError):
+                    thumb_at = 0.0
+                if thumb_at <= 0:
+                    thumb_at = max(0.5, float(clip.get("duration") or 1.0) * 0.45)
                 thumb_path = await processor.extract_thumbnail(
-                    final_clip, str(work_dir / f"clip_{index:02d}.jpg")
+                    final_clip,
+                    str(work_dir / f"clip_{index:02d}.jpg"),
+                    at_second=round(thumb_at, 2),
                 )
                 if thumb_path:
                     thumb_key = storage.generate_object_key(

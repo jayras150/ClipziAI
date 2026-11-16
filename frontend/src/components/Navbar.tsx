@@ -33,7 +33,7 @@ export default function Navbar() {
   }, [])
 
   return (
-    <header className="ui-container ui-nav">
+    <header className="ui-container ui-container-wide ui-nav">
       <NavDrawer />
       <BrandLogo />
       <nav className="ui-nav-links">

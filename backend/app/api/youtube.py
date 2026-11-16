@@ -146,6 +146,7 @@ async def _run_youtube_upload(
     category_id: str,
     made_for_kids: bool,
     publish_at: Optional[datetime] = None,
+    thumbnail_url: Optional[str] = None,
 ) -> None:
     """
     Jalankan unggahan di background.
