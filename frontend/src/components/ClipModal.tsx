@@ -91,6 +91,7 @@ export default function ClipModal({
   const [currentTime, setCurrentTime] = useState(0)
   const [videoDuration, setVideoDuration] = useState(0)
   const [videoError, setVideoError] = useState(false)
+  const [videoRatio, setVideoRatio] = useState<number | null>(null)
   const [filmstrip, setFilmstrip] = useState<{ at_second: number; url: string }[]>([])
   const [ytThumbBusy, setYtThumbBusy] = useState(false)
   const [successOpen, setSuccessOpen] = useState(false)
@@ -588,7 +589,13 @@ export default function ClipModal({
 
         <div className="clip-modal-body">
           <div className="clip-modal-media">
-            <div className="clip-media-stage">
+            <div
+              className="clip-media-stage"
+              style={{
+                aspectRatio: videoRatio ? `${videoRatio}` : undefined,
+                maxWidth: videoRatio ? (videoRatio < 1 ? 380 : 460) : undefined,
+              }}
+            >
               {clip.download_url && !videoError ? (
                 <video
                   key={clip.download_url}
@@ -600,8 +607,12 @@ export default function ClipModal({
                   playsInline
                   preload="metadata"
                   onLoadedMetadata={(event) => {
-                    setVideoDuration(event.currentTarget.duration || 0)
-                    setCurrentTime(event.currentTarget.currentTime || 0)
+                    const el = event.currentTarget
+                    setVideoDuration(el.duration || 0)
+                    setCurrentTime(el.currentTime || 0)
+                    if (el.videoWidth && el.videoHeight) {
+                      setVideoRatio(el.videoWidth / el.videoHeight)
+                    }
                   }}
                   onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
                   onError={() => setVideoError(true)}

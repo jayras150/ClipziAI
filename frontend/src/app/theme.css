@@ -3024,3 +3024,9 @@ html, body { max-width: 100%; overflow-x: clip; }
 .cs-capture-row .cs-ms{flex:1 1 100%}
 .cs-capture-row .cs-btn{flex:1 1 0 !important;min-width:0;padding:8px 6px !important;font-size:11px !important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;justify-content:center}
 @media (max-width:560px){.cs-capture-row .cs-btn{flex:1 1 46% !important}}
+
+
+/* FINAL: stage mengikuti rasio ASLI video (9:16 tetap 9:16, tidak gepeng) */
+.clip-media-stage{position:relative !important;display:block !important;width:100% !important;max-height:70vh;padding:0 !important;overflow:hidden !important;background:#000 !important;border-radius:14px;border:1px solid var(--ui-line);margin:0 auto}
+.clip-media-stage video,.clip-media-stage .clip-modal-video{position:absolute !important;inset:0 !important;width:100% !important;height:100% !important;max-width:none !important;max-height:none !important;min-height:0 !important;aspect-ratio:auto !important;object-fit:contain !important;background:#000 !important;border:0 !important;border-radius:0 !important;display:block}
+.clip-video-fallback{position:relative !important;height:100% !important;min-height:220px !important}

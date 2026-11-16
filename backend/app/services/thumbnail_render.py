@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import Iterable, List, Tuple
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 from app.services.caption_catalog import CAPTION_STYLES, FONT_FILES
 
@@ -93,7 +93,9 @@ def render_caption_thumbnail(
     """Tempel caption bergaya ke frame dan kembalikan JPEG 1280x720."""
     style = CAPTION_STYLES.get(style_id) or CAPTION_STYLES["hormozi-pop"]
     base = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    base = base.resize((OUT_W, OUT_H), Image.LANCZOS) if base.size != (OUT_W, OUT_H) else base
+    if base.size != (OUT_W, OUT_H):
+        # Jangan distorsi: 9:16 tetap proporsional (center-crop ke 16:9 untuk YouTube).
+        base = ImageOps.fit(base, (OUT_W, OUT_H), method=Image.LANCZOS, centering=(0.5, 0.42))
 
     label = text.strip() or "Sample caption"
     if style["uppercase"]:
