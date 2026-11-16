@@ -3009,3 +3009,18 @@ html, body { max-width: 100%; overflow-x: clip; }
   .thcap-preview{height:36px !important}
   .cs-capture-row .cs-btn{flex:1 1 100%}
 }
+
+
+/* Rasio video & live preview tidak gepeng */
+.clip-media-stage{padding:0 !important;overflow:hidden;background:#000;border-radius:14px;display:block !important}
+.clip-media-stage video,.clip-media-stage .clip-modal-video{
+  display:block;width:100% !important;height:auto !important;
+  max-height:min(56vh,420px) !important;object-fit:contain !important;
+  background:#000;border:0 !important;border-radius:0 !important;aspect-ratio:auto !important
+}
+.cs-live-thumb img{width:150px !important;height:auto !important;aspect-ratio:16/9;object-fit:contain !important;background:#000;border-radius:8px;border:1px solid rgba(255,255,255,.18)}
+/* tiga tombol dalam satu baris, tidak gepeng */
+.cs-capture-row{display:flex !important;flex-wrap:wrap !important;gap:6px !important}
+.cs-capture-row .cs-ms{flex:1 1 100%}
+.cs-capture-row .cs-btn{flex:1 1 0 !important;min-width:0;padding:8px 6px !important;font-size:11px !important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;justify-content:center}
+@media (max-width:560px){.cs-capture-row .cs-btn{flex:1 1 46% !important}}
