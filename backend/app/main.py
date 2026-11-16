@@ -30,6 +30,7 @@ from app.api.admin import platform as admin_platform
 from app.api.admin import proxies as admin_proxies
 from app.api.admin import runners as admin_runners
 from app.api.admin import vast as admin_vast
+from app.api.admin import mail as admin_mail
 from app.api.admin import notifications as admin_notifications
 from app.api.admin import whisper_models as admin_whisper_models
 from app.api.admin import storage as admin_storage
@@ -287,6 +288,7 @@ app.include_router(
     prefix="/api/admin/notifications",
     tags=["Admin Notifications"],
 )
+app.include_router(admin_mail.router, prefix="/api/admin/smtp", tags=["Admin SMTP"])
 app.include_router(
     admin_branding.router, prefix="/api/admin/settings", tags=["Admin Branding"]
 )

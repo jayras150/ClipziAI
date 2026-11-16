@@ -157,6 +157,14 @@ export const navGroups: NavGroup[] = [
         items: []
       },
       {
+        title: 'SMTP & Email',
+        url: '/dashboard/settings/smtp',
+        icon: 'account',
+        shortcut: ['s', 'm'],
+        isActive: false,
+        items: []
+      },
+      {
         title: 'Branding',
         url: '/dashboard/settings/branding',
         icon: 'palette',

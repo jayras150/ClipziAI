@@ -29,9 +29,43 @@ from app.schemas.auth import (
 )
 from app.schemas.user import UserProfileResponse, CreditBalanceResponse
 from app.core.config import get_settings
+from typing import Any, Dict, List, Optional
+from pydantic import BaseModel
+from app.services import mailer
 from app.services import device_reputation
 
 router = APIRouter()
+
+
+def _sign_token(purpose: str, minutes: int, **extra: Any) -> str:
+    import jwt
+    from datetime import datetime, timedelta, timezone
+
+    from app.core.config import get_settings
+
+    payload = {
+        "purpose": purpose,
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=minutes),
+        **extra,
+    }
+    return jwt.encode(payload, get_settings().SECRET_KEY, algorithm="HS256")
+
+
+def _read_token(token: str, purpose: str) -> dict:
+    import jwt
+
+    from app.core.config import get_settings
+
+    try:
+        data = jwt.decode(token, get_settings().SECRET_KEY, algorithms=["HS256"])
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail="Invalid or expired token") from exc
+    if data.get("purpose") != purpose:
+        raise HTTPException(status_code=400, detail="Invalid token purpose")
+    return data
+
+
+
 security = HTTPBearer()
 settings = get_settings()
 
@@ -55,11 +89,11 @@ async def register(
     result = await db.execute(select(User).where(User.email == user_data.email))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
-    
+
     # Get free plan
     result = await db.execute(select(PricingPlan).where(PricingPlan.name == "free"))
     free_plan = result.scalar_one_or_none()
-    
+
     # Create user
     user = User(
         email=user_data.email,
@@ -69,7 +103,7 @@ async def register(
     )
     db.add(user)
     await db.flush()
-    
+
     # Create profile
     profile = UserProfile(
         user_id=user.id,
@@ -80,7 +114,7 @@ async def register(
         watermark_enabled=free_plan.watermark if free_plan else True,
     )
     db.add(profile)
-    
+
     claim = await device_reputation.claim_signup_bonus(
         db,
         user,
@@ -90,12 +124,30 @@ async def register(
     )
 
     await db.commit()
-    
+
+    # Email sambutan + link verifikasi (gagal kirim tidak menggagalkan daftar).
+    try:
+        from app.core.config import get_settings
+
+        verify_token = _sign_token("verify_email", 60 * 24, user_id=str(user.id))
+        frontend = (get_settings().FRONTEND_URL or "https://proxyai.live").rstrip("/")
+        await mailer.send(
+            db,
+            [user.email],
+            "welcome",
+            {
+                "name": user.name or user.email.split("@")[0],
+                "verify_url": f"{frontend}/verify-email?token={verify_token}",
+            },
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
     # Generate tokens
     access_token = create_access_token({"sub": str(user.id)})
     refresh_token = create_refresh_token({"sub": str(user.id)})
     set_auth_cookies(response, access_token, refresh_token)
-    
+
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -114,13 +166,13 @@ async def login(
 ):
     result = await db.execute(select(User).where(User.email == login_data.email))
     user = result.scalar_one_or_none()
-    
+
     if not user or not user.password_hash or not verify_password(login_data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    
+
     if not user.is_active:
         raise HTTPException(status_code=401, detail="Account is deactivated")
-    
+
     # Update last login
     user.last_login_at = __import__("datetime").datetime.utcnow()
     await device_reputation.associate_login(
@@ -131,11 +183,11 @@ async def login(
         user_agent=device_reputation.client_user_agent(request),
     )
     await db.commit()
-    
+
     access_token = create_access_token({"sub": str(user.id)})
     refresh_token = create_refresh_token({"sub": str(user.id)})
     set_auth_cookies(response, access_token, refresh_token)
-    
+
     return TokenResponse(access_token=access_token, refresh_token=refresh_token)
 
 
@@ -189,7 +241,7 @@ async def setup_2fa(
     # TODO: Wire with get_current_user dependency once auth middleware is complete
     secret = generate_totp_secret()
     backup_codes = generate_backup_codes()
-    
+
     return TwoFactorSetup(
         secret=secret,
         qr_code_url=get_totp_uri("user@clipzi.ai", secret),
@@ -206,15 +258,103 @@ async def verify_2fa(data: TwoFactorVerify):
 
 
 @router.post("/forgot-password")
-async def forgot_password(request: ForgotPasswordRequest):
-    # TODO: Send reset email via SMTP
+async def forgot_password(request: ForgotPasswordRequest, db: AsyncSession = Depends(get_db_session)):
+    """Kirim link reset password (tidak membocorkan apakah email terdaftar)."""
+    from app.core.config import get_settings
+
+    result = await db.execute(select(User).where(User.email == request.email))
+    user = result.scalar_one_or_none()
+    if user is not None:
+        token = _sign_token("reset_password", 30, user_id=str(user.id))
+        frontend = (get_settings().FRONTEND_URL or "https://proxyai.live").rstrip("/")
+        await mailer.send(
+            db,
+            [user.email],
+            "reset",
+            {
+                "name": user.name or user.email.split("@")[0],
+                "reset_url": f"{frontend}/reset-password?token={token}",
+            },
+        )
     return {"message": "If email exists, reset link has been sent"}
 
 
 @router.post("/reset-password")
-async def reset_password(request: ResetPasswordRequest):
-    # TODO: Verify token and reset password
+async def reset_password(request: ResetPasswordRequest, db: AsyncSession = Depends(get_db_session)):
+    data = _read_token(request.token, "reset_password")
+    user = await db.get(User, data.get("user_id"))
+    if user is None:
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+    user.password_hash = hash_password(request.new_password)
+    await db.commit()
     return {"message": "Password has been reset"}
+
+
+class VerifyEmailIn(BaseModel):
+    token: str
+
+
+@router.post("/verify-email")
+async def verify_email(payload: VerifyEmailIn, db: AsyncSession = Depends(get_db_session)):
+    data = _read_token(payload.token, "verify_email")
+    user = await db.get(User, data.get("user_id"))
+    if user is None:
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+    user.email_verified = True
+    await db.commit()
+    return {"ok": True, "email": user.email}
+
+
+class OtpRequestIn(BaseModel):
+    email: str
+
+
+class OtpVerifyIn(BaseModel):
+    token: str
+    code: str
+
+
+@router.post("/request-otp")
+async def request_otp(payload: OtpRequestIn, db: AsyncSession = Depends(get_db_session)):
+    """Kirim kode OTP 6 digit ke email (berlaku 10 menit)."""
+    import hashlib
+    import secrets
+
+    result = await db.execute(select(User).where(User.email == payload.email))
+    user = result.scalar_one_or_none()
+    if user is None:
+        return {"ok": True, "message": "If the email exists, a code has been sent"}
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    token = _sign_token(
+        "email_otp",
+        10,
+        user_id=str(user.id),
+        code_hash=hashlib.sha256(code.encode()).hexdigest(),
+    )
+    await mailer.send(
+        db,
+        [user.email],
+        "otp",
+        {"name": user.name or "there", "code": code, "minutes": 10},
+    )
+    return {"ok": True, "token": token, "expires_in": 600}
+
+
+@router.post("/verify-otp")
+async def verify_otp(payload: OtpVerifyIn, db: AsyncSession = Depends(get_db_session)):
+    import hashlib
+
+    data = _read_token(payload.token, "email_otp")
+    expected = str(data.get("code_hash") or "")
+    actual = hashlib.sha256(str(payload.code).strip().encode()).hexdigest()
+    if not expected or actual != expected:
+        raise HTTPException(status_code=401, detail="Invalid OTP code")
+    user = await db.get(User, data.get("user_id"))
+    if user is None:
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+    user.email_verified = True
+    await db.commit()
+    return {"ok": True, "email": user.email}
 
 
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"

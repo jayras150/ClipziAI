@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { BrandLogo, BrandName, useBranding } from "@/components/BrandingProvider"
 import LandingAuth from "@/components/LandingAuth"
+import StartFreeLink from "@/components/StartFreeLink"
 import NavDrawer from "@/components/NavDrawer"
 import { useEffect, useRef, useState } from "react"
 import {
@@ -331,9 +332,9 @@ export default function LandingPage() {
               not hours.
             </p>
             <div className="hero-buttons">
-              <Link href="/register" className="btn btn-gold">
+              <StartFreeLink className="btn btn-gold">
                 Start free <ArrowRight size={16} />
-              </Link>
+              </StartFreeLink>
               <a href="#how" className="btn btn-ghost">
                 See how it works
               </a>
@@ -496,9 +497,9 @@ export default function LandingPage() {
             </h2>
             <p>Create an account and get 5 free credits. No credit card required.</p>
             <div className="hero-buttons">
-              <Link href="/register" className="btn btn-gold">
+              <StartFreeLink className="btn btn-gold">
                 Create free account <ArrowRight size={16} />
-              </Link>
+              </StartFreeLink>
               <Link href="/pricing" className="btn btn-ghost">
                 View pricing
               </Link>
