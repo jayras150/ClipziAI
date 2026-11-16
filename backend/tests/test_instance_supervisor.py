@@ -247,10 +247,14 @@ def test_make_create_instance_meneruskan_env_dan_id(monkeypatch):
     captured: Dict[str, Any] = {}
 
     class _Client:
-        def create_instance(self, offer_id: int, **kwargs: Any) -> Dict[str, Any]:
-            captured["offer_id"] = offer_id
-            captured["kwargs"] = kwargs
-            return {"success": True, "new_contract": 4242}
+        pass
+
+    def fake_post(offer_id: int, **kwargs: Any) -> Dict[str, Any]:
+        captured["offer_id"] = offer_id
+        captured["kwargs"] = kwargs
+        return {"success": True, "new_contract": 4242}
+
+    monkeypatch.setattr(vast_worker, "_post_create_instance", fake_post)
 
     monkeypatch.setattr(vast_worker.settings, "VAST_WORKER_IMAGE", "user/img:worker")
     monkeypatch.setattr(vast_worker.settings, "VAST_TEMPLATE_HASH", None)
@@ -265,9 +269,10 @@ def test_make_create_instance_meneruskan_env_dan_id(monkeypatch):
     assert instance_id == 4242
     assert captured["offer_id"] == 99
     assert captured["kwargs"]["image"] == "user/img:worker"
+    assert captured["kwargs"]["template_hash"] == ""
     assert captured["kwargs"]["env"]["CLIPZI_CALLBACK_URL"].endswith("/worker/events")
     assert captured["kwargs"]["label"].startswith("clipzi-")
-    assert captured["kwargs"]["onstart_cmd"] == "/app/deployments/pipeline_onstart.sh"
+    assert captured["kwargs"]["onstart"] == "/app/deployments/pipeline_onstart.sh"
 
 
 def test_run_gagal_semua_percobaan_menandai_error():

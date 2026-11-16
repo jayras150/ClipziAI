@@ -543,6 +543,60 @@ def _stale_offer_error(text: str) -> bool:
     )
 
 
+def _post_create_instance(
+    offer_id: Any,
+    *,
+    disk: float,
+    env: Dict[str, Any],
+    label: str,
+    onstart: str,
+    image: str = "",
+    template_hash: str = "",
+) -> Dict[str, Any]:
+    """POST create-instance langsung ke Vast tanpa field yang tidak dipakai.
+
+    SDK `vastai` selalu mengirim `"template_hash_id": null` saat hanya memakai
+    image; Vast membalas `400 invalid_args: invalid template hash or id or
+    template not accessible by user`. Jadi payload dibangun sendiri: field
+    template hanya dikirim kalau memang ada.
+    """
+    key = (settings.VAST_API_KEY or "").strip()
+    if not key:
+        raise RuntimeError("VAST_API_KEY belum diset")
+    payload: Dict[str, Any] = {
+        "client_id": "me",
+        "disk": float(disk),
+        "env": env,
+        "label": label,
+        "onstart": onstart,
+        "cancel_unavail": True,
+    }
+    if template_hash:
+        payload["template_hash_id"] = template_hash
+    else:
+        payload["image"] = image
+    response = requests.put(
+        f"https://console.vast.ai/api/v0/asks/{offer_id}/",
+        json=payload,
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+        timeout=90,
+    )
+    if not response.ok:
+        body = (response.text or "").strip()
+        error = requests.HTTPError(
+            f"{response.status_code} Client Error for url: {response.url}", response=response
+        )
+        raise error
+    try:
+        return response.json() or {}
+    except ValueError as exc:
+        raise RuntimeError(f"Respons Vast tidak valid: {(response.text or '')[:200]}") from exc
+
+
 def _make_create_instance(task_id: UUID, client: Any):
     """Factory pembuat instance (dipakai dispatch DAN resume setelah restart).
 
@@ -573,18 +627,6 @@ def _make_create_instance(task_id: UUID, client: Any):
             logger.warning("Gagal menyegarkan URL model: %s", exc)
         worker_env = build_worker_env(task_id)
 
-        kwargs: Dict[str, Any] = {
-            "disk": settings.VAST_WORKER_DISK,
-            "env": worker_env,
-            "label": f"clipzi-{str(task_id)[:8]}",
-            "onstart_cmd": _oneshot_onstart(task_id),
-            "cancel_unavail": True,
-        }
-        if template_hash:
-            kwargs["template_hash"] = template_hash
-        else:
-            kwargs["image"] = image
-
         # Ask Vast cepat hilang (diambil mesin lain). Kalau itu terjadi, ambil
         # offer baru dan coba lagi — jangan langsung menggagalkan task.
         last_error = ""
@@ -594,7 +636,16 @@ def _make_create_instance(task_id: UUID, client: Any):
             if not current_id:
                 raise RuntimeError(f"offer tidak punya id: {current}")
             try:
-                created = await asyncio.to_thread(client.create_instance, current_id, **kwargs)
+                created = await asyncio.to_thread(
+                    _post_create_instance,
+                    current_id,
+                    disk=settings.VAST_WORKER_DISK,
+                    env=worker_env,
+                    label=f"clipzi-{str(task_id)[:8]}",
+                    onstart=_oneshot_onstart(task_id),
+                    image=image,
+                    template_hash=template_hash,
+                )
             except Exception as exc:  # noqa: BLE001 - klasifikasikan lalu retry
                 text = _vast_error_text(exc)
                 if _stale_offer_error(text):
