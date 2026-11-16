@@ -21,6 +21,8 @@ import { api, ClipData, ClipThumbnailData } from "@/lib/api"
 import { ClipzySpinner } from "@/components/ClipzySpinner"
 import YouTubeIcon from "@/components/YouTubeIcon"
 import YouTubeUploadCard from "@/components/YouTubeUploadCard"
+import YouTubeOpenCard from "@/components/YouTubeOpenCard"
+import YouTubeSuccessToast from "@/components/YouTubeSuccessToast"
 import {
   DEFAULT_CAPTION_POSITION,
   DEFAULT_CAPTION_STYLE,
@@ -91,6 +93,7 @@ export default function ClipModal({
   const [videoError, setVideoError] = useState(false)
   const [filmstrip, setFilmstrip] = useState<{ at_second: number; url: string }[]>([])
   const [ytThumbBusy, setYtThumbBusy] = useState(false)
+  const [successOpen, setSuccessOpen] = useState(false)
   const [thumbBusy, setThumbBusy] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [editBusy, setEditBusy] = useState(false)
@@ -333,7 +336,8 @@ export default function ClipModal({
           error: null,
         }))
         setUploadUrl(final.youtube_video_url || "")
-        setNotice("Uploaded to YouTube.")
+        setNotice("")
+        setSuccessOpen(true)
         onUpdated(clipId, {
           youtube_uploaded: true,
           youtube_video_id: final.youtube_video_id,
@@ -351,11 +355,12 @@ export default function ClipModal({
         throw new Error(syncResult.error || "Upload failed.")
       }
       setUploadUrl(syncResult.youtube_video_url || "")
-      setNotice(
-        syncResult.already_uploaded
-          ? "This clip was already uploaded to YouTube."
-          : "Uploaded to YouTube.",
-      )
+      if (syncResult.already_uploaded) {
+        setNotice("This clip was already uploaded to YouTube.")
+      } else {
+        setNotice("")
+        setSuccessOpen(true)
+      }
       onUpdated(clipId, {
         youtube_uploaded: true,
         youtube_video_id: syncResult.youtube_video_id || null,
@@ -1091,22 +1096,14 @@ export default function ClipModal({
                 </button>
               )}
 
-              {uploadUrl && (
-                <Link
-                  className="clip-modal-link"
-                  href={uploadUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <CheckCircle2 size={13} /> Open on YouTube
-                </Link>
-              )}
+              {uploadUrl && !uploading ? <YouTubeOpenCard href={uploadUrl} /> : null}
             </div>
 
             {error && <p className="clip-modal-error">{error}</p>}
             {notice && !error && <p className="clip-modal-notice">{notice}</p>}
           </div>
         </div>
+        <YouTubeSuccessToast open={successOpen} onClose={() => setSuccessOpen(false)} />
       </div>
     </div>
   )

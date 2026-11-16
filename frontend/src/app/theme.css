@@ -2905,3 +2905,58 @@ html, body { max-width: 100%; overflow-x: clip; }
   .clip-media-stage{max-width:100%}
   .clip-media-stage .clip-modal-video,.clip-media-stage video{max-height:40vh !important}
 }
+
+/* ===== YouTube open card ===== */
+@property --yt-btn-angle{syntax:"<angle>";inherits:true;initial-value:0deg}
+.yt-action-card{position:relative;width:100%;max-width:420px;border-radius:22px;padding:1.5px;background:conic-gradient(from var(--yt-btn-angle),rgba(255,0,51,.85),rgba(255,77,77,.45) 18%,rgba(255,255,255,.07) 36%,rgba(255,255,255,.05) 62%,rgba(245,158,11,.65) 82%,rgba(255,0,51,.85));animation:ytCardSpinBorder 5.5s linear infinite;box-shadow:0 26px 60px -15px rgba(0,0,0,.9),0 0 38px -8px rgba(255,0,51,.25);transition:transform .35s cubic-bezier(.22,1,.36,1),box-shadow .35s ease}
+.yt-action-card:hover{transform:translateY(-3px);box-shadow:0 32px 68px -14px rgba(0,0,0,.92),0 0 48px -4px rgba(255,0,51,.38)}
+.yt-action-inner{position:relative;border-radius:20.5px;padding:14px;background:linear-gradient(155deg,rgba(20,21,28,.96),rgba(11,12,17,.98));overflow:hidden}
+.yt-card-shimmer{position:absolute;inset:0;pointer-events:none;overflow:hidden;border-radius:20.5px}
+.yt-card-shimmer::after{content:"";position:absolute;top:0;left:-130%;width:65%;height:100%;background:linear-gradient(108deg,transparent 20%,rgba(255,255,255,.05) 50%,transparent 80%);animation:ytSweep 4.8s ease-in-out infinite}
+.yt-open-btn{position:relative;width:100%;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:15px;border:1px solid rgba(255,255,255,.12);background:linear-gradient(135deg,#ff0033,#d90429 52%,#b91c1c);color:#fff;text-decoration:none;cursor:pointer;overflow:hidden;box-shadow:0 10px 26px -6px rgba(255,0,51,.55),inset 0 1px 1px rgba(255,255,255,.35)}
+.yt-open-btn::before{content:"";position:absolute;top:0;left:-120%;width:75%;height:100%;background:linear-gradient(105deg,transparent 15%,rgba(255,255,255,.28) 50%,transparent 85%);transition:left .65s cubic-bezier(.22,1,.36,1);pointer-events:none}
+.yt-open-btn:hover{transform:translateY(-2px) scale(1.012);filter:brightness(1.06)}
+.yt-open-btn:hover::before{left:145%}
+.yt-play-badge{position:relative;flex-shrink:0;width:38px;height:38px;border-radius:12px;background:rgba(12,12,16,.28);border:1px solid rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center}
+.yt-play-pulse{position:absolute;inset:-2px;border-radius:13px;border:1.5px solid rgba(255,255,255,.55);animation:ytEmblemPulse 2.3s cubic-bezier(.24,0,.38,1) infinite;pointer-events:none}
+.yt-play-icon{width:19px;height:19px;fill:#fff}
+.yt-btn-text{flex:1;text-align:left;font-size:14px;font-weight:600;letter-spacing:-.01em;color:#fff}
+.yt-arrow-box{flex-shrink:0;width:30px;height:30px;border-radius:10px;background:rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;transition:background .25s ease,transform .28s cubic-bezier(.22,1,.36,1)}
+.yt-open-btn:hover .yt-arrow-box{background:rgba(255,255,255,.24);transform:translateX(2px)}
+.yt-arrow-icon{width:15px;height:15px;stroke:#fff}
+@keyframes ytCardSpinBorder{to{--yt-btn-angle:360deg}}
+@keyframes ytSweep{0%,35%{left:-130%}72%,100%{left:160%}}
+@keyframes ytEmblemPulse{0%{opacity:.75;transform:scale(.96)}75%,100%{opacity:0;transform:scale(1.32)}}
+/* ===== YouTube success toast ===== */
+.yt-toast-wrapper{position:fixed;right:18px;bottom:18px;z-index:80;width:min(420px,calc(100vw - 32px));border-radius:18px;padding:1.5px;overflow:hidden;box-shadow:0 20px 45px -12px rgba(0,0,0,.78),0 0 24px -4px rgba(16,185,129,.22);animation:ytCardEnter .55s cubic-bezier(.22,1,.36,1) forwards}
+.yt-toast-wrapper.is-closing{animation:ytCardExit .35s cubic-bezier(.4,0,.2,1) forwards}
+.yt-toast-glow{position:absolute;inset:-60%;background:conic-gradient(from 0deg,transparent 0deg,rgba(16,185,129,.7) 80deg,rgba(255,0,51,.45) 140deg,transparent 210deg,rgba(52,211,153,.35) 300deg,transparent 360deg);animation:ytSpinGlow 7s linear infinite;z-index:0}
+.yt-toast-card{position:relative;z-index:1;display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:16.5px;background:linear-gradient(145deg,rgba(20,24,34,.96),rgba(13,16,23,.98));overflow:hidden}
+.yt-toast-shimmer{position:absolute;top:0;left:-120%;width:65%;height:100%;background:linear-gradient(110deg,transparent 20%,rgba(255,255,255,.05) 50%,transparent 80%);transform:skewX(-20deg);animation:ytShimmerSweep 4.2s ease-in-out .6s infinite;pointer-events:none}
+.yt-icon-box{position:relative;flex-shrink:0;width:40px;height:40px;border-radius:13px;background:radial-gradient(circle at 30% 30%,rgba(16,185,129,.24),rgba(16,185,129,.06));border:1px solid rgba(16,185,129,.32);display:flex;align-items:center;justify-content:center}
+.yt-pulse-ring{position:absolute;inset:-2px;border-radius:14px;border:1.5px solid rgba(16,185,129,.55);animation:ytRingPulse 2.4s cubic-bezier(.24,0,.38,1) infinite;pointer-events:none}
+.yt-check-svg{width:20px;height:20px;filter:drop-shadow(0 0 6px rgba(16,185,129,.55))}
+.yt-check-path{stroke-dasharray:26;stroke-dashoffset:26;animation:ytDrawCheck .55s cubic-bezier(.65,0,.35,1) .25s forwards}
+.yt-spark{position:absolute;width:4px;height:4px;border-radius:50%;opacity:0;pointer-events:none}
+.yt-spark-1{background:#34d399;top:2px;right:4px;animation:ytSparkPop1 .9s ease-out .45s forwards}
+.yt-spark-2{background:#ff2a4b;bottom:4px;right:2px;animation:ytSparkPop2 .9s ease-out .52s forwards}
+.yt-spark-3{background:#6ee7b7;top:4px;left:3px;animation:ytSparkPop3 .9s ease-out .48s forwards}
+.yt-toast-message{margin:0;flex:1;font-size:13px;font-weight:500;line-height:1.45;color:#f1f5f9}
+.yt-close-btn{flex-shrink:0;width:26px;height:26px;border-radius:8px;border:none;background:transparent;color:#64748b;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.yt-close-btn:hover{background:rgba(255,255,255,.07);color:#e2e8f0}
+@keyframes ytCardEnter{0%{opacity:0;transform:translateY(16px) scale(.96)}100%{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes ytCardExit{0%{opacity:1;transform:translateY(0) scale(1)}100%{opacity:0;transform:translateY(-10px) scale(.96)}}
+@keyframes ytSpinGlow{to{transform:rotate(360deg)}}
+@keyframes ytShimmerSweep{0%,35%{left:-120%}70%,100%{left:160%}}
+@keyframes ytDrawCheck{to{stroke-dashoffset:0}}
+@keyframes ytRingPulse{0%{opacity:.7;transform:scale(1)}75%,100%{opacity:0;transform:scale(1.28)}}
+@keyframes ytSparkPop1{0%{opacity:0;transform:translate(0,0) scale(.4)}40%{opacity:1}100%{opacity:0;transform:translate(8px,-9px) scale(1)}}
+@keyframes ytSparkPop2{0%{opacity:0;transform:translate(0,0) scale(.4)}40%{opacity:1}100%{opacity:0;transform:translate(9px,7px) scale(.9)}}
+@keyframes ytSparkPop3{0%{opacity:0;transform:translate(0,0) scale(.4)}40%{opacity:1}100%{opacity:0;transform:translate(-8px,-8px) scale(.95)}}
+/* Caption cards: 5 terlihat sekaligus */
+.thcap-card{flex:0 0 64px !important;min-height:64px;padding:6px !important;gap:5px}
+.thcap-label{font-size:7.5px !important;letter-spacing:.3px;margin:0 !important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.thcap-preview{height:32px !important;padding:3px !important;border-radius:6px}
+.thcap-track{gap:6px !important}
+.thcap-nav{width:22px !important;height:22px !important;font-size:12px !important}
+@media (max-width:560px){.thcap-card{flex:0 0 58px !important}}
