@@ -310,10 +310,10 @@ async def create_worker_template(
 
 
 @router.get("/templates")
-async def read_provider_templates():
+async def read_provider_templates(db: AsyncSession = Depends(get_db_session)):
     """Daftar template Vast per provider model (Clipzy Gdrive/Dropbox/...)."""
     try:
-        return await vast_admin.provider_templates()
+        return await vast_admin.provider_templates(db)
     except Exception as exc:  # noqa: BLE001 - Vast belum dikonfigurasi
         raise HTTPException(status_code=502, detail=str(exc)[:300]) from exc
 
@@ -330,11 +330,22 @@ async def sync_provider_template(
 
     try:
         provider = model_sources.get_provider(payload.provider)
+        known = (await vast_admin.remembered_templates(db)).get(provider.id) or {}
         result = await vast_admin.upsert_worker_template(
-            payload.name or provider.template_name, provider.env
+            payload.name or provider.template_name,
+            provider.env,
+            known_hash=known.get("template_hash"),
         )
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if result.get("template_hash"):
+        await vast_admin.remember_template(
+            db,
+            provider.id,
+            result.get("name") or provider.template_name,
+            result["template_hash"],
+            result.get("template_id"),
+        )
     if payload.activate and result.get("template_hash"):
         await vast_config.save_vast_config(
             db,

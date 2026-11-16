@@ -197,7 +197,7 @@ async def read_source(db: AsyncSession = Depends(get_db_session)):
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     templates: Dict[str, Any] = {"items": [], "active_hash": ""}
     try:
-        templates = await vast_admin.provider_templates()
+        templates = await vast_admin.provider_templates(db)
     except Exception as exc:  # noqa: BLE001 - Vast belum dikonfigurasi
         templates["error"] = str(exc)[:300]
     return {
@@ -227,10 +227,21 @@ async def save_source(
     template: Dict[str, Any] = {"skipped": True}
     if payload.auto_template:
         try:
+            known = (await vast_admin.remembered_templates(db)).get(provider.id) or {}
             template = await vast_admin.upsert_worker_template(
-                provider.template_name, provider.env
+                provider.template_name,
+                provider.env,
+                known_hash=known.get("template_hash"),
             )
             template["skipped"] = False
+            if template.get("template_hash"):
+                await vast_admin.remember_template(
+                    db,
+                    provider.id,
+                    template.get("name") or provider.template_name,
+                    template["template_hash"],
+                    template.get("template_id"),
+                )
             if payload.activate and template.get("template_hash"):
                 await vast_config.save_vast_config(
                     db,
@@ -281,13 +292,22 @@ async def sync_source_template(
     try:
         source = await model_sources.get_source(db)
         provider = model_sources.get_provider(payload.provider or source["provider"])
+        known = (await vast_admin.remembered_templates(db)).get(provider.id) or {}
         template = await vast_admin.upsert_worker_template(
-            provider.template_name, provider.env
+            provider.template_name, provider.env, known_hash=known.get("template_hash")
         )
     except model_sources.SourceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if template.get("template_hash"):
+        await vast_admin.remember_template(
+            db,
+            provider.id,
+            template.get("name") or provider.template_name,
+            template["template_hash"],
+            template.get("template_id"),
+        )
     if payload.activate and template.get("template_hash"):
         await vast_config.save_vast_config(
             db,

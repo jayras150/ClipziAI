@@ -746,18 +746,55 @@ async def _find_template(name: str) -> Optional[Dict[str, Any]]:
     wanted = str(name or "").strip().lower()
     if not wanted:
         return None
-    try:
-        rows = await asyncio.to_thread(client.search_templates, name)
-    except Exception as exc:  # noqa: BLE001 - biarkan pemanggil memutuskan
-        logger.debug("search_templates(%s) gagal: %s", name, exc)
-        return None
-    for row in rows or []:
+    rows: List[Dict[str, Any]] = []
+    for query in (name, {"name": name}):
+        try:
+            found = await asyncio.to_thread(client.search_templates, query)
+        except Exception as exc:  # noqa: BLE001 - biarkan pemanggil memutuskan
+            logger.debug("search_templates(%s) gagal: %s", query, exc)
+            continue
+        if isinstance(found, list) and found:
+            rows = found
+            break
+    for row in rows:
         if not isinstance(row, dict):
             continue
         label = str(row.get("name") or row.get("template_name") or "").strip().lower()
         if label == wanted:
             return row
     return None
+
+
+PROVIDER_TEMPLATES_KEY = "vast_provider_templates"
+
+
+async def remembered_templates(db) -> Dict[str, Dict[str, Any]]:
+    """Template provider yang pernah dibuat (search_templates Vast tidak selalu
+    mengembalikan template private, jadi hasil create/update disimpan di DB)."""
+    from app.services import platform_settings as ps
+
+    raw = await ps.get_setting(db, PROVIDER_TEMPLATES_KEY, {})
+    items = raw.get("items") if isinstance(raw, dict) else {}
+    return items if isinstance(items, dict) else {}
+
+
+async def remember_template(
+    db,
+    provider_id: str,
+    name: str,
+    template_hash: str,
+    template_id: Optional[Any] = None,
+) -> None:
+    from app.services import platform_settings as ps
+
+    items = await remembered_templates(db)
+    items[str(provider_id)] = {
+        "name": name,
+        "template_hash": template_hash,
+        "template_id": template_id,
+        "updated_at": __import__("datetime").datetime.utcnow().isoformat(),
+    }
+    await ps.set_setting(db, PROVIDER_TEMPLATES_KEY, {"items": items})
 
 
 def _template_hash(row: Optional[Dict[str, Any]]) -> str:
@@ -777,6 +814,7 @@ async def upsert_worker_template(
     image: Optional[str] = None,
     disk_space: Optional[int] = None,
     public: bool = False,
+    known_hash: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Buat/perbarui template Vast untuk satu provider model.
 
@@ -824,7 +862,9 @@ async def upsert_worker_template(
 
     existing = await _find_template(resolved_name)
     action = "updated" if existing else "created"
-    template_hash = _template_hash(existing)
+    template_hash = _template_hash(existing) or str(known_hash or "").strip()
+    if template_hash:
+        action = "updated"
     template_id = None
     if isinstance(existing, dict):
         for key in ("id", "template_id"):
@@ -832,7 +872,7 @@ async def upsert_worker_template(
                 template_id = existing.get(key)
                 break
 
-    if existing and template_hash:
+    if template_hash:
         try:
             updated = await asyncio.to_thread(
                 client.update_template,
@@ -896,24 +936,34 @@ async def upsert_worker_template(
     }
 
 
-async def provider_templates() -> Dict[str, Any]:
+async def provider_templates(db=None) -> Dict[str, Any]:
     """Daftar template per provider model + mana yang sedang aktif."""
     from app.services import model_sources
 
     settings = get_settings()
     active_hash = (settings.VAST_TEMPLATE_HASH or "").strip()
+    remembered: Dict[str, Dict[str, Any]] = {}
+    if db is not None:
+        try:
+            remembered = await remembered_templates(db)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("gagal membaca template provider tersimpan: %s", exc)
     items: List[Dict[str, Any]] = []
     for provider in model_sources.providers():
-        row = await _find_template(provider.template_name)
-        template_hash = _template_hash(row)
+        saved = remembered.get(provider.id) or {}
+        row = None
+        if not saved.get("template_hash"):
+            row = await _find_template(provider.template_name)
+        template_hash = str(saved.get("template_hash") or _template_hash(row))
         items.append(
             {
                 "provider": provider.id,
                 "provider_label": provider.label,
-                "name": provider.template_name,
-                "exists": bool(row),
+                "name": str(saved.get("name") or provider.template_name),
+                "exists": bool(template_hash),
                 "template_hash": template_hash,
-                "template_id": (row or {}).get("id") if isinstance(row, dict) else None,
+                "template_id": saved.get("template_id")
+                or ((row or {}).get("id") if isinstance(row, dict) else None),
                 "active": bool(template_hash) and template_hash == active_hash,
             }
         )
