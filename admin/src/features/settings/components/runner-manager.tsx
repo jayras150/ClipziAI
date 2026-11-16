@@ -69,7 +69,7 @@ function WorkflowTools({ runner }: { runner: RunnerRow }) {
       badgeLabel = 'Repo kosong';
     } else if (!result.exists) {
       badgeLabel = 'Belum terpasang';
-    } else if (result.up_to_date) {
+    } else if (result.up_to_date || result.action === 'unchanged') {
       badgeLabel = 'Siap';
       badgeTone = 'secondary';
     } else {

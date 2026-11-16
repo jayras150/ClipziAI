@@ -368,18 +368,18 @@ async def install_workflow(
 
     if exists and status.get("up_to_date"):
         # Konten sudah sama: tidak perlu commit baru, walau tombol Timpa diklik.
+        # Sertakan seluruh status (exists/up_to_date/sha/...) supaya UI tidak
+        # menampilkan "Belum terpasang" padahal file sudah sama dengan template.
         return {
+            **status,
             "action": "unchanged",
-            "path": path,
             "branch": branch,
-            "sha": status.get("sha"),
-            "commit_url": status.get("commit_url"),
             "message": "Workflow sudah sesuai template (tidak ada perubahan).",
         }
     if exists and not force:
         return {
+            **status,
             "action": "conflict",
-            "path": path,
             "branch": branch,
             "message": (
                 "File workflow sudah ada dan isinya berbeda. "
