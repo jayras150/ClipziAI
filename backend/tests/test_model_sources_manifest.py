@@ -73,7 +73,33 @@ def test_restore_env_cache():
     assert model_sources.restore_env() == {}
 
 
-def test_restore_plan_gdrive_pakai_cloud_copy():
+def test_dropbox_auth_mode_access_atau_refresh():
+    from app.services.model_sources import DropboxAdapter
+
+    provider = model_sources.get_provider("dropbox")
+    assert DropboxAdapter(provider, {"access_token": "sl.abc"}).auth_mode() == "access"
+    assert (
+        DropboxAdapter(
+            provider, {"app_key": "k", "app_secret": "s", "refresh_token": "r"}
+        ).auth_mode()
+        == "refresh"
+    )
+    assert "access_token" in [field["name"] for field in provider.fields]
+    secret_field = next(f for f in provider.fields if f["name"] == "app_secret")
+    assert secret_field["max_length"] == 128
+    required = [field["name"] for field in provider.fields if field["required"]]
+    assert required == ["root"]  # kredensial opsional: access token ATAU refresh flow
+
+
+def test_dropbox_auth_mode_kosong_error_jelas():
+    import pytest
+
+    from app.services.model_sources import DropboxAdapter
+
+    provider = model_sources.get_provider("dropbox")
+    with pytest.raises(model_sources.SourceError) as excinfo:
+        DropboxAdapter(provider, {}).auth_mode()
+    assert "Access token" in str(excinfo.value)
     plan = asyncio.run(
         model_sources.restore_plan(None, "gdrive", "/vast-backup/Clipzy/whisper_models/large-v3")
     )

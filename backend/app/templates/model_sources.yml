@@ -61,24 +61,33 @@ providers:
     env:
       CLIPZI_MODEL_SOURCE: dropbox
     fields:
+      - name: access_token
+        label: Access token (sl.…)
+        type: secret
+        required: false
+        max_length: 4096
+        help: >-
+          Cara tercepat: tempel access token dari App Console → tab Settings →
+          Generated access token. Berlaku ±4 jam; untuk produksi pakai
+          App key + App secret + Refresh token (SDK auto-refresh).
       - name: app_key
         label: App key
         type: text
-        required: true
+        required: false
         max_length: 64
-        help: 'App key Dropbox ±15 karakter (App Console → Settings)'
+        help: 'Opsional bila memakai refresh token. App key Dropbox ±15 karakter.'
       - name: app_secret
         label: App secret
         type: secret
-        required: true
+        required: false
         max_length: 128
-        help: 'Klik Show di App Console → Settings. App secret HANYA puluhan karakter, bukan token/JSON.'
+        help: 'Klik Show di App Console → Settings (±15–30 karakter). JANGAN tempel access token di sini.'
       - name: refresh_token
         label: Refresh token
         type: secret
-        required: true
+        required: false
         max_length: 512
-        help: 'Didapat dari notebook Colab (DropboxOAuth2FlowNoRedirect), bukan App secret.'
+        help: 'Dari notebook Colab. Refresh token + App key/secret = akses permanen (auto-refresh).'
       - name: root
         label: Folder root
         type: text

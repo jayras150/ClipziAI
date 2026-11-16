@@ -325,6 +325,13 @@ async def save_source(
         text = str(raw).strip() if raw is not None else ""
         limit = int(item.get("max_length") or 0)
         if text and limit and len(text) > limit:
+            if name == "app_secret" and text.startswith("sl.") and len(text) > 64:
+                raise SourceError(
+                    "Nilai di kolom 'App secret' terlihat seperti **access token "
+                    "Dropbox** (diawali 'sl.' dan panjang). Tempel di kolom "
+                    "'Access token (sl.…)', lalu isi App secret dengan nilai pendek "
+                    "dari App Console → Settings."
+                )
             raise SourceError(
                 f"{provider.label}: '{item['label']}' terlalu panjang "
                 f"({len(text)} karakter, maks {limit}). Kemungkinan Anda menempel "
@@ -510,7 +517,30 @@ class GDriveAdapter(BaseAdapter):
 
 
 class DropboxAdapter(BaseAdapter):
-    """Dropbox: folder root berisi subfolder model CT2."""
+    """Dropbox: folder root berisi subfolder model CT2.
+
+    Dua mode autentikasi (dokumentasi Dropbox OAuth 2):
+    1. **Access token** (`sl.…`) — langsung dipakai untuk semua panggilan API,
+       tetapi kedaluwarsa ±4 jam.
+    2. **Refresh token + App key + App secret** — SDK Dropbox meminta access
+       token baru otomatis saat token lama habis (disarankan untuk produksi).
+    """
+
+    def auth_mode(self) -> str:
+        if str(self.values.get("access_token") or "").strip():
+            return "access"
+        if (
+            str(self.values.get("app_key") or "").strip()
+            and str(self.values.get("app_secret") or "").strip()
+            and str(self.values.get("refresh_token") or "").strip()
+        ):
+            return "refresh"
+        raise SourceError(
+            "Dropbox belum siap: isi **Access token** (sl.…) ATAU "
+            "**App key + App secret + Refresh token**. "
+            "App key/secret saja tidak bisa dipakai untuk upload — keduanya hanya "
+            "untuk meminta access token baru."
+        )
 
     def _client(self):
         try:
@@ -520,6 +550,12 @@ class DropboxAdapter(BaseAdapter):
                 "Library python 'dropbox' belum terpasang di backend "
                 "(pip install dropbox) — rebuild image backend."
             ) from exc
+        mode = self.auth_mode()
+        if mode == "access":
+            return dropbox.Dropbox(
+                oauth2_access_token=str(self.values.get("access_token") or "").strip(),
+                timeout=60,
+            )
         return dropbox.Dropbox(
             oauth2_refresh_token=self._value("refresh_token"),
             app_key=self._value("app_key"),
@@ -606,12 +642,18 @@ class DropboxAdapter(BaseAdapter):
             await asyncio.to_thread(self._client().users_get_current_account)
         except Exception as exc:  # noqa: BLE001
             message = str(exc)
+            if "expired_access_token" in message or "invalid_access_token" in message:
+                raise SourceError(
+                    "Access token Dropbox tidak valid/kedaluwarsa (umur token hanya "
+                    "±4 jam). Buat token baru di App Console → Settings → "
+                    "Generated access token, ATAU pakai App key + App secret + "
+                    "Refresh token agar SDK memperbarui token otomatis."
+                ) from exc
             if "invalid_client" in message:
                 raise SourceError(
-                    "Dropbox menolak App key/App secret (invalid_client). "
-                    "App secret normalnya hanya puluhan karakter — jangan tempel "
-                    "refresh token/JSON di kolom App secret. Ambil ulang di "
-                    "App Console → Settings → App secret (klik Show), lalu Simpan."
+                    "Dropbox menolak App key/App secret (invalid_client). App secret "
+                    "±15–30 karakter — access token/refresh token harus diisi di "
+                    "kolomnya masing-masing. Ambil ulang di App Console → Settings."
                 ) from exc
             if "invalid_grant" in message:
                 raise SourceError(
@@ -619,7 +661,9 @@ class DropboxAdapter(BaseAdapter):
                     "notebook Colab (cell otorisasi) untuk membuat refresh token baru."
                 ) from exc
             raise SourceError(f"Dropbox menolak kredensial: {message[:300]}") from exc
-        return await super().test()
+        result = await super().test()
+        result["mode"] = self.auth_mode()
+        return result
 
 
 class S3Adapter(BaseAdapter):
