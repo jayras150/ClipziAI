@@ -3035,3 +3035,15 @@ html, body { max-width: 100%; overflow-x: clip; }
 /* FINAL: preview thumbnail mengikuti rasio asli (9:16 tidak dipaksa 16:9) */
 .cs-live-thumb img{width:auto !important;max-width:100% !important;height:auto !important;max-height:150px !important;aspect-ratio:auto !important;object-fit:contain !important;border-radius:8px !important;border:1px solid rgba(255,255,255,.15) !important;background:#000 !important;display:block}
 .clip-video-fallback{background-size:contain !important;background-repeat:no-repeat !important;background-position:center !important}
+
+
+/* Popup error/peringatan (mis. channel YouTube belum diverifikasi) */
+.cs-alert-backdrop{position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(4,6,11,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.cs-alert-card{width:min(440px,100%);display:flex;flex-direction:column;gap:10px;padding:20px 20px 16px;border-radius:18px;background:linear-gradient(160deg,rgba(23,27,38,.98),rgba(12,15,22,.99));border:1px solid rgba(255,255,255,.1);box-shadow:0 28px 60px -20px rgba(0,0,0,.9),0 0 0 1px rgba(212,168,79,.08) inset}
+.cs-alert-icon{width:44px;height:44px;border-radius:14px;display:flex;align-items:center;justify-content:center;color:#f0b429;background:rgba(240,180,41,.12);border:1px solid rgba(240,180,41,.35)}
+.cs-alert-title{margin:0;font-size:16px;font-weight:800;letter-spacing:.2px;color:#f8fafc}
+.cs-alert-text{margin:0;font-size:13px;line-height:1.55;color:#c7ccd8}
+.cs-alert-detail{margin:0;font-size:11px;line-height:1.45;color:#8b93a5;word-break:break-word}
+.cs-alert-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.cs-alert-actions .ui-btn{flex:1 1 auto;justify-content:center;min-height:38px}
+@media (max-width:480px){.cs-alert-card{padding:16px 16px 14px}.cs-alert-actions .ui-btn{flex:1 1 100%}}

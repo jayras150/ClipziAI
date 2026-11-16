@@ -21,6 +21,7 @@ import { api, ClipData, ClipThumbnailData } from "@/lib/api"
 import { ClipzySpinner } from "@/components/ClipzySpinner"
 import YouTubeIcon from "@/components/YouTubeIcon"
 import YouTubeUploadCard from "@/components/YouTubeUploadCard"
+import AlertDialog from "@/components/AlertDialog"
 import YouTubeOpenCard from "@/components/YouTubeOpenCard"
 import YouTubeSuccessToast from "@/components/YouTubeSuccessToast"
 import {
@@ -29,7 +30,7 @@ import {
   THUMBNAIL_CAPTION_ANCHORS,
   THUMBNAIL_CAPTION_STYLES,
 } from "@/lib/caption-catalog"
-import { readApiError } from "@/lib/api-errors"
+import { readApiError, readApiErrorInfo } from "@/lib/api-errors"
 import { SUBTITLE_STYLE_OPTIONS } from "@/lib/caption-styles"
 
 function formatClock(seconds: number): string {
@@ -80,6 +81,7 @@ export default function ClipModal({
   }>({ status: "idle", bytesSent: 0, totalBytes: 0, error: null })
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
+  const [ytAlert, setYtAlert] = useState<{ title: string; message: string; detail?: string; href?: string } | null>(null)
   const [uploadUrl, setUploadUrl] = useState("")
   const [thumbs, setThumbs] = useState<ClipThumbnailData | null>(null)
   const [capStyle, setCapStyle] = useState(DEFAULT_CAPTION_STYLE)
@@ -447,8 +449,18 @@ export default function ClipModal({
           await api.pushThumbnailToYouTube(token, clipId)
           setNotice("Thumbnail applied and synced to YouTube automatically.")
         } catch (err: any) {
-          const reason = readApiError(err?.response?.data, "YouTube sync failed.")
-          setNotice(`Thumbnail applied. YouTube: ${reason}`)
+          const info = readApiErrorInfo(err?.response?.data, "YouTube sync failed.")
+          if (info.code === "youtube_thumbnail_forbidden") {
+            setNotice("Thumbnail applied. YouTube needs a verified channel to accept it.")
+            setYtAlert({
+              title: "YouTube needs a verified channel",
+              message: info.message,
+              detail: info.reason,
+              href: info.href || "https://www.youtube.com/verify",
+            })
+          } else {
+            setNotice(`Thumbnail applied. YouTube: ${info.message}`)
+          }
         }
       } else {
         setNotice(`Thumbnail applied (${result.style}, ${result.position}).`)
@@ -469,7 +481,17 @@ export default function ClipModal({
       await api.pushThumbnailToYouTube(token, clipId)
       setNotice("Thumbnail updated on YouTube.")
     } catch (err: any) {
-      setError(readApiError(err.response?.data, "Could not set the YouTube thumbnail."))
+      const info = readApiErrorInfo(err?.response?.data, "Could not set the YouTube thumbnail.")
+      if (info.code === "youtube_thumbnail_forbidden") {
+        setYtAlert({
+          title: "YouTube needs a verified channel",
+          message: info.message,
+          detail: info.reason,
+          href: info.href || "https://www.youtube.com/verify",
+        })
+      } else {
+        setError(info.message)
+      }
     } finally {
       setYtThumbBusy(false)
     }
@@ -1185,6 +1207,15 @@ export default function ClipModal({
           </div>
         </div>
         <YouTubeSuccessToast open={successOpen} onClose={() => setSuccessOpen(false)} />
+        <AlertDialog
+          open={ytAlert !== null}
+          title={ytAlert?.title || ""}
+          message={ytAlert?.message || ""}
+          detail={ytAlert?.detail}
+          actionLabel="Verify channel"
+          actionHref={ytAlert?.href}
+          onClose={() => setYtAlert(null)}
+        />
       </div>
     </div>
   )

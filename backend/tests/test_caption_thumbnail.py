@@ -150,21 +150,43 @@ def test_candidate_thumbnail_pakai_frame_bersih():
 def test_set_thumbnail_error_dilaporkan(monkeypatch):
     from app.services import youtube_service as ys
 
+    pesan = (
+        "The authenticated user doesn't have permissions to upload "
+        "and set custom video thumbnails."
+    )
+
     class _Resp:
         status_code = 200
         content = b"jpegdata"
         ok = False
-        text = '{"error":{"code":403,"message":"no permission"}}'
+        text = '{"error":{"code":403,"message":"forbidden"}}'
         headers = {"Content-Type": "application/json"}
 
         def json(self):
-            return {"error": {"code": 403, "message": "no permission", "errors": [{"reason": "forbidden"}]}}
+            return {"error": {"code": 403, "message": pesan, "errors": [{"reason": "forbidden"}]}}
 
     monkeypatch.setattr(ys.requests, "get", lambda *a, **k: _Resp())
     monkeypatch.setattr(ys.requests, "post", lambda *a, **k: _Resp())
     result = ys.YouTubeService._set_thumbnail("token", "abc", "https://files/x.jpg")
     assert result["ok"] is False
-    assert "no permission" in str(result["error"])
+    assert "permissions to upload" in str(result["error"])
+    assert result["code"] == "thumbnail_permission"
+
+
+def test_classify_thumbnail_error():
+    from app.services.youtube_service import YouTubeService
+
+    classify = YouTubeService.classify_thumbnail_error
+    assert (
+        classify(
+            "forbidden The authenticated user doesn't have permissions to upload "
+            "and set custom video thumbnails."
+        )
+        == "thumbnail_permission"
+    )
+    assert classify("Media too large") == "thumbnail_too_large"
+    assert classify("Unsupported image format") == "thumbnail_invalid"
+    assert classify("something else") == ""
 
 
 _SRT_CONTOH = """1

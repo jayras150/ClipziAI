@@ -338,6 +338,7 @@ class YouTubeService:
                 detail = YouTubeService._google_error(response)
                 logger.warning("YouTube menolak thumbnail %s: %s", video_id, detail)
                 result["error"] = detail
+                result["code"] = YouTubeService.classify_thumbnail_error(detail)
                 return result
             result["ok"] = True
             return result
@@ -345,6 +346,18 @@ class YouTubeService:
             logger.warning("Gagal memasang thumbnail %s: %s", video_id, exc)
             result["error"] = str(exc)[:300]
             return result
+
+    @staticmethod
+    def classify_thumbnail_error(message: str) -> str:
+        """Klasifikasikan error `thumbnails.set` agar UI bisa menampilkan saran."""
+        text = (message or "").lower()
+        if "permissions to upload and set custom video thumbnails" in text:
+            return "thumbnail_permission"
+        if "media too large" in text or "too large" in text:
+            return "thumbnail_too_large"
+        if "unsupported image" in text or "invalid image" in text:
+            return "thumbnail_invalid"
+        return ""
 
     @staticmethod
     def _google_error(response: requests.Response) -> str:

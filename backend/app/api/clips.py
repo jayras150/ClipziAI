@@ -838,10 +838,26 @@ async def push_thumbnail_to_youtube(
     )
     if isinstance(result, dict) and not result.get("ok", True):
         detail = str(result.get("error") or "YouTube rejected the thumbnail.")
+        code = str(result.get("code") or "")
         factors = dict(clip.viral_factors or {})
         factors["youtube_thumbnail_error"] = detail[:400]
+        factors["youtube_thumbnail_error_code"] = code
         clip.viral_factors = factors
         await db.commit()
+        if code == "thumbnail_permission":
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "youtube_thumbnail_forbidden",
+                    "message": (
+                        "YouTube blocked this custom thumbnail because the channel "
+                        "is not verified yet. Verify the channel with a phone number "
+                        "at youtube.com/verify, then press Set on YouTube again."
+                    ),
+                    "verify_url": "https://www.youtube.com/verify",
+                    "reason": detail[:300],
+                },
+            )
         raise HTTPException(status_code=502, detail=detail[:400])
 
     factors = dict(clip.viral_factors or {})
