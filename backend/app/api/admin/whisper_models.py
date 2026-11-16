@@ -43,6 +43,7 @@ class SourceSaveIn(BaseModel):
     values: Dict[str, Any] = {}
     auto_template: bool = True
     activate: bool = True
+    reset: bool = False
 
 
 class SourceTestIn(BaseModel):
@@ -219,7 +220,11 @@ async def save_source(
     try:
         provider = model_sources.get_provider(payload.provider)
         saved = await model_sources.save_source(
-            db, provider.id, payload.values, provider=provider
+            db,
+            provider.id,
+            payload.values,
+            provider=provider,
+            reset=payload.reset,
         )
     except model_sources.SourceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

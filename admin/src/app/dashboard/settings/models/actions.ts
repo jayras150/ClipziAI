@@ -105,6 +105,7 @@ export async function saveWhisperSource(payload: {
   values: Record<string, string>;
   auto_template?: boolean;
   activate?: boolean;
+  reset?: boolean;
 }) {
   try {
     const data = await adminFetch<Record<string, unknown>>('/api/admin/whisper-models/source', {
@@ -112,6 +113,7 @@ export async function saveWhisperSource(payload: {
       body: JSON.stringify({
         auto_template: true,
         activate: true,
+        reset: false,
         ...payload
       })
     });

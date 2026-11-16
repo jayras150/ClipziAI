@@ -182,6 +182,23 @@ export default function WhisperSourcePanel({ data }: { data: WhisperSourceData }
     });
   };
 
+  const runReset = () => {
+    setMessage('');
+    setError('');
+    startTransition(async () => {
+      const result = await saveWhisperSource({ provider: provider.id, values: {}, reset: true });
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
+      setValues(defaultsFor(provider));
+      setMessage(
+        `Kredensial ${provider.label} dihapus. Isi ulang App key/App secret/refresh token, lalu Simpan.`
+      );
+      router.refresh();
+    });
+  };
+
   const runNotebook = () => {
     setMessage('');
     setError('');
@@ -293,6 +310,9 @@ export default function WhisperSourcePanel({ data }: { data: WhisperSourceData }
           </Button>
           <Button variant='ghost' onClick={runNotebook} disabled={pending}>
             Unduh notebook Colab
+          </Button>
+          <Button variant='destructive' onClick={runReset} disabled={pending}>
+            Hapus kredensial
           </Button>
         </div>
 

@@ -144,6 +144,7 @@ def _read_manifest() -> Tuple[Dict[str, Provider], List[str]]:
                     "required": bool(item.get("required", False)),
                     "default": str(item.get("default") or ""),
                     "help": str(item.get("help") or ""),
+                    "max_length": int(item.get("max_length") or (512 if item.get("type") == "secret" else 400)),
                 }
             )
         if not fields:
@@ -290,19 +291,45 @@ async def save_source(
     values: Dict[str, Any],
     *,
     provider: Optional[Provider] = None,
+    reset: bool = False,
 ) -> Dict[str, Any]:
-    """Simpan kredensial provider aktif. Secret kosong = pertahankan nilai lama."""
+    """Simpan kredensial provider aktif. Secret kosong = pertahankan nilai lama.
+
+    `reset=True` menghapus nilai tersimpan (dipakai saat admin salah menempel
+    lalu ingin mengisi ulang dari nol).
+    """
     from app.services import platform_settings as ps
 
     provider = provider or get_provider(provider_id)
     stored = await _setting(db)
     previous = stored.get("values") if isinstance(stored.get("values"), dict) else {}
     incoming = values if isinstance(values, dict) else {}
+    if reset and not any(str(value or "").strip() for value in incoming.values()):
+        await ps.set_setting(
+            db,
+            SETTING_KEY,
+            {
+                "provider": provider.id,
+                "values": {},
+                "updated_at": __import__("datetime").datetime.utcnow().isoformat(),
+            },
+        )
+        await db.commit()
+        return await get_source(db)
+    if reset:
+        previous = {}
     saved: Dict[str, str] = {}
     for item in provider.fields:
         name = item["name"]
         raw = incoming.get(name)
         text = str(raw).strip() if raw is not None else ""
+        limit = int(item.get("max_length") or 0)
+        if text and limit and len(text) > limit:
+            raise SourceError(
+                f"{provider.label}: '{item['label']}' terlalu panjang "
+                f"({len(text)} karakter, maks {limit}). Kemungkinan Anda menempel "
+                "nilai yang salah (token/JSON) — ambil ulang dari dashboard provider."
+            )
         if item.get("type") == "secret":
             if text:
                 saved[name] = encrypt_field(text)
@@ -578,7 +605,20 @@ class DropboxAdapter(BaseAdapter):
         try:
             await asyncio.to_thread(self._client().users_get_current_account)
         except Exception as exc:  # noqa: BLE001
-            raise SourceError(f"Dropbox menolak kredensial: {str(exc)[:300]}") from exc
+            message = str(exc)
+            if "invalid_client" in message:
+                raise SourceError(
+                    "Dropbox menolak App key/App secret (invalid_client). "
+                    "App secret normalnya hanya puluhan karakter — jangan tempel "
+                    "refresh token/JSON di kolom App secret. Ambil ulang di "
+                    "App Console → Settings → App secret (klik Show), lalu Simpan."
+                ) from exc
+            if "invalid_grant" in message:
+                raise SourceError(
+                    "Refresh token Dropbox tidak valid/expired. Jalankan ulang "
+                    "notebook Colab (cell otorisasi) untuk membuat refresh token baru."
+                ) from exc
+            raise SourceError(f"Dropbox menolak kredensial: {message[:300]}") from exc
         return await super().test()
 
 
@@ -809,8 +849,15 @@ async def test_source(
         for field in provider.fields:
             name = field["name"]
             text = str(values.get(name) or "").strip()
-            if text:
-                stored[name] = text
+            if not text:
+                continue
+            limit = int(field.get("max_length") or 0)
+            if limit and len(text) > limit:
+                raise SourceError(
+                    f"{provider.label}: '{field['label']}' terlalu panjang "
+                    f"({len(text)} karakter, maks {limit}). Salin ulang nilainya."
+                )
+            stored[name] = text
     adapter = build_adapter(provider, stored)
     result = await adapter.test()
     result.update({"provider": provider.id, "label": provider.label})

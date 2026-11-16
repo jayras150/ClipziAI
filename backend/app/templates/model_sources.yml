@@ -65,14 +65,20 @@ providers:
         label: App key
         type: text
         required: true
+        max_length: 64
+        help: 'App key Dropbox ±15 karakter (App Console → Settings)'
       - name: app_secret
         label: App secret
         type: secret
         required: true
+        max_length: 128
+        help: 'Klik Show di App Console → Settings. App secret HANYA puluhan karakter, bukan token/JSON.'
       - name: refresh_token
         label: Refresh token
         type: secret
         required: true
+        max_length: 512
+        help: 'Didapat dari notebook Colab (DropboxOAuth2FlowNoRedirect), bukan App secret.'
       - name: root
         label: Folder root
         type: text
