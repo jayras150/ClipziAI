@@ -231,6 +231,7 @@ async def get_user_detail(user_id: UUID, db: AsyncSession = Depends(get_db_sessi
         "is_banned": user.is_banned,
         "ban_reason": user.ban_reason,
         "email_verified": user.email_verified,
+        "is_admin": is_admin_email(user.email),
         "two_factor_enabled": user.two_factor_enabled,
         "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
         "last_login_ip": user.last_login_ip,
