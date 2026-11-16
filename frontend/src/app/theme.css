@@ -2801,8 +2801,9 @@ html, body { max-width: 100%; overflow-x: clip; }
 
 /* ===== Clip Studio modal (aman untuk mobile) ===== */
 .clip-modal{width:min(100%,980px);max-height:92vh;overflow-y:auto;padding:14px}
-.clip-modal-body{display:block}
-.clip-modal-media{display:block}
+.clip-modal-body{display:grid;grid-template-columns:minmax(260px,1fr) minmax(0,1.1fr);gap:16px;align-items:start}
+.clip-modal-media{display:grid;gap:10px;min-width:0}
+@media (max-width:900px){.clip-modal-body{display:block}.clip-modal-media{display:block}}
 .clip-modal-head{flex-wrap:wrap;row-gap:8px}
 .cs-head{align-items:center}
 .cs-head-left{display:flex;align-items:center;gap:10px;min-width:0;flex:1 1 auto}
