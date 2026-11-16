@@ -861,10 +861,8 @@ async def upsert_worker_template(
         )
 
     existing = await _find_template(resolved_name)
-    action = "updated" if existing else "created"
     template_hash = _template_hash(existing) or str(known_hash or "").strip()
-    if template_hash:
-        action = "updated"
+    action = "updated" if template_hash else "created"
     template_id = None
     if isinstance(existing, dict):
         for key in ("id", "template_id"):
@@ -885,12 +883,24 @@ async def upsert_worker_template(
                 desc=PROVIDER_TEMPLATE_DESC,
                 public=bool(public),
             )
-        except Exception as exc:  # noqa: BLE001 - Vast membalas HTTPError
-            raise RuntimeError(vast_error_message(exc)) from exc
-        template_hash = _template_hash(updated) or template_hash
-        template_id = _template_id_from(updated) or template_id
-    else:
-        action = "created"
+            template_hash = _template_hash(updated) or template_hash
+            template_id = _template_id_from(updated) or template_id
+        except Exception as exc:  # noqa: BLE001 - hash lama bisa sudah dihapus
+            reason = vast_error_message(exc)
+            logger.warning(
+                "Template %s tidak bisa diperbarui (%s); dibuat ulang.",
+                resolved_name,
+                reason[:200],
+            )
+            warnings.append(
+                "Template lama tidak ditemukan/tidak bisa diperbarui "
+                f"({reason[:160]}); template dibuat ulang dengan nama yang sama."
+            )
+            template_hash = ""
+            template_id = None
+            action = "recreated"
+
+    if not template_hash:
         try:
             created = await asyncio.to_thread(
                 client.create_template,

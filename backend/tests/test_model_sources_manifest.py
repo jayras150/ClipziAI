@@ -159,3 +159,32 @@ def test_upsert_template_create_lalu_update(monkeypatch):
     for _, kwargs in fake.calls:
         assert "CLIPZI_TASK_ID" not in (kwargs.get("env") or "")
         assert kwargs["name"] == "Clipzy Dropbox"
+
+class _FakeVastUpdateFails(_FakeVast):
+    def update_template(self, hash_id=None, **kwargs):
+        self.calls.append(("update", kwargs))
+        raise RuntimeError("No template found with hash_id 6561a8bf251968240bb4e867164da11a")
+
+
+def test_upsert_template_buat_baru_saat_hash_hilang(monkeypatch):
+    from app.core.config import get_settings
+    from app.services import vast_admin
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "VAST_WORKER_IMAGE", "sujinwo555/clipzi-backend:worker", raising=False)
+    monkeypatch.setattr(settings, "VAST_WORKER_DISK", 40, raising=False)
+    fake = _FakeVastUpdateFails()
+    monkeypatch.setattr(vast_admin, "_client", lambda: fake)
+
+    result = asyncio.run(
+        vast_admin.upsert_worker_template(
+            "Clipzy Dropbox",
+            {"CLIPZI_MODEL_SOURCE": "dropbox"},
+            known_hash="6561a8bf251968240bb4e867164da11a",
+        )
+    )
+    assert result["action"] == "recreated"
+    assert result["ok"] is True
+    assert result["template_hash"] == "hash-new"
+    assert [name for name, _ in fake.calls] == ["update", "create"]
+    assert any("dibuat ulang" in warning for warning in result["warnings"])
