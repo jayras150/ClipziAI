@@ -337,6 +337,7 @@ WORKER_ENV_OPTIONAL = (
 
 
 WORKER_ENV_MAX_CHARS = 3600
+WORKER_ENV_HARD_LIMIT = 3900
 
 
 def _pack_worker_env(env: Dict[str, str]) -> Dict[str, str]:
@@ -357,7 +358,10 @@ def _pack_worker_env(env: Dict[str, str]) -> Dict[str, str]:
         import base64
         import gzip
 
-        packed = base64.b64encode(gzip.compress(cookies.encode("utf-8"), 9)).decode("ascii")
+        # Kompres ISI cookies (bukan string base64-nya) supaya hasilnya jauh
+        # lebih kecil; worker melakukan kebalikannya.
+        raw = base64.b64decode(cookies.encode("ascii"), validate=False)
+        packed = base64.b64encode(gzip.compress(raw, 9)).decode("ascii")
     except Exception as exc:  # noqa: BLE001
         logger.warning("Gagal mengompres cookies worker: %s", exc)
         return env
@@ -369,6 +373,17 @@ def _pack_worker_env(env: Dict[str, str]) -> Dict[str, str]:
             len(cookies),
             len(packed),
             sum(len(str(key)) + len(str(value)) for key, value in env.items()),
+        )
+    # Batas keras Vast ±4096 karakter untuk seluruh env.
+    total = sum(len(str(key)) + len(str(value)) for key, value in env.items())
+    if total > WORKER_ENV_HARD_LIMIT:
+        env.pop("YTDLP_COOKIES_GZIP_B64", None)
+        env.pop("YTDLP_COOKIES_BASE64", None)
+        env["YTDLP_COOKIES_MISSING"] = "1"
+        logger.warning(
+            "Env worker tetap %s karakter setelah dipadatkan; cookies dihapus agar "
+            "instance tetap bisa dibuat",
+            total,
         )
     return env
 

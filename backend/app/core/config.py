@@ -332,9 +332,10 @@ def get_settings() -> Settings:
             import base64
             import gzip
 
-            settings.YTDLP_COOKIES_BASE64 = gzip.decompress(
-                base64.b64decode(packed.encode("ascii"))
-            ).decode("utf-8")
+            # Cookies dikirim sebagai base64(gzip(isi cookies)); kembalikan
+            # ke base64 isi cookies seperti yang dibaca downloader.
+            unpacked = gzip.decompress(base64.b64decode(packed.encode("ascii")))
+            settings.YTDLP_COOKIES_BASE64 = base64.b64encode(unpacked).decode("ascii")
         except Exception:  # noqa: BLE001 - cookies rusak ≠ app gagal start
             pass
     return settings
