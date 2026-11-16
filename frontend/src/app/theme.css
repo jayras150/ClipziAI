@@ -2985,3 +2985,27 @@ html, body { max-width: 100%; overflow-x: clip; }
 .cs-live-thumb img{width:96px;height:54px;object-fit:cover;border-radius:8px;border:1px solid rgba(255,255,255,.15)}
 .cs-live-thumb span{font-family:var(--ui-mono);font-size:10px;color:#fcd34d}
 .cs-film{touch-action:none;cursor:ew-resize}
+
+
+/* FIX tumpang tindih tombol & kartu caption */
+.clip-modal-body{grid-template-columns:minmax(320px,440px) minmax(0,1fr) !important}
+.clip-modal-thumbs-head{display:flex !important;flex-wrap:wrap !important;gap:8px !important;align-items:center !important}
+.clip-modal-thumbs-head .clip-modal-label{flex:1 1 100%;margin:0 !important}
+.clip-modal-thumbs-head .ui-btn{flex:0 0 auto;margin-left:auto}
+.cs-capture-row{display:flex !important;flex-wrap:wrap !important;gap:8px !important;align-items:center !important}
+.cs-capture-row .cs-ms{flex:1 1 100%}
+.cs-capture-row .cs-btn{flex:1 1 150px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-flex;align-items:center;justify-content:center}
+.cs-capture-row .cs-btn-play,.cs-capture-row .cs-btn-danger{flex:1 1 150px}
+/* kartu caption: muat 5, teks tidak meluber */
+.thcap-card{flex:0 0 68px !important;min-height:78px;padding:5px !important;gap:4px}
+.thcap-label{font-size:6.8px !important;letter-spacing:0 !important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.thcap-preview{height:40px !important;padding:2px !important;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.thcap-preview > span{transform:scale(.6);transform-origin:center center;display:inline-block;max-width:100%;white-space:nowrap;line-height:1.1}
+.thcap-track{gap:6px !important;scroll-snap-type:x proximity}
+.thcap-nav{width:22px !important;height:22px !important;flex:0 0 22px}
+@media (max-width:560px){
+  .clip-modal-body{display:block !important}
+  .thcap-card{flex:0 0 62px !important;min-height:72px}
+  .thcap-preview{height:36px !important}
+  .cs-capture-row .cs-btn{flex:1 1 100%}
+}
