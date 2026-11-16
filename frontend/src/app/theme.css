@@ -2873,3 +2873,12 @@ html, body { max-width: 100%; overflow-x: clip; }
 .thcap-nav{flex:0 0 auto;width:26px;height:26px;border-radius:50%;border:1px solid rgba(255,255,255,.15);background:#181c26;color:#cbd5e1;cursor:pointer;font-size:13px;line-height:1}
 .thcap-nav:hover{color:#fff;border-color:#d4af37}
 @media (max-width:560px){.cs-cell{flex:0 0 64px;min-width:64px}.thcap-card{flex:0 0 104px;min-height:78px}}
+
+
+/* Stage video stabil: tidak memakai aspect-ratio 9/16 lama */
+.clip-media-stage{position:relative;width:100%;overflow:hidden;border-radius:16px;border:1px solid var(--ui-line);background:#05070b}
+.clip-media-stage .clip-modal-video{width:100%;height:auto;max-height:min(56vh,480px);aspect-ratio:auto;min-height:0;object-fit:contain;border:0;border-radius:0;display:block}
+.clip-video-fallback{display:flex;align-items:center;justify-content:center;min-height:200px;background-size:cover;background-position:center;color:#cbd5e1;font-size:12px;text-align:center;padding:14px}
+.clip-frame-picker{margin-top:8px}
+.clip-frame-picker .cs-film{height:44px}
+@media (max-width:560px){.clip-media-stage .clip-modal-video{max-height:38vh}.clip-frame-picker .cs-film{height:38px}}
