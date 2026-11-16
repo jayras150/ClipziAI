@@ -336,6 +336,43 @@ WORKER_ENV_OPTIONAL = (
 )
 
 
+WORKER_ENV_MAX_CHARS = 3600
+
+
+def _pack_worker_env(env: Dict[str, str]) -> Dict[str, str]:
+    """Jaga total env di bawah batas Vast (~4 KB).
+
+    Cookies YouTube (base64) biasanya > 4 KB sehingga seluruh request create
+    instance ditolak `400 invalid_args` (pesannya menyesatkan: "invalid template
+    hash"). Kalau total env terlalu besar, cookies dikirim dalam bentuk
+    gzip+base64 (jauh lebih kecil) dan worker meng-expand saat start.
+    """
+    cookies = env.get("YTDLP_COOKIES_BASE64")
+    if not cookies:
+        return env
+    total = sum(len(str(key)) + len(str(value)) for key, value in env.items())
+    if total <= WORKER_ENV_MAX_CHARS:
+        return env
+    try:
+        import base64
+        import gzip
+
+        packed = base64.b64encode(gzip.compress(cookies.encode("utf-8"), 9)).decode("ascii")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Gagal mengompres cookies worker: %s", exc)
+        return env
+    if len(packed) < len(cookies):
+        env.pop("YTDLP_COOKIES_BASE64", None)
+        env["YTDLP_COOKIES_GZIP_B64"] = packed
+        logger.info(
+            "Env worker dipadatkan: cookies %s -> %s karakter (total ~%s)",
+            len(cookies),
+            len(packed),
+            sum(len(str(key)) + len(str(value)) for key, value in env.items()),
+        )
+    return env
+
+
 def build_worker_env(task_id: Optional[UUID] = None) -> Dict[str, str]:
     """Env yang dibutuhkan instance worker — SATU sumber untuk dispatch & export admin."""
     env: Dict[str, str] = {"CLIPZI_ROLE": "worker"}
@@ -360,7 +397,7 @@ def build_worker_env(task_id: Optional[UUID] = None) -> Dict[str, str]:
                 env[key] = str(value)
     except Exception:  # noqa: BLE001 - jangan gagalkan dispatch
         pass
-    return env
+    return _pack_worker_env(env)
 
 
 def pick_connection_id(

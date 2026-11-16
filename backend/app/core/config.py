@@ -164,6 +164,10 @@ class Settings(BaseSettings):
     # Kosong = download tanpa cookies (cukup untuk video publik dari IP residensial).
     YTDLP_COOKIES_FILE: Optional[str] = None
     YTDLP_COOKIES_BASE64: Optional[str] = None
+    # Versi terkompresi (gzip+base64) untuk dikirim ke worker GPU: Vast membatasi
+    # total env ±4 KB, sedangkan cookies bisa >4 KB. Worker meng-expand otomatis
+    # saat start (lihat get_settings()).
+    YTDLP_COOKIES_GZIP_B64: Optional[str] = None
     # Lokasi hasil decode base64 (dibuat otomatis saat runtime).
     YTDLP_COOKIES_CACHE_PATH: Optional[str] = None
     # Proxy opsional untuk melewati blokir IP datacenter, mis. http://user:pass@host:port
@@ -318,4 +322,19 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     # Nilai wajib dibaca dari environment/.env saat runtime, sehingga Pylance
     # tidak bisa memverifikasi argumen konstruktor di sini.
-    return Settings()  # type: ignore[call-arg]
+    settings = Settings()  # type: ignore[call-arg]
+    # Worker GPU menerima cookies dalam bentuk terkompresi (Vast membatasi total
+    # env ±4 KB). Di sini isinya di-expand kembali supaya seluruh kode yang
+    # membaca `YTDLP_COOKIES_BASE64` tetap bekerja tanpa perubahan.
+    packed = getattr(settings, "YTDLP_COOKIES_GZIP_B64", None)
+    if packed and not settings.YTDLP_COOKIES_BASE64:
+        try:
+            import base64
+            import gzip
+
+            settings.YTDLP_COOKIES_BASE64 = gzip.decompress(
+                base64.b64decode(packed.encode("ascii"))
+            ).decode("utf-8")
+        except Exception:  # noqa: BLE001 - cookies rusak ≠ app gagal start
+            pass
+    return settings
