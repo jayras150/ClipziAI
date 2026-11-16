@@ -681,8 +681,11 @@ def _make_create_instance(task_id: UUID, client: Any):
 
         # Ask Vast cepat hilang (diambil mesin lain). Kalau itu terjadi, ambil
         # offer baru dan coba lagi — jangan langsung menggagalkan task.
+        # Template hash yang tersimpan bisa sudah tidak valid/terhapus; dalam
+        # kasus itu dispatch jatuh ke mode image (kalau VAST_WORKER_IMAGE ada).
         last_error = ""
         current = selected
+        use_template = bool(template_hash)
         for attempt in range(1, 4):
             current_id = current.get("id")
             if not current_id:
@@ -696,10 +699,20 @@ def _make_create_instance(task_id: UUID, client: Any):
                     label=f"clipzi-{str(task_id)[:8]}",
                     onstart=_oneshot_onstart(task_id),
                     image=image,
-                    template_hash=template_hash,
+                    template_hash=template_hash if use_template else "",
                 )
             except Exception as exc:  # noqa: BLE001 - klasifikasikan lalu retry
                 text = _vast_error_text(exc)
+                lowered = text.lower()
+                if use_template and "template" in lowered and image:
+                    logger.warning(
+                        "Template Vast tidak valid (%s); beralih ke image %s",
+                        text[:160],
+                        image,
+                    )
+                    use_template = False
+                    last_error = text
+                    continue
                 if _stale_offer_error(text):
                     note = " (ask sudah tidak tersedia di Vast)" if _ask_missing(current_id) else ""
                     last_error = f"{text}{note}"
