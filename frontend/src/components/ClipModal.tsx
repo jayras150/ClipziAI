@@ -94,6 +94,10 @@ export default function ClipModal({
   const [filmstrip, setFilmstrip] = useState<{ at_second: number; url: string }[]>([])
   const [ytThumbBusy, setYtThumbBusy] = useState(false)
   const [successOpen, setSuccessOpen] = useState(false)
+  const [liveThumb, setLiveThumb] = useState("")
+  const [posOpen, setPosOpen] = useState(false)
+  const stripRef = useRef<HTMLDivElement | null>(null)
+  const draggingRef = useRef(false)
   const [thumbBusy, setThumbBusy] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [editBusy, setEditBusy] = useState(false)
@@ -414,6 +418,15 @@ export default function ClipModal({
     setCurrentTime(video.currentTime)
   }
 
+  const seekFromPointer = (clientX: number) => {
+    const strip = stripRef.current
+    if (!strip) return
+    const rect = strip.getBoundingClientRect()
+    if (!rect.width) return
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+    seekTo(ratio * (videoDuration || clip?.duration || 1))
+  }
+
   const applyCaption = async () => {
     if (!clipId) return
     setCapBusy(true)
@@ -426,8 +439,18 @@ export default function ClipModal({
         position: capPosition,
         at_second: currentTime > 0 ? currentTime : undefined,
       })
+      setLiveThumb(result.thumbnail_url)
       onUpdated(clipId, { thumbnail_url: result.thumbnail_url })
-      setNotice(`Thumbnail caption applied (${result.style}, ${result.position}).`)
+      if (clip?.youtube_video_id) {
+        try {
+          await api.pushThumbnailToYouTube(token, clipId)
+          setNotice("Thumbnail applied and synced to YouTube automatically.")
+        } catch {
+          setNotice("Thumbnail applied. YouTube sync failed - press Set on YouTube.")
+        }
+      } else {
+        setNotice(`Thumbnail applied (${result.style}, ${result.position}).`)
+      }
     } catch (err: any) {
       setError(readApiError(err.response?.data, "Could not render the thumbnail caption."))
     } finally {
@@ -572,7 +595,7 @@ export default function ClipModal({
                   ref={videoRef}
                   className="clip-modal-video"
                   src={clip.download_url}
-                  poster={clip.thumbnail_url || undefined}
+                  poster={liveThumb || clip.thumbnail_url || undefined}
                   controls
                   playsInline
                   preload="metadata"
@@ -603,7 +626,24 @@ export default function ClipModal({
 
             {clip.download_url ? (
               <div className="clip-frame-picker">
-                <div className="cs-film">
+                <div
+                  className="cs-film"
+                  ref={stripRef}
+                  onPointerDown={(event) => {
+                    draggingRef.current = true
+                    event.currentTarget.setPointerCapture(event.pointerId)
+                    seekFromPointer(event.clientX)
+                  }}
+                  onPointerMove={(event) => {
+                    if (draggingRef.current) seekFromPointer(event.clientX)
+                  }}
+                  onPointerUp={() => {
+                    draggingRef.current = false
+                  }}
+                  onPointerCancel={() => {
+                    draggingRef.current = false
+                  }}
+                >
                   {filmstrip.map((frame, index) => (
                     <button
                       key={`${frame.at_second}-${index}`}
@@ -648,6 +688,13 @@ export default function ClipModal({
                   </span>
                   <button
                     type="button"
+                    className="cs-btn"
+                    onClick={() => setPosOpen((open) => !open)}
+                  >
+                    Thumbnail position
+                  </button>
+                  <button
+                    type="button"
                     className="cs-btn cs-btn-play"
                     onClick={() => void applyCaption()}
                     disabled={busy || capBusy}
@@ -657,7 +704,7 @@ export default function ClipModal({
                   {clip.youtube_video_id ? (
                     <button
                       type="button"
-                      className="cs-btn"
+                      className="cs-btn cs-btn-danger"
                       onClick={() => void pushThumbnailToYouTube()}
                       disabled={ytThumbBusy}
                     >
@@ -665,6 +712,28 @@ export default function ClipModal({
                     </button>
                   ) : null}
                 </div>
+                {posOpen ? (
+                  <div className="cs-pos-panel">
+                    {THUMBNAIL_CAPTION_ANCHORS.map((anchor) => (
+                      <button
+                        key={`pos-${anchor}`}
+                        type="button"
+                        className={capPosition === anchor ? "active" : ""}
+                        onClick={() => setCapPosition(anchor)}
+                        title={anchor}
+                      >
+                        {anchor.split("-").map((part) => part[0].toUpperCase()).join("")}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                {liveThumb ? (
+                  <div className="cs-live-thumb">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={liveThumb} alt="Current thumbnail preview" />
+                    <span>Live thumbnail</span>
+                  </div>
+                ) : null}
               </div>
             ) : null}
 
@@ -1085,6 +1154,8 @@ export default function ClipModal({
                 </button>
               )}
 
+              {uploadUrl && !uploading ? <YouTubeOpenCard href={uploadUrl} /> : null}
+
               {!uploading && youtubeConnected && (
                 <button
                   type="button"
@@ -1095,8 +1166,6 @@ export default function ClipModal({
                   Reconnect YouTube (fixes expired access)
                 </button>
               )}
-
-              {uploadUrl && !uploading ? <YouTubeOpenCard href={uploadUrl} /> : null}
             </div>
 
             {error && <p className="clip-modal-error">{error}</p>}

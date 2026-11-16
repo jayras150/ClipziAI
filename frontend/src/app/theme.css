@@ -2960,3 +2960,28 @@ html, body { max-width: 100%; overflow-x: clip; }
 .thcap-track{gap:6px !important}
 .thcap-nav{width:22px !important;height:22px !important;font-size:12px !important}
 @media (max-width:560px){.thcap-card{flex:0 0 58px !important}}
+
+
+/* Tombol & posisi studio: ukuran seragam + jarak nyaman */
+.clip-modal-youtube > * + *{margin-top:12px}
+.clip-modal-actions{gap:10px !important}
+.cs-capture-row{gap:10px !important;margin-top:12px !important}
+.cs-capture-row .cs-btn{min-height:34px;padding:7px 12px}
+.cs-btn-danger{background:linear-gradient(135deg,#ef4444,#b91c1c) !important;border-color:rgba(255,120,120,.45) !important;color:#fff !important}
+.cs-btn-danger:hover{background:linear-gradient(135deg,#f87171,#dc2626) !important}
+/* Kartu Open Video: ukuran sama seperti tombol upload */
+.clip-modal-youtube .yt-action-card{max-width:100% !important;border-radius:14px;padding:1px;margin-top:12px}
+.clip-modal-youtube .yt-action-inner{padding:0;border-radius:13px}
+.clip-modal-youtube .yt-open-btn{padding:11px 14px;border-radius:12px;box-shadow:0 6px 18px -6px rgba(255,0,51,.5)}
+.clip-modal-youtube .yt-play-badge{width:30px;height:30px;border-radius:9px}
+.clip-modal-youtube .yt-play-icon{width:15px;height:15px}
+.clip-modal-youtube .yt-btn-text{font-size:13.5px}
+.clip-modal-youtube .yt-arrow-box{width:26px;height:26px;border-radius:8px}
+/* Panel posisi & live thumbnail */
+.cs-pos-panel{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:4px;margin-top:8px}
+.cs-pos-panel button{height:26px;border-radius:6px;border:1px solid rgba(255,255,255,.14);background:#141923;color:#cbd5e1;font-size:9px;cursor:pointer}
+.cs-pos-panel button.active{background:rgba(251,191,36,.2);border-color:#fbbf24;color:#fde68a}
+.cs-live-thumb{display:flex;align-items:center;gap:8px;margin-top:10px}
+.cs-live-thumb img{width:96px;height:54px;object-fit:cover;border-radius:8px;border:1px solid rgba(255,255,255,.15)}
+.cs-live-thumb span{font-family:var(--ui-mono);font-size:10px;color:#fcd34d}
+.cs-film{touch-action:none;cursor:ew-resize}
