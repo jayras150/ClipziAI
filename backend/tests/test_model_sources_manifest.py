@@ -227,3 +227,43 @@ def test_onstart_memilih_folder_writable():
     assert "MODEL_DIR=\"/app/whisper_model\"" in text
     assert "tidak writable" in text
     assert 'download_model_url "${CLIPZI_MODEL_URL}" "${MODEL_DIR}"' in text
+
+
+def test_refresh_model_url_membuat_tautan_baru(monkeypatch):
+    from app.services import platform_settings as ps
+
+    store = {
+        "whisper_restore": {
+            "provider": "dropbox",
+            "remote_path": "/Clipzy/whisper_models/large-v3",
+            "env": {
+                "CLIPZI_MODEL_URL": "https://old.example/model.bin",
+                "CLIPZI_MODEL_SOURCE": "dropbox",
+            },
+        }
+    }
+
+    async def fake_get(db, key, default=None):
+        return store.get(key, default)
+
+    async def fake_set(db, key, value):
+        store[key] = value
+
+    class _DB:
+        async def commit(self):
+            return None
+
+    async def fake_adapter(db, provider_id=None):
+        class _Adapter:
+            async def model_url(self, path):
+                return "https://fresh.example/model.bin"
+
+        return _Adapter()
+
+    monkeypatch.setattr(ps, "get_setting", fake_get)
+    monkeypatch.setattr(ps, "set_setting", fake_set)
+    monkeypatch.setattr(model_sources, "adapter_for", fake_adapter)
+
+    env = asyncio.run(model_sources.refresh_model_url(_DB()))
+    assert env["CLIPZI_MODEL_URL"] == "https://fresh.example/model.bin"
+    assert store["whisper_restore"]["env"]["CLIPZI_MODEL_URL"].endswith("fresh.example/model.bin")

@@ -12,6 +12,7 @@ import SiteFooter from "@/components/SiteFooter"
 import { api, UserProfileData, YouTubeDiagnostics } from "@/lib/api"
 import { readApiError } from "@/lib/api-errors"
 import { requestYouTubeAccessToken } from "@/lib/social"
+import { getAccessToken, hasSession } from "@/lib/auth"
 
 const LANGUAGES = [
   { value: "en", label: "English" },
@@ -67,13 +68,15 @@ export default function ProfilePage() {
   }, [])
 
   useEffect(() => {
-    const stored = typeof window === "undefined" ? null : localStorage.getItem("token")
-    if (!stored) {
-      window.location.href = "/login"
+    if (typeof window === "undefined") return
+    // Sesi sekarang cookie HttpOnly (flag clipzy_session), bukan localStorage.
+    if (!hasSession()) {
+      window.location.href = "/login?next=%2Fprofile"
       return
     }
-    setToken(stored)
-    load(stored).finally(() => setLoading(false))
+    const sessionToken = getAccessToken() ?? ""
+    setToken(sessionToken)
+    load(sessionToken).finally(() => setLoading(false))
   }, [load])
 
   const flash = (message: string) => {
@@ -277,7 +280,7 @@ export default function ProfilePage() {
             alignItems: "start",
           }}
         >
-          {/* ---------- Profil ---------- */}
+          {/* ---------- Profile ---------- */}
           <form onSubmit={saveProfile} className="ui-card" style={{ display: "grid", gap: 16 }}>
             <h2 className="ui-subtitle">Profile settings</h2>
 
@@ -352,7 +355,7 @@ export default function ProfilePage() {
             </button>
           </form>
 
-          {/* ---------- Paket & kredit ---------- */}
+          {/* ---------- Plan & credits ---------- */}
           <div className="ui-card" style={{ display: "grid", gap: 14 }}>
             <h2 className="ui-subtitle">Plan &amp; credits</h2>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
@@ -378,7 +381,7 @@ export default function ProfilePage() {
             </Link>
           </div>
 
-          {/* ---------- Akun terhubung ---------- */}
+          {/* ---------- Connected accounts ---------- */}
           <div className="ui-card" style={{ display: "grid", gap: 14 }}>
             <h2 className="ui-subtitle">Connected accounts</h2>
             <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>

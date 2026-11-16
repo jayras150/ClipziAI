@@ -514,6 +514,15 @@ def _make_create_instance(task_id: UUID, client: Any):
         if not offer_id:
             raise RuntimeError(f"offer tidak punya id: {selected}")
 
+        # Segarkan tautan model (Dropbox/S3/B2 expire) sebelum dispatch.
+        try:
+            from app.db.session import AsyncSessionLocal
+            from app.services import model_sources
+
+            async with AsyncSessionLocal() as _db:
+                await model_sources.refresh_model_url(_db)
+        except Exception as exc:  # noqa: BLE001 - jangan gagalkan dispatch
+            logger.warning("Gagal menyegarkan URL model: %s", exc)
         worker_env = build_worker_env(task_id)
 
         kwargs: Dict[str, Any] = {

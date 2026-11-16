@@ -981,7 +981,10 @@ async def restore_plan(
 
 
 async def save_restore_env(
-    db: AsyncSession, provider_id: str, env: Dict[str, str]
+    db: AsyncSession,
+    provider_id: str,
+    env: Dict[str, str],
+    remote_path: str = "",
 ) -> Dict[str, str]:
     """Simpan env restore aktif supaya dispatch berikutnya memakainya."""
     from app.services import platform_settings as ps
@@ -992,12 +995,52 @@ async def save_restore_env(
         RESTORE_SETTING_KEY,
         {
             "provider": get_provider(provider_id).id,
+            "remote_path": str(remote_path or ""),
             "env": cleaned,
             "updated_at": __import__("datetime").datetime.utcnow().isoformat(),
         },
     )
     await db.commit()
     set_restore_env(cleaned)
+    return restore_env()
+
+
+async def refresh_model_url(db: AsyncSession) -> Dict[str, str]:
+    """Buat ulang CLIPZI_MODEL_URL dari provider aktif (link Dropbox/S3 expired).
+
+    Dipanggil tepat sebelum dispatch supaya worker selalu menerima tautan segar
+    (Dropbox temporary link hanya berlaku ~4 jam).
+    """
+    from app.services import platform_settings as ps
+
+    raw = await ps.get_setting(db, RESTORE_SETTING_KEY, {})
+    if not isinstance(raw, dict):
+        return restore_env()
+    env = dict(raw.get("env") or {})
+    provider_id = str(raw.get("provider") or "").strip()
+    remote_path = str(raw.get("remote_path") or "").strip()
+    provider = get_provider(provider_id) if provider_id else None
+    if not provider or provider.restore_mode != "url_download" or not remote_path:
+        set_restore_env(env)
+        return restore_env()
+    try:
+        adapter = await adapter_for(db, provider.id)
+        fresh = await adapter.model_url(remote_path)
+        if fresh:
+            env["CLIPZI_MODEL_URL"] = fresh
+            await ps.set_setting(
+                db,
+                RESTORE_SETTING_KEY,
+                {
+                    **raw,
+                    "env": env,
+                    "refreshed_at": __import__("datetime").datetime.utcnow().isoformat(),
+                },
+            )
+            await db.commit()
+    except Exception as exc:  # noqa: BLE001 - jangan gagalkan dispatch
+        logger.warning("Gagal menyegarkan URL model %s: %s", provider.id, exc)
+    set_restore_env(env)
     return restore_env()
 
 
@@ -1031,6 +1074,7 @@ __all__ = [
     "notebook_path",
     "providers",
     "public_view",
+    "refresh_model_url",
     "refresh_restore_env",
     "resolved_values",
     "restore_env",

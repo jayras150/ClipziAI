@@ -265,7 +265,9 @@ async def activate_model(db: AsyncSession, model_id: Any) -> WhisperModel:
     await db.flush()
 
     try:
-        await model_sources.save_restore_env(db, provider_id, plan.get("env") or {})
+        await model_sources.save_restore_env(
+            db, provider_id, plan.get("env") or {}, remote_path=row.remote_path
+        )
         config = plan.get("config") or {}
         if config:
             await vast_config.save_vast_config(db, config)

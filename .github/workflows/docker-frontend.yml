@@ -17,6 +17,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Preflight (no Indonesian UI text)
+        run: python3 scripts/check_frontend_language.py
+
       - name: Login Docker Hub
         uses: docker/login-action@v3
         with:

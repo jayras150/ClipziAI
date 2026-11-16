@@ -25,7 +25,7 @@ export function ClipzySpinner({
   size = "md",
   variant = "orbit",
   className = "",
-  label = "Memproses",
+  label = "Processing",
 }: {
   size?: Size
   variant?: Variant

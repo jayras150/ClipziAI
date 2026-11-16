@@ -236,7 +236,7 @@ export default function LandingPage() {
       <main>
         <section className="container hero hero-v2" id="home">
           <div className="studio-panel">
-            {/* Card "app window" gaya referensi: video di dalam preview card */}
+            {/* Reference-style "app window" card: video inside the preview card */}
             <div className="studio-window">
               <div className="studio-window-bar">
                 <span className="studio-dots" aria-hidden="true">

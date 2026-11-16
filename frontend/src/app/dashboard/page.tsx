@@ -1191,7 +1191,7 @@ export default function DashboardPage() {
             </section>
 
             {/* 2) Form paste link, lalu 3) opsi editing. */}
-            {/* noValidate: validasi dilakukan sendiri di submitUrl supaya pesan
+            {/* noValidate: validation lives in submitUrl so the message
                 error konsisten berbahasa Inggris (bukan tooltip bawaan browser). */}
             <form className="ui-card ui-link-card" onSubmit={submitUrl} noValidate>
               <h2 className="ui-subtitle">Paste video link</h2>
@@ -1287,7 +1287,7 @@ export default function DashboardPage() {
                     className="ui-input"
                   />
                 </div>
-                {/* Subtitle style: rail horizontal yang bisa digeser kiri/kanan. */}
+                {/* Subtitle style: horizontal rail, scrollable left/right. */}
                 <div className="ui-opt ui-opt-wide">
                   <span className="ui-opt-label">Subtitle style</span>
                   <StyleRail
@@ -1315,7 +1315,7 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Panjang klip (kanan kartu Speed). Soft target: batas akhir
-                    mengikuti akhir kalimat, jadi hasil bisa 1:03 / 1:16. */}
+                    follows the sentence end, so results can be 1:03 / 1:16. */}
                 <div className="ui-opt">
                   <label className="ui-opt-label" htmlFor="clip-length">
                     Clip length
@@ -1648,7 +1648,7 @@ export default function DashboardPage() {
                                 checked={autoZoomSplit}
                                 onChange={(e) => setAutoZoomSplit(e.target.checked)}
                               />
-                              <span>Atas/bawah jika berjauhan</span>
+                              <span>Top/bottom when far apart</span>
                             </label>
                           </div>
                         </>
@@ -1946,7 +1946,7 @@ export default function DashboardPage() {
               {activeTaskForBanner ? (
                 <div style={{ gridColumn: "1 / -1" }}>
                   <ProcessingBar
-                    title="AI sedang memproses video"
+                    title="AI is processing your video"
                     hint="Progress updates automatically. You can close this page."
                     progress={activeTaskForBanner.progress}
                   />
@@ -2131,7 +2131,7 @@ export default function DashboardPage() {
                   )
                 ) : (
                   <>
-                    {/* Editing lanjutan: gabung klip / antre unggah terpilih */}
+                    {/* Advanced editing: merge clips / queue selected uploads */}
                     {clips.length > 1 && (
                       <div className="clip-bulk-bar">
                         <span style={{ fontSize: 12, color: "var(--ui-muted)" }}>

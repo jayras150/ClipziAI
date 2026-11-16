@@ -17,6 +17,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Preflight (syntax backend)
+        run: |
+          python -m compileall -q backend/app
+
       - name: Login Docker Hub
         uses: docker/login-action@v3
         with:

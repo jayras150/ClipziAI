@@ -47,40 +47,87 @@ youtube_service = YouTubeService()
 logger = logging.getLogger(__name__)
 
 
-def _check_video_source(url: str) -> None:
-    """
-    Pastikan URL klip benar-benar berkas video sebelum dikirim ke YouTube.
+UA_HEADERS = {"User-Agent": "ClipziAI-Backend/1.0"}
 
-    Tanpa ini, kalau URL mengembalikan HTML/error, YouTube menjawab 400 dengan
-    pesan yang membingungkan ("invalid video"). Lebih baik gagal cepat dengan
-    pesan yang jelas.
+
+def _probe_media(url: str) -> tuple[int, str, int]:
+    response = requests.get(
+        url,
+        stream=True,
+        allow_redirects=True,
+        timeout=25,
+        headers={**UA_HEADERS, "Range": "bytes=0-2047"},
+    )
+    try:
+        content_type = (response.headers.get("Content-Type") or "").lower()
+        content_range = response.headers.get("Content-Range") or ""
+        total = 0
+        if "/" in content_range:
+            tail = content_range.rsplit("/", 1)[-1].strip()
+            total = int(tail) if tail.isdigit() else 0
+        if not total:
+            total = int(response.headers.get("Content-Length") or 0)
+        return response.status_code, content_type, total
+    finally:
+        response.close()
+
+
+def _fresh_storage_url(url: str) -> str:
+    try:
+        from app.services.storage_registry import get_storage
+
+        storage = get_storage()
+        key = storage.object_key_from_url(url)
+        if not key:
+            return ""
+        return storage.get_presigned_url(key, expiration=3600) or storage.get_public_url(key)
+    except Exception:  # noqa: BLE001 - self-heal bersifat opsional
+        return ""
+
+
+def _check_video_source(url: str) -> None:
+    """Pastikan URL klip benar-benar berkas video sebelum dikirim ke YouTube.
+
+    HEAD tidak dipakai: URL presigned R2 menolak HEAD (403) walau GET valid, dan
+    Cloudflare memblokir request tanpa User-Agent. Selalu GET dengan Range kecil
+    + UA, lalu fallback ke URL storage baru bila 403.
     """
     try:
-        response = requests.head(url, allow_redirects=True, timeout=20)
-        if response.status_code != 200:
-            response.close()
-            response = requests.get(
-                url, stream=True, timeout=20, headers={"Range": "bytes=0-2047"}
-            )
-        status_code = response.status_code
-        content_type = (response.headers.get("Content-Type") or "").lower()
-        content_length = int(response.headers.get("Content-Length") or 0)
-        response.close()
+        status, content_type, total = _probe_media(url)
+        if status in (401, 403):
+            fresh = _fresh_storage_url(url)
+            if fresh and fresh != url:
+                status, content_type, total = _probe_media(fresh)
     except requests.RequestException as exc:
         raise HTTPException(
             status_code=502, detail=f"Could not reach the clip file: {str(exc)[:200]}"
         ) from exc
 
-    if status_code not in (200, 206):
+    if status not in (200, 206):
         raise HTTPException(
             status_code=400,
-            detail=f"Clip file is not available (HTTP {status_code}). Re-render the clip and try again.",
+            detail=(
+                f"Clip file is not available (HTTP {status}). "
+                "Re-render the clip and try again."
+            ),
         )
-    if not content_type.startswith("video/") or (content_length and content_length < 10_000):
+    playable = content_type.startswith("video/") or content_type.startswith(
+        "application/octet-stream"
+    )
+    if not playable:
         raise HTTPException(
             status_code=400,
-            detail="Clip file is not a valid video (wrong content type or too small).",
+            detail=(
+                "Clip file is not a valid video "
+                f"(content-type '{content_type or 'unknown'}'). Re-render the clip."
+            ),
         )
+    if total and total < 10_000:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Clip file is too small ({total} bytes). Re-render the clip",
+        )
+
 
 
 # Status unggahan per klip (in-memory: API berjalan satu proses di VPS).
