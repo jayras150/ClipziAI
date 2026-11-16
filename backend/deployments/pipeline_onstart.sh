@@ -184,15 +184,25 @@ if [ -n "${CLIPZI_RESTORE_TIMEOUT:-}" ]; then
     RESTORE_PATH="${CLIPZI_RESTORE_MODEL_PATH:-/workspace/whisper_model}"
     FAST_FAIL="${CLIPZI_RESTORE_FAST_FAIL:-150}"
     MODEL_SOURCE="${CLIPZI_MODEL_SOURCE:-gdrive}"
-    if [ ! -f "${RESTORE_PATH}/model.bin" ] && [ -n "${CLIPZI_MODEL_URL:-}" ]; then
-        if download_model_url "${CLIPZI_MODEL_URL}" "${RESTORE_PATH}"; then
+    # Di Vast, /workspace dibuat root sehingga user worker tidak bisa menulis.
+    # Pilih folder yang benar-benar writable SEBELUM mengunduh model.
+    MODEL_DIR="$RESTORE_PATH"
+    if ! mkdir -p "$MODEL_DIR" 2>/dev/null || [ ! -w "$MODEL_DIR" ]; then
+        MODEL_DIR="/app/whisper_model"
+        mkdir -p "$MODEL_DIR" 2>/dev/null || true
+        log "RESTORE_PATH tidak writable; model dipakai dari $MODEL_DIR"
+    fi
+    if [ ! -f "${MODEL_DIR}/model.bin" ] && [ -n "${CLIPZI_MODEL_URL:-}" ]; then
+        if download_model_url "${CLIPZI_MODEL_URL}" "${MODEL_DIR}"; then
             MODEL_PREFETCHED=1
+            RESTORE_PATH="$MODEL_DIR"
         else
             log "PERINGATAN: unduh CLIPZI_MODEL_URL gagal; lanjut fallback"
         fi
-    elif [ ! -f "${RESTORE_PATH}/model.bin" ] && [ -n "${CLIPZI_HF_REPO:-}" ]; then
-        if download_hf_repo "${CLIPZI_HF_REPO}" "${RESTORE_PATH}"; then
+    elif [ ! -f "${MODEL_DIR}/model.bin" ] && [ -n "${CLIPZI_HF_REPO:-}" ]; then
+        if download_hf_repo "${CLIPZI_HF_REPO}" "${MODEL_DIR}"; then
             MODEL_PREFETCHED=1
+            RESTORE_PATH="$MODEL_DIR"
             MODEL_SOURCE="huggingface"
         else
             log "PERINGATAN: unduh Hugging Face gagal; lanjut fallback"

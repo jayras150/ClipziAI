@@ -188,3 +188,42 @@ def test_upsert_template_buat_baru_saat_hash_hilang(monkeypatch):
     assert result["template_hash"] == "hash-new"
     assert [name for name, _ in fake.calls] == ["update", "create"]
     assert any("dibuat ulang" in warning for warning in result["warnings"])
+
+
+def test_restore_plan_dropbox_pakai_path_writable(monkeypatch):
+    async def fake_adapter(db, provider_id=None):
+        class _Adapter:
+            async def model_url(self, path):
+                return "https://example.invalid/model.bin"
+
+        return _Adapter()
+
+    monkeypatch.setattr(model_sources, "adapter_for", fake_adapter)
+    plan = asyncio.run(
+        model_sources.restore_plan(None, "dropbox", "/Clipzy/whisper_models/large-v3")
+    )
+    assert plan["env"]["CLIPZI_MODEL_SOURCE"] == "dropbox"
+    assert plan["env"]["CLIPZI_RESTORE_MODEL_PATH"] == "/app/whisper_model"
+    assert plan["env"]["GPU_WHISPER_MODEL"] == "/app/whisper_model"
+    assert plan["config"]["restore_model_path"] == "/app/whisper_model"
+
+
+def test_manifest_env_memakai_path_writable():
+    for provider_id in ("dropbox", "backblaze", "s3", "huggingface"):
+        env = model_sources.get_provider(provider_id).env
+        assert env.get("CLIPZI_RESTORE_MODEL_PATH") == "/app/whisper_model", provider_id
+        assert env.get("GPU_WHISPER_MODEL") == "/app/whisper_model", provider_id
+
+
+def test_onstart_memilih_folder_writable():
+    from pathlib import Path
+
+    script = (
+        Path(model_sources.__file__).resolve().parents[2]
+        / "deployments"
+        / "pipeline_onstart.sh"
+    )
+    text = script.read_text(encoding="utf-8")
+    assert "MODEL_DIR=\"/app/whisper_model\"" in text
+    assert "tidak writable" in text
+    assert 'download_model_url "${CLIPZI_MODEL_URL}" "${MODEL_DIR}"' in text

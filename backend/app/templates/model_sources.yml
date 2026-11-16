@@ -60,6 +60,8 @@ providers:
       Colab untuk mengambil refresh token.
     env:
       CLIPZI_MODEL_SOURCE: dropbox
+      CLIPZI_RESTORE_MODEL_PATH: /app/whisper_model
+      GPU_WHISPER_MODEL: /app/whisper_model
     fields:
       - name: access_token
         label: Access token (sl.…)
@@ -114,6 +116,8 @@ providers:
       https://s3.us-west-004.backblazeb2.com).
     env:
       CLIPZI_MODEL_SOURCE: b2
+      CLIPZI_RESTORE_MODEL_PATH: /app/whisper_model
+      GPU_WHISPER_MODEL: /app/whisper_model
     fields:
       - name: key_id
         label: Key ID
@@ -156,6 +160,8 @@ providers:
       model CT2 (bukan repo PyTorch openai/whisper-*).
     env:
       CLIPZI_MODEL_SOURCE: huggingface
+      CLIPZI_RESTORE_MODEL_PATH: /app/whisper_model
+      GPU_WHISPER_MODEL: /app/whisper_model
     fields:
       - name: hf_token
         label: HF token
@@ -186,6 +192,8 @@ providers:
       pada bucket model. Region wajib sama dengan bucket.
     env:
       CLIPZI_MODEL_SOURCE: s3
+      CLIPZI_RESTORE_MODEL_PATH: /app/whisper_model
+      GPU_WHISPER_MODEL: /app/whisper_model
     fields:
       - name: access_key
         label: Access key ID

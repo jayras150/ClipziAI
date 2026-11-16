@@ -918,6 +918,9 @@ async def delete_remote(
 
 
 MODEL_WORKSPACE = "/workspace/whisper_model"
+# Di Vast, /workspace dibuat root -> worker (user clipzi) tidak bisa menulis.
+# Provider non-Drive mengunduh model ke path yang pasti writable.
+MODEL_WORKSPACE_WRITABLE = "/app/whisper_model"
 
 
 async def restore_plan(
@@ -943,17 +946,22 @@ async def restore_plan(
             "CLIPZI_MODEL_SOURCE": provider.id,
             "CLIPZI_MODEL_URL": url,
             "CLIPZI_RESTORE_TIMEOUT": "600",
-            "GPU_WHISPER_MODEL": MODEL_WORKSPACE,
+            "CLIPZI_RESTORE_MODEL_PATH": MODEL_WORKSPACE_WRITABLE,
+            "GPU_WHISPER_MODEL": MODEL_WORKSPACE_WRITABLE,
         }
         return {
             "mode": provider.restore_mode,
             "env": env,
-            "config": {"restore_enabled": False, "restore_model_path": MODEL_WORKSPACE},
+            "config": {
+                "restore_enabled": False,
+                "restore_model_path": MODEL_WORKSPACE_WRITABLE,
+            },
         }
     env = {
         "CLIPZI_MODEL_SOURCE": "huggingface",
         "CLIPZI_HF_REPO": remote_path,
-        "GPU_WHISPER_MODEL": remote_path,
+        "CLIPZI_RESTORE_MODEL_PATH": MODEL_WORKSPACE_WRITABLE,
+        "GPU_WHISPER_MODEL": MODEL_WORKSPACE_WRITABLE,
     }
     try:
         _, values = await resolved_values(db, provider.id)
@@ -965,7 +973,10 @@ async def restore_plan(
     return {
         "mode": provider.restore_mode,
         "env": env,
-        "config": {"restore_enabled": False, "restore_model_path": MODEL_WORKSPACE},
+        "config": {
+            "restore_enabled": False,
+            "restore_model_path": MODEL_WORKSPACE_WRITABLE,
+        },
     }
 
 
