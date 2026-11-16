@@ -84,6 +84,64 @@ def _ext_from_url(url: str, default: str = "mp4") -> str:
     return tail if tail and len(tail) <= 5 and tail.isalnum() else default
 
 
+async def _extract_clean_frames(
+    processor,
+    storage,
+    task: Task,
+    index: int,
+    video_path: str,
+    start: float,
+    duration: float,
+    work_dir: Path,
+    count: int = 12,
+) -> List[Dict[str, Any]]:
+    """Ambil frame dari video SUMBER (belum ada subtitle burn-in).
+
+    Thumbnail dari klip hasil render selalu mengandung subtitle yang dibakar.
+    Pipeline menyimpan beberapa frame bersih per klip supaya halaman thumbnail
+    bisa membuat cover tanpa teks subtitle.
+    """
+    if duration <= 0.2 or count <= 0:
+        return []
+    out_dir = work_dir / f"clean_{index:02d}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fps = max(0.05, float(count) / float(duration))
+    pattern = str(out_dir / "frame_%03d.jpg")
+    cmd = [
+        "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
+        "-ss", f"{max(0.0, start):.3f}",
+        "-i", video_path,
+        "-t", f"{duration:.3f}",
+        "-vf", f"fps={fps:.6f}",
+        "-q:v", "3",
+        pattern,
+    ]
+    loop = asyncio.get_event_loop()
+    try:
+        await loop.run_in_executor(None, processor._run_ffmpeg, cmd)
+    except Exception as exc:  # noqa: BLE001 - frame bersih bersifat opsional
+        logger.warning("Frame bersih gagal (task %s klip %s): %s", task.id, index, exc)
+        return []
+
+    files = sorted(out_dir.glob("frame_*.jpg"))
+    if not files:
+        return []
+    step = duration / max(1, len(files))
+    frames: List[Dict[str, Any]] = []
+    for offset, path in enumerate(files):
+        key = storage.generate_object_key(
+            str(task.user_id),
+            f"clean_{index:02d}_{offset:02d}.jpg",
+            folder=f"thumbs/{task.id}/clean",
+        )
+        url = storage.upload_file(str(path), key, "image/jpeg")
+        if not url:
+            continue
+        at_second = round(min(max(0.0, duration - 0.05), step * (offset + 0.5)), 2)
+        frames.append({"at_second": at_second, "url": url})
+    return frames
+
+
 async def _set_progress(db, task: Task, percent: int, stage: str | None = None) -> None:
     task.progress = max(0, min(100, int(percent)))
     await db.commit()
@@ -1219,6 +1277,25 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
                     )
                     thumbnail_url = storage.upload_file(thumb_path, thumb_key, "image/jpeg")
 
+                # Frame bersih (tanpa subtitle burn-in) untuk cover/thumbnail.
+                clean_frames: List[Dict[str, Any]] = []
+                if burn_subtitle:
+                    try:
+                        clean_frames = await _extract_clean_frames(
+                            processor,
+                            storage,
+                            task,
+                            index,
+                            video_path,
+                            start,
+                            duration,
+                            work_dir,
+                        )
+                    except Exception as exc:  # noqa: BLE001 - opsional
+                        logger.warning(
+                            "Frame bersih gagal (task %s klip %s): %s", task.id, index, exc
+                        )
+
                 # Skor viral: pakai hasil planner (hook, payoff, kohesi, batas
                 # kalimat) bila ada; kalau tidak, hitung ulang dari transkrip klip.
                 plan = planned_by_start.get(round(start, 2))
@@ -1254,6 +1331,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
                         "download_url": download_url,
                         "subtitle_url": subtitle_url,
                         "thumbnail_url": thumbnail_url,
+                        "clean_frames": clean_frames,
                         "file_size": Path(final_clip).stat().st_size,
                         "viral": viral,
                         "brand": brand_applied,
@@ -1267,6 +1345,8 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
             for index, clip in enumerate(rendered, 1):
                 meta = clip.get("meta") or {}
                 factors = dict((clip.get("viral") or {}).get("factors") or {})
+                if clip.get("clean_frames"):
+                    factors["clean_frames"] = clip["clean_frames"]
                 if meta.get("hook"):
                     factors["ai_hook"] = meta["hook"]
                 if meta.get("viral_reason"):

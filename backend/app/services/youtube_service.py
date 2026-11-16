@@ -305,16 +305,17 @@ class YouTubeService:
 
 
     @staticmethod
-    def _set_thumbnail(access_token: str, video_id: str, thumbnail_url: str) -> None:
-        """Pasang thumbnail kustom (1280x720 JPEG). Gagal hanya dicatat."""
+    def _set_thumbnail(access_token: str, video_id: str, thumbnail_url: str) -> Dict[str, Any]:
+        """Pasang thumbnail kustom (16:9 JPEG). Mengembalikan status + pesan error."""
+        result: Dict[str, Any] = {"ok": False, "error": None}
         try:
             headers = {"User-Agent": "ClipziAI-Backend/1.0"}
             image = requests.get(thumbnail_url, headers=headers, timeout=30)
             if image.status_code not in (200, 206) or not image.content:
-                logger.warning(
-                    "Thumbnail klip tidak bisa diunduh (status=%s)", image.status_code
-                )
-                return
+                message = f"Thumbnail klip tidak bisa diunduh (status={image.status_code})"
+                logger.warning(message)
+                result["error"] = message
+                return result
             payload = image.content
             try:
                 # YouTube butuh 16:9: thumbnail 9:16 dikonversi (center-crop) di sini.
@@ -334,13 +335,16 @@ class YouTubeService:
                 timeout=60,
             )
             if not response.ok:
-                logger.warning(
-                    "YouTube menolak thumbnail %s: %s",
-                    video_id,
-                    YouTubeService._google_error(response),
-                )
+                detail = YouTubeService._google_error(response)
+                logger.warning("YouTube menolak thumbnail %s: %s", video_id, detail)
+                result["error"] = detail
+                return result
+            result["ok"] = True
+            return result
         except Exception as exc:  # noqa: BLE001 - thumbnail tidak boleh menggagalkan upload
             logger.warning("Gagal memasang thumbnail %s: %s", video_id, exc)
+            result["error"] = str(exc)[:300]
+            return result
 
     @staticmethod
     def _google_error(response: requests.Response) -> str:
@@ -570,7 +574,11 @@ class YouTubeService:
             )
         report(100, content_length, content_length)
         if thumbnail_url:
-            self._set_thumbnail(access_token, str(video_id), thumbnail_url)
+            thumb_result = self._set_thumbnail(access_token, str(video_id), thumbnail_url)
+            if not thumb_result.get("ok"):
+                logger.warning(
+                    "Thumbnail otomatis gagal untuk %s: %s", video_id, thumb_result.get("error")
+                )
         return {
             "success": True,
             "video_id": video_id,

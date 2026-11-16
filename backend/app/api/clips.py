@@ -92,6 +92,16 @@ def _download_clip(url: str, target: str) -> None:
                     handle.write(chunk)
 
 
+def _download_text(url: str) -> str:
+    """Unduh berkas teks kecil (SRT klip) dan kembalikan isinya."""
+    try:
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        return response.text or ""
+    except Exception:  # noqa: BLE001 - subtitle opsional
+        return ""
+
+
 async def _transcribe_clip_url(url: str) -> str:
     """Transkripsi audio dari URL klip memakai layanan Whisper yang dikonfigurasi."""
     with tempfile.TemporaryDirectory() as work_dir:
@@ -222,10 +232,72 @@ async def _ensure_transcript(clip: Clip, db: AsyncSession) -> Tuple[str, str]:
     return text, "whisper"
 
 
+_SRT_CUE = re.compile(
+    r"(?P<start>\d{1,2}:\d{2}:\d{2}[,.]\d{1,3})\s*-->\s*(?P<end>\d{1,2}:\d{2}:\d{2}[,.]\d{1,3})"
+)
+
+
+def _srt_seconds(value: str) -> float:
+    hours, minutes, rest = value.replace(",", ".").split(":")
+    return int(hours) * 3600 + int(minutes) * 60 + float(rest)
+
+
+def subtitle_free_second(text: str, duration: float, at_second: float) -> Optional[float]:
+    """Detik terdekat dari `at_second` yang TIDAK punya subtitle terbakar.
+
+    Klip hasil render punya subtitle yang dibakar ke video. Kalau frame dari
+    video sumber tidak tersedia, ambil frame di jeda subtitle terdekat supaya
+    thumbnail bersih dari teks.
+    """
+    cues = [
+        (_srt_seconds(match.group("start")), _srt_seconds(match.group("end")))
+        for match in _SRT_CUE.finditer(text or "")
+    ]
+    if not cues or duration <= 0.4:
+        return None
+    cues.sort()
+    gaps: list[tuple[float, float]] = []
+    cursor = 0.0
+    for start, end in cues:
+        if start - cursor >= 0.35:
+            gaps.append((cursor, start))
+        cursor = max(cursor, end)
+    if duration - cursor >= 0.35:
+        gaps.append((cursor, duration))
+    if not gaps:
+        return None
+
+    def distance(gap: tuple[float, float]) -> float:
+        low, high = gap
+        if low <= at_second <= high:
+            return 0.0
+        return min(abs(low - at_second), abs(high - at_second))
+
+    low, high = min(gaps, key=distance)
+    chosen = at_second if low <= at_second <= high else (low + high) / 2
+    return round(min(max(low + 0.05, chosen), max(low + 0.05, high - 0.05)), 2)
+
+
 def _hook_of(clip: Clip) -> Optional[str]:
     factors = clip.viral_factors if isinstance(clip.viral_factors, dict) else {}
     hook = factors.get("ai_hook")
     return str(hook) if hook else None
+
+
+def _clean_candidates(frames: object, times: list[float]) -> list[ClipThumbnailCandidate]:
+    """Kandidat thumbnail dari frame bersih (tanpa subtitle burn-in)."""
+    picked: list[ClipThumbnailCandidate] = []
+    seen: set[str] = set()
+    for at_second in times:
+        found = thumbnail_render.pick_clean_frame(frames, at_second)
+        if not found:
+            continue
+        second, url = found
+        if url in seen:
+            continue
+        seen.add(url)
+        picked.append(ClipThumbnailCandidate(url=url, at_second=round(second, 2)))
+    return picked
 
 
 # Klip lama tanpa transkrip diproses di latar belakang (transkripsi bisa >100 detik,
@@ -616,14 +688,38 @@ async def apply_thumbnail_caption(
             if at_second <= 0:
                 at_second = round(max(0.5, duration * 0.45), 2)
 
-        extracted = await processor.extract_thumbnail(
-            source, frame_path, at_second=round(at_second, 2)
-        )
-        if not extracted:
-            raise HTTPException(status_code=502, detail="Could not extract a thumbnail frame.")
+        extracted = None
+        frame_bytes: Optional[bytes] = None
+        frame_source = "clip"
+        # Prioritas: frame dari video SUMBER (tanpa subtitle burn-in).
+        clean = thumbnail_render.pick_clean_frame(factors.get("clean_frames"), at_second)
+        if clean is not None:
+            clean_path = os.path.join(work_dir, "clean_frame.jpg")
+            try:
+                await asyncio.to_thread(_download_clip, clean[1], clean_path)
+                frame_bytes = Path(clean_path).read_bytes()
+                frame_source = "clean"
+            except Exception as exc:  # noqa: BLE001 - fallback ke frame klip
+                logger.warning("Frame bersih tidak bisa diunduh (%s): %s", clip.id, exc)
+                frame_bytes = None
+
+        if frame_bytes is None:
+            extract_at = at_second
+            if clip.subtitle_url:
+                subtitle_text = await asyncio.to_thread(_download_text, str(clip.subtitle_url))
+                gap = subtitle_free_second(subtitle_text, duration, at_second)
+                if gap is not None:
+                    extract_at = gap
+                    frame_source = "clip-gap"
+            extracted = await processor.extract_thumbnail(
+                source, frame_path, at_second=round(extract_at, 2)
+            )
+            if not extracted:
+                raise HTTPException(status_code=502, detail="Could not extract a thumbnail frame.")
+            frame_bytes = Path(extracted).read_bytes()
 
         rendered = thumbnail_render.render_caption_thumbnail(
-            Path(extracted).read_bytes(),
+            frame_bytes,
             payload.text or clip.title or "",
             payload.style,
             payload.position,
@@ -642,6 +738,7 @@ async def apply_thumbnail_caption(
         "position": payload.position,
         "text": payload.text,
         "at_second": at_second,
+        "frame_source": frame_source,
     }
     clip.viral_factors = factors
     clip.thumbnail_url = url
@@ -652,6 +749,7 @@ async def apply_thumbnail_caption(
         "at_second": at_second,
         "style": payload.style,
         "position": payload.position,
+        "frame_source": frame_source,
     }
 
 
@@ -735,9 +833,21 @@ async def push_thumbnail_to_youtube(
         raise HTTPException(status_code=409, detail="Connect your YouTube account first.")
     access_token = decrypt_field(credential.access_token_encrypted)
 
-    await asyncio.to_thread(
+    result = await asyncio.to_thread(
         YouTubeService._set_thumbnail, access_token, str(clip.youtube_video_id), clip.thumbnail_url
     )
+    if isinstance(result, dict) and not result.get("ok", True):
+        detail = str(result.get("error") or "YouTube rejected the thumbnail.")
+        factors = dict(clip.viral_factors or {})
+        factors["youtube_thumbnail_error"] = detail[:400]
+        clip.viral_factors = factors
+        await db.commit()
+        raise HTTPException(status_code=502, detail=detail[:400])
+
+    factors = dict(clip.viral_factors or {})
+    factors.pop("youtube_thumbnail_error", None)
+    clip.viral_factors = factors
+    await db.commit()
     return {"ok": True, "video_id": str(clip.youtube_video_id), "thumbnail_url": clip.thumbnail_url}
 
 
@@ -751,6 +861,26 @@ async def generate_clip_thumbnails(
     clip, _task = await _load_clip(db, clip_id, current_user.id)
     if not clip.download_url:
         raise HTTPException(status_code=409, detail="This clip has no video file.")
+
+    # Frame bersih (tanpa subtitle) hasil pipeline: tidak perlu unduh klip.
+    factors = dict(clip.viral_factors or {})
+    duration_hint = float(clip.duration or 1.0)
+    clean_times = [
+        round(max(0.1, duration_hint * 0.15), 2),
+        round(max(0.2, duration_hint * 0.50), 2),
+        round(max(0.3, duration_hint * 0.85), 2),
+    ]
+    clean_candidates = _clean_candidates(factors.get("clean_frames"), clean_times)
+    if clean_candidates:
+        factors["thumbnail_candidates"] = [item.model_dump() for item in clean_candidates]
+        clip.viral_factors = factors
+        await db.commit()
+        return ClipThumbnailResponse(
+            clip_id=str(clip.id),
+            candidates=clean_candidates,
+            selected_url=clip.thumbnail_url,
+            hook=_hook_of(clip),
+        )
 
     storage = get_storage()
     with tempfile.TemporaryDirectory() as work_dir:
@@ -770,10 +900,16 @@ async def generate_clip_thumbnails(
             round(max(0.2, duration * 0.50), 2),
             round(max(0.3, duration * 0.85), 2),
         ]
+        subtitle_text = (
+            await asyncio.to_thread(_download_text, str(clip.subtitle_url))
+            if clip.subtitle_url
+            else ""
+        )
         candidates: list[ClipThumbnailCandidate] = []
         for index, at_second in enumerate(times, 1):
+            chosen = subtitle_free_second(subtitle_text, duration, at_second) or at_second
             path = os.path.join(work_dir, f"candidate_{index}.jpg")
-            result = await processor.extract_thumbnail(source, path, at_second=at_second)
+            result = await processor.extract_thumbnail(source, path, at_second=round(chosen, 2))
             if not result:
                 continue
             key = storage.generate_object_key(
@@ -783,7 +919,7 @@ async def generate_clip_thumbnails(
             )
             url = storage.upload_file(result, key, "image/jpeg")
             if url:
-                candidates.append(ClipThumbnailCandidate(url=url, at_second=at_second))
+                candidates.append(ClipThumbnailCandidate(url=url, at_second=round(chosen, 2)))
 
     if not candidates:
         raise HTTPException(status_code=502, detail="No thumbnail frames could be extracted.")

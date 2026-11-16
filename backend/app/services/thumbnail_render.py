@@ -9,7 +9,7 @@ import io
 import math
 import re
 from pathlib import Path
-from typing import Iterable, List, Tuple
+from typing import Iterable, List, Optional, Tuple
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
@@ -211,6 +211,30 @@ def render_caption_thumbnail(
     return buffer.getvalue()
 
 
+def pick_clean_frame(frames: object, at_second: float) -> Optional[Tuple[float, str]]:
+    """Pilih frame bersih (tanpa subtitle) terdekat dari `at_second`.
+
+    `frames` berisi list dict `{"at_second": float, "url": str}` yang disimpan
+    pipeline di `viral_factors.clean_frames`. Kembalikan (detik, url) atau None.
+    """
+    best: Optional[Tuple[float, str]] = None
+    if not isinstance(frames, list):
+        return None
+    for item in frames:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url") or "").strip()
+        if not url:
+            continue
+        try:
+            second = float(item.get("at_second") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if best is None or abs(second - at_second) < abs(best[0] - at_second):
+            best = (second, url)
+    return best
+
+
 def to_landscape(image_bytes: bytes, size: Tuple[int, int] = (OUT_W, OUT_H)) -> bytes:
     """Konversi thumbnail apa pun ke JPEG 16:9 (center-crop, tanpa distorsi).
 
@@ -236,4 +260,11 @@ def style_options() -> List[dict]:
     ]
 
 
-__all__ = ["ANCHORS", "render_caption_thumbnail", "style_options", "target_size", "to_landscape"]
+__all__ = [
+    "ANCHORS",
+    "pick_clean_frame",
+    "render_caption_thumbnail",
+    "style_options",
+    "target_size",
+    "to_landscape",
+]

@@ -446,8 +446,9 @@ export default function ClipModal({
         try {
           await api.pushThumbnailToYouTube(token, clipId)
           setNotice("Thumbnail applied and synced to YouTube automatically.")
-        } catch {
-          setNotice("Thumbnail applied. YouTube sync failed - press Set on YouTube.")
+        } catch (err: any) {
+          const reason = readApiError(err?.response?.data, "YouTube sync failed.")
+          setNotice(`Thumbnail applied. YouTube: ${reason}`)
         }
       } else {
         setNotice(`Thumbnail applied (${result.style}, ${result.position}).`)

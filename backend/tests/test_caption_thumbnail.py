@@ -119,3 +119,76 @@ def test_set_thumbnail_youtube(monkeypatch):
     assert url.endswith("/thumbnails/set")
     assert params["videoId"] == "abc123"
     assert data == b"jpegdata"
+
+
+def test_pick_clean_frame_pilih_terdekat():
+    frames = [
+        {"at_second": 1.0, "url": "https://x/1.jpg"},
+        {"at_second": 5.0, "url": "https://x/5.jpg"},
+        {"at_second": 9.0, "url": "https://x/9.jpg"},
+    ]
+    assert thumbnail_render.pick_clean_frame(frames, 4.2) == (5.0, "https://x/5.jpg")
+    assert thumbnail_render.pick_clean_frame(frames, 8.1) == (9.0, "https://x/9.jpg")
+    assert thumbnail_render.pick_clean_frame([], 1.0) is None
+    assert thumbnail_render.pick_clean_frame(None, 1.0) is None
+    assert thumbnail_render.pick_clean_frame([{"at_second": 1}], 1.0) is None
+
+
+def test_candidate_thumbnail_pakai_frame_bersih():
+    from app.api.clips import _clean_candidates
+
+    frames = [
+        {"at_second": 3.0, "url": "https://x/a.jpg"},
+        {"at_second": 30.0, "url": "https://x/b.jpg"},
+        {"at_second": 55.0, "url": "https://x/c.jpg"},
+    ]
+    picked = _clean_candidates(frames, [9.0, 30.0, 51.0])
+    assert [item.url for item in picked] == ["https://x/a.jpg", "https://x/b.jpg", "https://x/c.jpg"]
+    assert _clean_candidates([], [1.0, 2.0, 3.0]) == []
+
+
+def test_set_thumbnail_error_dilaporkan(monkeypatch):
+    from app.services import youtube_service as ys
+
+    class _Resp:
+        status_code = 200
+        content = b"jpegdata"
+        ok = False
+        text = '{"error":{"code":403,"message":"no permission"}}'
+        headers = {"Content-Type": "application/json"}
+
+        def json(self):
+            return {"error": {"code": 403, "message": "no permission", "errors": [{"reason": "forbidden"}]}}
+
+    monkeypatch.setattr(ys.requests, "get", lambda *a, **k: _Resp())
+    monkeypatch.setattr(ys.requests, "post", lambda *a, **k: _Resp())
+    result = ys.YouTubeService._set_thumbnail("token", "abc", "https://files/x.jpg")
+    assert result["ok"] is False
+    assert "no permission" in str(result["error"])
+
+
+_SRT_CONTOH = """1
+00:00:00,000 --> 00:00:02,000
+Halo semua
+
+2
+00:00:04,000 --> 00:00:10,000
+Ini klip viral
+"""
+
+
+def test_subtitle_free_second_pilih_jeda():
+    from app.api.clips import subtitle_free_second
+
+    assert subtitle_free_second(_SRT_CONTOH, 10.0, 3.0) == 3.0
+    assert subtitle_free_second(_SRT_CONTOH, 10.0, 1.0) == 3.0
+    assert subtitle_free_second(_SRT_CONTOH, 10.0, 9.0) == 3.0
+    assert subtitle_free_second("", 10.0, 3.0) is None
+    assert subtitle_free_second(_SRT_CONTOH, 0.0, 1.0) is None
+
+
+def test_subtitle_free_second_tanpa_jeda():
+    from app.api.clips import subtitle_free_second
+
+    penuh = "\n".join(["1", "00:00:00,000 --> 00:00:10,000", "Penuh", ""])
+    assert subtitle_free_second(penuh, 10.0, 4.0) is None
