@@ -592,10 +592,14 @@ export default function ClipModal({
             </div>
 
 
-            <div className="clip-modal-thumbs">
+            <details className="thcap-details">
+              <summary className="thcap-summary">
+                Thumbnail caption ({THUMBNAIL_CAPTION_STYLES.length} styles)
+                <span className="thcap-summary-hint">optional</span>
+              </summary>
               <div className="clip-modal-thumbs-head">
                 <span className="clip-modal-label" style={{ margin: 0 }}>
-                  Thumbnail caption ({THUMBNAIL_CAPTION_STYLES.length} styles)
+                  Pick a style and position, then apply
                 </span>
                 <button
                   type="button"
@@ -649,7 +653,7 @@ export default function ClipModal({
                   onChange={(event) => setCapText(event.target.value)}
                 />
               </div>
-            </div>
+            </details>
 
             {clip.ai_hook || clip.ai_viral_reason || clip.viral_score ? (
               <div className="clip-modal-why">

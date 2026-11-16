@@ -2778,3 +2778,23 @@ html, body { max-width: 100%; overflow-x: clip; }
 .cap-toxic-slime{font-family:Fredoka,sans-serif;font-size:11.5px;color:#a3e635;background:#1e1b4b;border-radius:10px;padding:3px 8px;box-shadow:0 3px 0 #65a30d}
 .cap-minimal-badge{font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:700;color:#cbd5e1;border:1px solid #475569;background:rgba(30,41,59,.6);padding:3px 8px;border-radius:999px}
 .cap-gradient-fire{font-family:Inter,sans-serif;font-size:11.5px;font-weight:900;text-transform:uppercase;background:linear-gradient(90deg,#ff3b30,#ff9500,#ffcc00);-webkit-background-clip:text;-webkit-text-fill-color:transparent;filter:drop-shadow(0 2px 4px rgba(255,59,48,.4))}
+
+
+/* Modal clip: jaga kolom video tetap ramping + caption style dilipat */
+.clip-modal-body{grid-template-columns:minmax(280px,400px) minmax(0,1fr)}
+.clip-modal-video{max-height:min(60vh,520px)}
+.thcap-details{border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:10px 12px;background:rgba(10,13,19,.55)}
+.thcap-summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;font-family:var(--ui-mono);font-size:10.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#b9bcc7}
+.thcap-summary::-webkit-details-marker{display:none}
+.thcap-summary::before{content:"▸";color:var(--ui-gold);font-size:11px;transition:transform .18s ease}
+.thcap-details[open] .thcap-summary::before{transform:rotate(90deg)}
+.thcap-summary-hint{margin-left:auto;font-size:9.5px;letter-spacing:.8px;color:#6f7583}
+.thcap-details[open] .clip-modal-thumbs-head{margin-top:10px}
+.thcap-track{max-height:104px}
+.thcap-preview{height:44px}
+.thcap-card{flex:0 0 118px;padding:8px}
+@media (max-width:860px){
+  .clip-modal-body{grid-template-columns:1fr}
+  .clip-modal-video{max-height:44vh;min-height:0;aspect-ratio:auto}
+  .thcap-track{max-height:96px}
+}
