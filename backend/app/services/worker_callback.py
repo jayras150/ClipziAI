@@ -73,6 +73,8 @@ async def report_worker_event(
                 headers={
                     "Content-Type": "application/json",
                     "X-Clipzi-Signature": f"sha256={signature}",
+                    # UA eksplisit: Cloudflare memblokir Python-urllib (1010/403).
+                    "User-Agent": "ClipziAI-Backend/1.0",
                 },
             )
     except Exception as exc:  # tidak boleh mengganggu pipeline
@@ -102,6 +104,8 @@ async def request_downloader_fallback(task_id: Any) -> bool:
                 headers={
                     "Content-Type": "application/json",
                     "X-Clipzi-Signature": f"sha256={signature}",
+                    # UA eksplisit: Cloudflare memblokir Python-urllib (1010/403).
+                    "User-Agent": "ClipziAI-Backend/1.0",
                 },
             )
         if response.status_code != 200:

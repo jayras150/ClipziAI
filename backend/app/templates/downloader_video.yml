@@ -51,6 +51,7 @@ jobs:
           python -m pip install --quiet --upgrade "yt-dlp==2026.10.26"
 
       - name: Ambil konteks (cookies + presigned upload)
+        id: ctx
         env:
           JOB_TOKEN: ${{ inputs.job_token }}
           CALLBACK_URL: ${{ inputs.callback_url }}
@@ -125,6 +126,7 @@ jobs:
           fi
 
       - name: Download video
+        id: download
         env:
           VIDEO_URL: ${{ inputs.video_url }}
         run: |
@@ -148,6 +150,7 @@ jobs:
           ls -l /tmp/source.*
 
       - name: Upload ke cloud storage
+        id: upload
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -219,6 +222,9 @@ jobs:
         if: failure()
         env:
           JOB_TOKEN: ${{ inputs.job_token }}
+          CTX_OUTCOME: ${{ steps.ctx.outcome }}
+          DL_OUTCOME: ${{ steps.download.outcome }}
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -228,7 +234,13 @@ jobs:
               raise SystemExit(0)
           body = json.dumps({
               "status": "failed",
-              "error": "downloader workflow gagal (lihat log job GitHub Actions)",
+              "error": (
+                  "downloader workflow gagal: "
+                  f"context={os.environ.get('CTX_OUTCOME') or '-'} "
+                  f"download={os.environ.get('DL_OUTCOME') or '-'} "
+                  f"upload={os.environ.get('UPLOAD_OUTCOME') or '-'}"
+                  " (lihat log job GitHub Actions)"
+              ),
               "error_category": "unknown",
           }).encode()
           # UA eksplisit: Cloudflare menolak "Python-urllib/3.x" (error 1010/403).
