@@ -494,6 +494,55 @@ async def _restore_workspace(instance_id: int) -> None:
     logger.warning("Restore workspace timeout untuk instance %s", instance_id)
 
 
+def _vast_error_text(exc: Exception, limit: int = 700) -> str:
+    """Ambil pesan asli Vast (body JSON), bukan cuma "400 Client Error for url"."""
+    response = getattr(exc, "response", None)
+    if response is None:
+        return str(exc)[:limit]
+    body = ""
+    try:
+        body = response.text or ""
+    except Exception:  # noqa: BLE001
+        body = ""
+    status = getattr(response, "status_code", "?")
+    if body:
+        return f"HTTP {status}: {body[:limit]}"
+    return f"HTTP {status}: {str(exc)[:limit]}"
+
+
+def _ask_missing(offer_id: Any) -> bool:
+    """Cek cepat apakah ask Vast masih ada (ask kerap diambil mesin lain)."""
+    key = (settings.VAST_API_KEY or "").strip()
+    if not key or offer_id is None:
+        return False
+    try:
+        response = requests.get(
+            f"https://console.vast.ai/api/v0/asks/{offer_id}/",
+            headers={"Authorization": f"Bearer {key}", "Accept": "application/json"},
+            timeout=10,
+        )
+    except Exception:  # noqa: BLE001 - gagal cek ≠ gagal dispatch
+        return False
+    return response.status_code == 404
+
+
+def _stale_offer_error(text: str) -> bool:
+    """Error yang berarti 'offer sudah tidak tersedia' (bukan payload salah)."""
+    lowered = (text or "").lower()
+    return any(
+        marker in lowered
+        for marker in (
+            "ask",
+            "no longer",
+            "not found",
+            "unavailable",
+            "gone",
+            "could not be found",
+            "resource could not be found",
+        )
+    )
+
+
 def _make_create_instance(task_id: UUID, client: Any):
     """Factory pembuat instance (dipakai dispatch DAN resume setelah restart).
 
@@ -513,7 +562,6 @@ def _make_create_instance(task_id: UUID, client: Any):
         offer_id = selected.get("id")
         if not offer_id:
             raise RuntimeError(f"offer tidak punya id: {selected}")
-
         # Segarkan tautan model (Dropbox/S3/B2 expire) sebelum dispatch.
         try:
             from app.db.session import AsyncSessionLocal
@@ -537,14 +585,48 @@ def _make_create_instance(task_id: UUID, client: Any):
         else:
             kwargs["image"] = image
 
-        created = await asyncio.to_thread(client.create_instance, offer_id, **kwargs)
-        instance_id = created.get("new_contract") or created.get("instance_id")
-        if not instance_id:
-            raise RuntimeError(f"create_instance tidak mengembalikan instance id: {created}")
-        instance_id = int(instance_id)
-        if getattr(settings, "VAST_RESTORE_ENABLED", False):
-            asyncio.create_task(_restore_workspace(instance_id))
-        return instance_id
+        # Ask Vast cepat hilang (diambil mesin lain). Kalau itu terjadi, ambil
+        # offer baru dan coba lagi — jangan langsung menggagalkan task.
+        last_error = ""
+        current = selected
+        for attempt in range(1, 4):
+            current_id = current.get("id")
+            if not current_id:
+                raise RuntimeError(f"offer tidak punya id: {current}")
+            try:
+                created = await asyncio.to_thread(client.create_instance, current_id, **kwargs)
+            except Exception as exc:  # noqa: BLE001 - klasifikasikan lalu retry
+                text = _vast_error_text(exc)
+                if _stale_offer_error(text):
+                    note = " (ask sudah tidak tersedia di Vast)" if _ask_missing(current_id) else ""
+                    last_error = f"{text}{note}"
+                    logger.warning(
+                        "Task %s: offer %s tidak bisa dipakai (coba %s/3): %s — memilih offer lain",
+                        task_id,
+                        current_id,
+                        attempt,
+                        last_error,
+                    )
+                    current = await _pick_offer(client)
+                    continue
+                logger.warning(
+                    "Task %s: create_instance gagal (offer %s): %s",
+                    task_id,
+                    current_id,
+                    text,
+                )
+                raise RuntimeError(f"create_instance gagal: {text}") from exc
+            instance_id = created.get("new_contract") or created.get("instance_id")
+            if not instance_id:
+                raise RuntimeError(f"create_instance tidak mengembalikan instance id: {created}")
+            instance_id = int(instance_id)
+            if getattr(settings, "VAST_RESTORE_ENABLED", False):
+                asyncio.create_task(_restore_workspace(instance_id))
+            return instance_id
+
+        raise RuntimeError(
+            f"create_instance gagal setelah 3 offer dicoba. Error terakhir: {last_error}"
+        )
 
     return _create
 
