@@ -33,6 +33,14 @@ class TemplateCreateIn(BaseModel):
     activate: bool = True
 
 
+class ProviderTemplateIn(BaseModel):
+    """Template per provider model (Clipzy Gdrive / Dropbox / …)."""
+
+    provider: str = "gdrive"
+    name: Optional[str] = None
+    activate: bool = True
+
+
 def _audit(
     db: AsyncSession,
     request: Request,
@@ -295,6 +303,58 @@ async def create_worker_template(
             "template_hash": result.get("template_hash"),
             "env_count": result.get("env_count"),
             "activated": result.get("activated"),
+        },
+    )
+    await db.commit()
+    return result
+
+
+@router.get("/templates")
+async def read_provider_templates():
+    """Daftar template Vast per provider model (Clipzy Gdrive/Dropbox/...)."""
+    try:
+        return await vast_admin.provider_templates()
+    except Exception as exc:  # noqa: BLE001 - Vast belum dikonfigurasi
+        raise HTTPException(status_code=502, detail=str(exc)[:300]) from exc
+
+
+@router.post("/templates/sync")
+async def sync_provider_template(
+    payload: ProviderTemplateIn,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Buat/perbarui template provider lalu (opsional) aktifkan untuk dispatch."""
+    from app.services import model_sources
+
+    try:
+        provider = model_sources.get_provider(payload.provider)
+        result = await vast_admin.upsert_worker_template(
+            payload.name or provider.template_name, provider.env
+        )
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if payload.activate and result.get("template_hash"):
+        await vast_config.save_vast_config(
+            db,
+            {
+                "template_hash": result["template_hash"],
+                "worker_image": result["image"],
+                "worker_disk": result["disk_space"],
+            },
+        )
+        result["activated"] = True
+    _audit(
+        db,
+        request,
+        current_admin,
+        "vast_provider_template_synced",
+        {
+            "provider": provider.id,
+            "name": result.get("name"),
+            "action": result.get("action"),
+            "template_hash": result.get("template_hash"),
         },
     )
     await db.commit()

@@ -20,7 +20,7 @@ export async function scanWhisperModels() {
     revalidatePath('/dashboard/settings/models');
     return { ok: true, data };
   } catch (error) {
-    return { error: _error(error) };
+    return { ok: false as const, error: _error(error) };
   }
 }
 
@@ -34,7 +34,7 @@ export async function activateWhisperModel(id: string) {
     revalidatePath('/dashboard/settings/vast');
     return { ok: true, data };
   } catch (error) {
-    return { error: _error(error) };
+    return { ok: false as const, error: _error(error) };
   }
 }
 
@@ -49,7 +49,7 @@ export async function deleteWhisperModel(id: string, deleteDrive: boolean) {
     revalidatePath('/dashboard/settings/models');
     return { ok: true, data };
   } catch (error) {
-    return { error: _error(error) };
+    return { ok: false as const, error: _error(error) };
   }
 }
 
@@ -65,7 +65,7 @@ export async function saveWhisperColabNotebook(notebookFileId: string) {
     revalidatePath('/dashboard/settings/models');
     return { ok: true, data };
   } catch (error) {
-    return { error: _error(error) };
+    return { ok: false as const, error: _error(error) };
   }
 }
 
@@ -76,7 +76,79 @@ export async function downloadWhisperColabNotebook() {
     );
     return { ok: true, data };
   } catch (error) {
-    return { error: _error(error) };
+    return { ok: false as const, error: _error(error) };
+  }
+}
+
+export async function downloadWhisperNotebook(provider: string) {
+  try {
+    const data = await adminFetch<{ filename: string; content: string; provider: string }>(
+      `/api/admin/whisper-models/colab/notebook?provider=${encodeURIComponent(provider)}`
+    );
+    return { ok: true, data };
+  } catch (error) {
+    return { ok: false as const, error: _error(error) };
+  }
+}
+
+export async function fetchWhisperSource() {
+  try {
+    const data = await adminFetch<Record<string, unknown>>('/api/admin/whisper-models/source');
+    return { ok: true, data };
+  } catch (error) {
+    return { ok: false as const, error: _error(error) };
+  }
+}
+
+export async function saveWhisperSource(payload: {
+  provider: string;
+  values: Record<string, string>;
+  auto_template?: boolean;
+  activate?: boolean;
+}) {
+  try {
+    const data = await adminFetch<Record<string, unknown>>('/api/admin/whisper-models/source', {
+      method: 'PUT',
+      body: JSON.stringify({
+        auto_template: true,
+        activate: true,
+        ...payload
+      })
+    });
+    revalidatePath('/dashboard/settings/models');
+    revalidatePath('/dashboard/settings/vast');
+    return { ok: true, data };
+  } catch (error) {
+    return { ok: false as const, error: _error(error) };
+  }
+}
+
+export async function testWhisperSource(payload: {
+  provider: string;
+  values: Record<string, string>;
+}) {
+  try {
+    const data = await adminFetch<Record<string, unknown>>(
+      '/api/admin/whisper-models/source/test',
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    return { ok: true, data };
+  } catch (error) {
+    return { ok: false as const, error: _error(error) };
+  }
+}
+
+export async function syncWhisperTemplate(provider: string) {
+  try {
+    const data = await adminFetch<Record<string, unknown>>(
+      '/api/admin/whisper-models/source/template',
+      { method: 'POST', body: JSON.stringify({ provider, activate: true }) }
+    );
+    revalidatePath('/dashboard/settings/models');
+    revalidatePath('/dashboard/settings/vast');
+    return { ok: true, data };
+  } catch (error) {
+    return { ok: false as const, error: _error(error) };
   }
 }
 

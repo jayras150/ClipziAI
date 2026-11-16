@@ -137,9 +137,67 @@ fi
 # Model disalin backend lewat `cloud_copy` Cloud→Instance SETELAH instance dibuat.
 # Kalau path salah / copy gagal, jangan menunggu 900 s dengan CPU/GPU 0%: setelah
 # `CLIPZI_RESTORE_FAST_FAIL` detik tanpa model, cetak isi folder lalu unduh model.
+# --- Restore model dari provider non-Drive (Dropbox / B2 / S3 / HuggingFace) -
+# Backend mengirim CLIPZI_MODEL_URL (tautan unduh model.bin) atau CLIPZI_HF_REPO
+# sehingga worker tidak perlu menunggu cloud_copy Vast yang khusus Google Drive.
+MODEL_PREFETCHED=0
+download_model_url() {
+    url="$1"
+    dest="$2"
+    mkdir -p "$dest" 2>/dev/null || true
+    log "mengunduh model dari CLIPZI_MODEL_URL ke ${dest}"
+    if command -v curl >/dev/null 2>&1; then
+        if curl -fL --retry 3 --retry-delay 5 --connect-timeout 30 -o "${dest}/model.bin" "$url"; then
+            return 0
+        fi
+    fi
+    "$PYTHON_BIN" - "$url" "${dest}/model.bin" <<'PYMODEL'
+import sys
+import urllib.request
+
+url, out = sys.argv[1], sys.argv[2]
+request = urllib.request.Request(url, headers={"User-Agent": "ClipziAI-Worker/1.0"})
+with urllib.request.urlopen(request, timeout=120) as response, open(out, "wb") as handle:
+    while True:
+        chunk = response.read(1 << 20)
+        if not chunk:
+            break
+        handle.write(chunk)
+PYMODEL
+}
+
+download_hf_repo() {
+    repo="$1"
+    dest="$2"
+    mkdir -p "$dest" 2>/dev/null || true
+    log "mengunduh model Hugging Face ${repo} ke ${dest}"
+    "$PYTHON_BIN" - "$repo" "$dest" <<'PYHF'
+import sys
+
+from faster_whisper.utils import download_model
+
+download_model(sys.argv[1], output_dir=sys.argv[2])
+PYHF
+}
+
 if [ -n "${CLIPZI_RESTORE_TIMEOUT:-}" ]; then
     RESTORE_PATH="${CLIPZI_RESTORE_MODEL_PATH:-/workspace/whisper_model}"
     FAST_FAIL="${CLIPZI_RESTORE_FAST_FAIL:-150}"
+    MODEL_SOURCE="${CLIPZI_MODEL_SOURCE:-gdrive}"
+    if [ ! -f "${RESTORE_PATH}/model.bin" ] && [ -n "${CLIPZI_MODEL_URL:-}" ]; then
+        if download_model_url "${CLIPZI_MODEL_URL}" "${RESTORE_PATH}"; then
+            MODEL_PREFETCHED=1
+        else
+            log "PERINGATAN: unduh CLIPZI_MODEL_URL gagal; lanjut fallback"
+        fi
+    elif [ ! -f "${RESTORE_PATH}/model.bin" ] && [ -n "${CLIPZI_HF_REPO:-}" ]; then
+        if download_hf_repo "${CLIPZI_HF_REPO}" "${RESTORE_PATH}"; then
+            MODEL_PREFETCHED=1
+            MODEL_SOURCE="huggingface"
+        else
+            log "PERINGATAN: unduh Hugging Face gagal; lanjut fallback"
+        fi
+    fi
     # Kalau cloud copy SUDAH menaruh model (walau read-only milik root), pakai
     # langsung: membaca tidak butuh izin tulis. Dulu script pindah ke folder
     # kosong lalu mengunduh ulang 3 GB -> lambat + disk penuh.
@@ -158,6 +216,11 @@ if [ -n "${CLIPZI_RESTORE_TIMEOUT:-}" ]; then
     fi
     export GPU_WHISPER_MODEL="$MODEL_PATH"
     export HF_HOME="${HF_HOME:-/app/.cache/huggingface}"
+    if [ "$MODEL_PREFETCHED" = "1" ] && [ -f "$MODEL_PATH/model.bin" ]; then
+        # Model sudah diunduh dari provider (Dropbox/B2/S3/HF): tidak perlu
+        # menunggu cloud_copy yang hanya disiapkan untuk Google Drive.
+        log "model siap dari provider ${MODEL_SOURCE} (${MODEL_PATH}/model.bin)"
+    else
     started=$(date +%s)
     deadline=$(( started + CLIPZI_RESTORE_TIMEOUT ))
     fast_deadline=$(( started + FAST_FAIL ))
@@ -203,6 +266,7 @@ PY
         fi
         sleep 10
     done
+    fi
 fi
 
 log "menjalankan pipeline untuk task ${CLIPZI_TASK_ID} (python: ${PYTHON_BIN})"

@@ -30,6 +30,7 @@ from app.api.admin import platform as admin_platform
 from app.api.admin import proxies as admin_proxies
 from app.api.admin import runners as admin_runners
 from app.api.admin import vast as admin_vast
+from app.api.admin import notifications as admin_notifications
 from app.api.admin import whisper_models as admin_whisper_models
 from app.api.admin import storage as admin_storage
 from app.api import branding as public_branding
@@ -100,6 +101,16 @@ async def lifespan(app: FastAPI):
         await load_and_apply_vast_config()
     except Exception as exc:
         logger.warning("Gagal memuat setelan Vast.ai dari database: %s", exc)
+    # Env restore model per provider (Dropbox/B2/S3/Hugging Face) supaya
+    # dispatch pertama setelah deploy sudah memakai sumber yang benar.
+    try:
+        from app.db.session import AsyncSessionLocal
+        from app.services import model_sources
+
+        async with AsyncSessionLocal() as _db:
+            await model_sources.refresh_restore_env(_db)
+    except Exception as exc:
+        logger.warning("Env restore model tidak dimuat: %s", exc)
     # Registry storage multi-provider (R2/B2/S3/...). Bila belum ada, otomatis
     # dibuat dari env R2_* agar deployment lama tetap jalan.
     try:
@@ -270,6 +281,11 @@ app.include_router(
     admin_whisper_models.router,
     prefix="/api/admin/whisper-models",
     tags=["Admin Whisper Models"],
+)
+app.include_router(
+    admin_notifications.router,
+    prefix="/api/admin/notifications",
+    tags=["Admin Notifications"],
 )
 app.include_router(
     admin_branding.router, prefix="/api/admin/settings", tags=["Admin Branding"]

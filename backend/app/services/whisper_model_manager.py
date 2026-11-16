@@ -107,10 +107,14 @@ def inspect_files(files: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def model_to_dict(row: WhisperModel) -> Dict[str, Any]:
+    provider = str(row.provider or "gdrive")
     return {
         "id": str(row.id),
         "slug": row.slug,
         "label": row.label,
+        "provider": provider,
+        "remote_id": row.drive_folder_id,
+        "remote_path": row.drive_path,
         "drive_folder_id": row.drive_folder_id,
         "drive_path": row.drive_path,
         "model_type": row.model_type,
@@ -151,56 +155,44 @@ def _unique_slug(base: str, folder_id: str, used: set[str]) -> str:
 
 
 async def scan_models(db: AsyncSession) -> Dict[str, Any]:
-    """Scan folder root Drive dan sinkronkan registry.
+    """Scan sumber model yang aktif dan sinkronkan registry.
 
-    Folder yang hilang dari Drive tidak dihapus otomatis; statusnya diubah
-    menjadi `missing` agar admin masih bisa melihat riwayat dan menghapusnya.
+    Berlaku untuk semua provider (Google Drive, Dropbox, B2, S3, Hugging Face):
+    item yang hilang dari sumber tidak dihapus otomatis, statusnya diubah
+    menjadi `missing` agar admin masih bisa melihat riwayat.
     """
-    drive = DriveService()
-    if not drive.configured:
-        raise DriveError(
-            "Google Drive belum siap. Isi GDRIVE_SERVICE_ACCOUNT_B64, "
-            "GDRIVE_FOLDER_ID, dan GDRIVE_ENABLED=true."
-        )
+    from app.services import model_sources
 
-    root = await drive.get_file(drive.folder_id)
-    if root.get("mimeType") != FOLDER_MIME:
-        raise DriveError("GDRIVE_FOLDER_ID bukan sebuah folder Drive.")
-
-    folders = await drive.list_children(drive.folder_id, folders_only=True)
+    provider, items = await model_sources.scan_items(db)
     existing = list((await db.execute(select(WhisperModel))).scalars().all())
-    by_folder = {row.drive_folder_id: row for row in existing}
+    by_key = {
+        (str(row.provider or "gdrive"), str(row.drive_folder_id or "")): row
+        for row in existing
+    }
     used_slugs = {row.slug for row in existing}
-    seen: set[str] = set()
+    seen: set[tuple[str, str]] = set()
     now = datetime.utcnow()
     created = 0
     updated = 0
 
-    for folder in folders:
-        folder_id = str(folder.get("id") or "").strip()
-        folder_name = str(folder.get("name") or "").strip()
-        if not folder_id or not folder_name or folder_name.startswith("."):
+    for item in items:
+        remote_id = str(item.get("remote_id") or "").strip()
+        label = str(item.get("label") or "").strip()
+        if not remote_id or not label or label.startswith("."):
             continue
-        seen.add(folder_id)
-        try:
-            files = await drive.list_children(folder_id)
-            info = inspect_files(files)
-        except DriveError as exc:
-            info = {
-                "status": "error",
-                "validation_error": str(exc)[:1000],
-                "size_bytes": 0,
-                "file_count": 0,
-                "files": [],
-            }
+        key = (provider.id, remote_id)
+        seen.add(key)
+        info = inspect_files(list(item.get("files") or []))
+        remote_path = str(item.get("remote_path") or remote_id)
 
-        row = by_folder.get(folder_id)
+        row = by_key.get(key)
         if row is None:
             row = WhisperModel(
-                slug=_unique_slug(folder_name, folder_id, used_slugs),
-                label=folder_name,
-                drive_folder_id=folder_id,
-                drive_path=drive.path_for(folder_name),
+                slug=_unique_slug(label, remote_id, used_slugs),
+                label=label,
+                provider=provider.id,
+                drive_folder_id=remote_id,
+                drive_path=remote_path,
                 model_type="ct2",
                 status=str(info["status"]),
                 validation_error=info.get("validation_error"),
@@ -214,8 +206,9 @@ async def scan_models(db: AsyncSession) -> Dict[str, Any]:
             used_slugs.add(row.slug)
             created += 1
         else:
-            row.label = row.label or folder_name
-            row.drive_path = drive.path_for(folder_name)
+            row.label = row.label or label
+            row.provider = provider.id
+            row.drive_path = remote_path
             row.model_type = "ct2"
             row.status = str(info["status"])
             row.validation_error = info.get("validation_error")
@@ -227,16 +220,22 @@ async def scan_models(db: AsyncSession) -> Dict[str, Any]:
 
     missing = 0
     for row in existing:
-        if row.drive_folder_id in seen:
+        if str(row.provider or "gdrive") != provider.id:
+            continue
+        if (provider.id, str(row.drive_folder_id or "")) in seen:
+            continue
+        if row.status == "missing":
             continue
         row.status = "missing"
-        row.validation_error = "Folder model tidak ditemukan di Drive."
+        row.validation_error = f"Sumber model tidak ditemukan di {provider.label}."
         row.last_scanned_at = now
         missing += 1
 
     await db.commit()
     rows = await list_models(db)
     return {
+        "provider": provider.id,
+        "provider_label": provider.label,
         "created": created,
         "updated": updated,
         "missing": missing,
@@ -245,7 +244,9 @@ async def scan_models(db: AsyncSession) -> Dict[str, Any]:
     }
 
 async def activate_model(db: AsyncSession, model_id: Any) -> WhisperModel:
-    """Aktifkan satu model + arahkan restore Vast ke folder model tersebut."""
+    """Aktifkan satu model + arahkan restore Vast sesuai provider model itu."""
+    from app.services import model_sources, vast_config
+
     row = await db.get(WhisperModel, model_id)
     if row is None:
         raise ValueError("Model tidak ditemukan.")
@@ -253,25 +254,21 @@ async def activate_model(db: AsyncSession, model_id: Any) -> WhisperModel:
         raise ValueError(
             "Model belum valid/available. Perbaiki file CT2 lalu scan ulang."
         )
-    if not row.drive_path:
-        raise ValueError("Path Drive model kosong.")
+    if not row.remote_path:
+        raise ValueError("Path sumber model kosong; scan ulang provider.")
+
+    provider_id = str(row.provider or "gdrive")
+    plan = await model_sources.restore_plan(db, provider_id, row.remote_path)
 
     await db.execute(update(WhisperModel).values(is_active=False))
     row.is_active = True
     await db.flush()
 
-    from app.services import vast_config
-
     try:
-        await vast_config.save_vast_config(
-            db,
-            {
-                "restore_enabled": True,
-                "restore_src": row.drive_path,
-                "restore_dst": MODEL_WORKSPACE,
-                "restore_model_path": MODEL_WORKSPACE,
-            },
-        )
+        await model_sources.save_restore_env(db, provider_id, plan.get("env") or {})
+        config = plan.get("config") or {}
+        if config:
+            await vast_config.save_vast_config(db, config)
     except Exception:
         await db.rollback()
         raise
@@ -283,58 +280,75 @@ async def activate_model(db: AsyncSession, model_id: Any) -> WhisperModel:
 async def delete_model(
     db: AsyncSession, model_id: Any, *, delete_drive: bool = False
 ) -> Dict[str, Any]:
-    """Hapus registry; opsional hapus/trash folder Drive bila service account punya izin.
+    """Hapus registry; opsional hapus objek di provider sumber.
 
-    Folder yang dibuat akun Google pemilik Drive tidak bisa dihapus permanen oleh
-    service account (hanya writer), jadi jangan gagalkan seluruh operasi: hapus
-    baris registry dan beri pesan agar admin menghapus folder lewat Drive.
+    Param `delete_drive` dipertahankan demi kompatibilitas API lama; artinya
+    "hapus juga folder/repo di provider" (Drive, Dropbox, B2, S3).
     """
+    from app.services import model_sources
+
     row = await db.get(WhisperModel, model_id)
     if row is None:
         raise ValueError("Model tidak ditemukan.")
     if row.is_active:
         raise ValueError("Model sedang aktif. Aktifkan model lain sebelum menghapus.")
 
+    provider = model_sources.get_provider(row.provider)
     removed = 0
-    drive_deleted = False
-    drive_error = ""
-    drive_action = ""
+    remote_deleted = False
+    remote_error = ""
+    remote_action = ""
     if delete_drive and row.status != "missing":
-        drive = DriveService()
-        if not drive.configured:
-            raise DriveError("Google Drive belum siap; tidak bisa menghapus folder.")
-        try:
-            meta = await drive.get_file(row.drive_folder_id)
-            caps = meta.get("capabilities") or {}
-            if caps.get("canDelete"):
-                removed = await drive.delete_tree(row.drive_folder_id)
-                drive_deleted = True
-                drive_action = "deleted"
-            elif caps.get("canTrash"):
-                await drive.trash_file(row.drive_folder_id)
-                removed = 1
-                drive_deleted = True
-                drive_action = "trashed"
-            else:
-                drive_error = (
-                    "Folder Drive dimiliki akun Google Anda; service account hanya "
-                    "writer sehingga tidak bisa menghapus permanen. Folder tetap ada. "
-                    f"Hapus manual: https://drive.google.com/drive/folders/{row.drive_folder_id}"
-                )
-        except DriveError as exc:
-            drive_error = (
-                f"{exc} Folder tetap ada; hapus manual: "
-                f"https://drive.google.com/drive/folders/{row.drive_folder_id}"
+        if not provider.can_delete:
+            remote_error = f"{provider.label} tidak mendukung hapus dari Clipzi."
+        else:
+            target = (
+                str(row.drive_folder_id or "")
+                if provider.adapter == "gdrive"
+                else str(row.remote_path or "")
             )
+            try:
+                _, removed = await model_sources.delete_remote(db, provider.id, target)
+                remote_deleted = True
+                remote_action = "deleted"
+            except model_sources.SourceError as exc:
+                remote_error = (
+                    f"{exc} Data registry tetap dihapus, objek di {provider.label} "
+                    "harus dihapus manual."
+                )
 
     await db.delete(row)
     await db.commit()
     return {
         "deleted": True,
+        "provider": provider.id,
+        "provider_label": provider.label,
+        "remote_deleted": remote_deleted,
+        "remote_action": remote_action,
+        "remote_error": remote_error,
+        "remote_objects_removed": removed,
+        # Alias lama supaya UI/klien versi sebelumnya tetap bekerja.
         "drive_objects_removed": removed,
-        "drive_deleted": drive_deleted,
-        "drive_action": drive_action,
-        "drive_error": drive_error,
+        "drive_deleted": remote_deleted,
+        "drive_action": remote_action,
+        "drive_error": remote_error,
+    }
+
+
+async def source_status(db: AsyncSession) -> Dict[str, Any]:
+    """Ringkasan provider aktif untuk header UI admin."""
+    from app.services import model_sources
+
+    source = await model_sources.get_source(db)
+    provider = model_sources.get_provider(source.get("provider"))
+    return {
+        "provider": provider.id,
+        "provider_label": provider.label,
+        "configured": bool(source.get("configured")),
+        "restore_mode": provider.restore_mode,
+        "template_name": provider.template_name,
+        "values": source.get("values") or {},
+        "warnings": model_sources.manifest_warnings(),
     }
 
 
@@ -368,6 +382,7 @@ __all__ = [
     "model_to_dict",
     "normalize_slug",
     "scan_models",
+    "source_status",
 ]
 
 

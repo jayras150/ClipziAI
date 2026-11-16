@@ -1,0 +1,200 @@
+# Sumber model Whisper untuk Clipzi AI.
+#
+# Satu file untuk SEMUA provider: admin memilih provider di
+# Settings > Models, lalu backend memakai blok di bawah ini untuk
+# merender form kredensial, memilih adapter, dan memberi nama template
+# Vast.ai (mis. "Clipzy Dropbox").
+#
+# Menambah provider baru = tambah satu blok di `providers:` (adapter harus
+# sudah ada di backend). UI tidak perlu diubah karena semua field dibaca
+# dari sini.
+version: 1
+default: gdrive
+providers:
+  - id: gdrive
+    label: Google Drive
+    icon: google-drive
+    color: '#0F9D58'
+    adapter: gdrive
+    restore_mode: vast_cloud_copy
+    vast_template_name: Clipzy Gdrive
+    notebook: whisper_colab.ipynb
+    folder_url: 'https://drive.google.com/drive/folders/{remote_id}'
+    scan: true
+    delete: true
+    description: >-
+      Service account membaca folder model CT2 di Drive; restore memakai
+      Vast Cloud Sync (connection ID) seperti sebelumnya.
+    hint: >-
+      Google Cloud Console -> IAM -> Service Account -> Keys -> JSON,
+      lalu base64-kan isinya (GDRIVE_SERVICE_ACCOUNT_B64). Folder Drive
+      harus di-share ke email service account sebagai Viewer.
+    fields:
+      - name: service_account_b64
+        label: Service account (base64 JSON)
+        type: secret
+        required: true
+      - name: folder_id
+        label: Folder ID model
+        type: text
+        required: true
+        help: 'Ambil dari URL drive.google.com/drive/folders/<ID>'
+
+  - id: dropbox
+    label: Dropbox
+    icon: dropbox
+    color: '#0061FF'
+    adapter: dropbox
+    restore_mode: url_download
+    vast_template_name: Clipzy Dropbox
+    notebook: whisper_colab_dropbox.ipynb
+    folder_url: 'https://www.dropbox.com/home{remote_path}'
+    scan: true
+    delete: true
+    description: >-
+      Model CT2 disimpan di folder Dropbox; worker mengunduh model.bin
+      lewat tautan sementara saat boot (tanpa Vast Cloud Sync).
+    hint: >-
+      Dropbox App Console -> Scoped access (Full Dropbox) -> Permissions
+      files.content.read + files.content.write, lalu jalankan notebook
+      Colab untuk mengambil refresh token.
+    env:
+      CLIPZI_MODEL_SOURCE: dropbox
+    fields:
+      - name: app_key
+        label: App key
+        type: text
+        required: true
+      - name: app_secret
+        label: App secret
+        type: secret
+        required: true
+      - name: refresh_token
+        label: Refresh token
+        type: secret
+        required: true
+      - name: root
+        label: Folder root
+        type: text
+        required: true
+        default: /Clipzy/whisper_models
+
+  - id: backblaze
+    label: Backblaze B2
+    icon: backblaze
+    color: '#E21E29'
+    adapter: b2
+    restore_mode: url_download
+    vast_template_name: Clipzy Backblaze
+    notebook: whisper_colab_backblaze.ipynb
+    folder_url: ''
+    scan: true
+    delete: true
+    description: >-
+      Bucket B2 (S3-compatible) menyimpan folder model CT2; worker
+      mengunduh lewat presigned URL.
+    hint: >-
+      Backblaze -> Application Keys (read/write ke bucket) lalu isi
+      keyID, applicationKey, bucket, dan endpoint S3 (mis.
+      https://s3.us-west-004.backblazeb2.com).
+    env:
+      CLIPZI_MODEL_SOURCE: b2
+    fields:
+      - name: key_id
+        label: Key ID
+        type: text
+        required: true
+      - name: app_key
+        label: Application key
+        type: secret
+        required: true
+      - name: bucket
+        label: Bucket
+        type: text
+        required: true
+      - name: endpoint
+        label: Endpoint S3
+        type: text
+        required: true
+      - name: root
+        label: Folder root
+        type: text
+        required: true
+        default: whisper_models
+
+  - id: huggingface
+    label: Hugging Face
+    icon: huggingface
+    color: '#FFD21E'
+    adapter: huggingface
+    restore_mode: hf_snapshot
+    vast_template_name: Clipzy Huggingface
+    notebook: whisper_colab_huggingface.ipynb
+    folder_url: 'https://huggingface.co/{remote_id}'
+    scan: true
+    delete: false
+    description: >-
+      Worker mengunduh repo model langsung dari Hugging Face (CT2 repo
+      seperti Systran/faster-whisper-large-v3). Tidak perlu upload.
+    hint: >-
+      Buat token read di huggingface.co/settings/tokens lalu isi repo
+      model CT2 (bukan repo PyTorch openai/whisper-*).
+    env:
+      CLIPZI_MODEL_SOURCE: huggingface
+    fields:
+      - name: hf_token
+        label: HF token
+        type: secret
+        required: false
+      - name: repo_id
+        label: Repo model (CT2)
+        type: text
+        required: true
+        default: Systran/faster-whisper-large-v3
+
+  - id: s3
+    label: Amazon S3
+    icon: aws
+    color: '#FF9900'
+    adapter: s3
+    restore_mode: url_download
+    vast_template_name: Clipzy S3
+    notebook: whisper_colab_s3.ipynb
+    folder_url: ''
+    scan: true
+    delete: true
+    description: >-
+      Bucket S3 menyimpan folder model CT2; worker mengunduh model.bin
+      lewat presigned URL yang dibuat backend.
+    hint: >-
+      IAM user dengan izin s3:ListBucket + s3:GetObject + s3:PutObject
+      pada bucket model. Region wajib sama dengan bucket.
+    env:
+      CLIPZI_MODEL_SOURCE: s3
+    fields:
+      - name: access_key
+        label: Access key ID
+        type: text
+        required: true
+      - name: secret_key
+        label: Secret access key
+        type: secret
+        required: true
+      - name: bucket
+        label: Bucket
+        type: text
+        required: true
+      - name: region
+        label: Region
+        type: text
+        required: true
+        default: us-east-1
+      - name: endpoint
+        label: Endpoint (opsional)
+        type: text
+        required: false
+      - name: root
+        label: Folder root
+        type: text
+        required: true
+        default: whisper_models

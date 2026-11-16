@@ -733,3 +733,189 @@ async def create_worker_template(
         "env_sync": env_sync,
         "warnings": warnings,
     }
+
+# --- Template per provider model (Clipzy Gdrive / Dropbox / Backblaze / …) ---
+PROVIDER_TEMPLATE_DESC = (
+    "ClipziAI worker - template otomatis per provider model. Jangan diedit manual."
+)
+
+
+async def _find_template(name: str) -> Optional[Dict[str, Any]]:
+    """Cari template Vast berdasarkan nama persis (case-insensitive)."""
+    client = _client()
+    wanted = str(name or "").strip().lower()
+    if not wanted:
+        return None
+    try:
+        rows = await asyncio.to_thread(client.search_templates, name)
+    except Exception as exc:  # noqa: BLE001 - biarkan pemanggil memutuskan
+        logger.debug("search_templates(%s) gagal: %s", name, exc)
+        return None
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        label = str(row.get("name") or row.get("template_name") or "").strip().lower()
+        if label == wanted:
+            return row
+    return None
+
+
+def _template_hash(row: Optional[Dict[str, Any]]) -> str:
+    if not isinstance(row, dict):
+        return ""
+    for key in ("hash_id", "hash", "template_hash"):
+        value = str(row.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+async def upsert_worker_template(
+    name: str,
+    extra_env: Optional[Dict[str, str]] = None,
+    *,
+    image: Optional[str] = None,
+    disk_space: Optional[int] = None,
+    public: bool = False,
+) -> Dict[str, Any]:
+    """Buat/perbarui template Vast untuk satu provider model.
+
+    - Nama template dikunci per provider ("Clipzy Gdrive", "Clipzy Dropbox", …)
+      sehingga menyimpan provider berulang tidak membuat duplikat.
+    - Env = env worker standar + env khusus provider (dari manifest YAML).
+    - Rahasia tidak dibekukan ke template; dispatcher mengirimnya per task.
+    """
+    settings = get_settings()
+    client = _client()
+    resolved_name = str(name or "").strip()
+    if not resolved_name:
+        raise ValueError("Nama template tidak boleh kosong.")
+    resolved_image = (image or settings.VAST_WORKER_IMAGE or "").strip()
+    if not resolved_image:
+        raise RuntimeError(
+            "VAST_WORKER_IMAGE belum diisi. Isi 'Worker image / tag' lebih dulu."
+        )
+    if any(ch.isspace() for ch in resolved_image):
+        raise ValueError(f"Image tidak valid: {resolved_image!r}")
+    try:
+        disk = int(disk_space or settings.VAST_WORKER_DISK or 40)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Storage template harus berupa angka (GB).") from exc
+    if disk < 10 or disk > 500:
+        raise ValueError("Storage template harus antara 10 dan 500 GB.")
+
+    env = build_worker_env()
+    env.pop("CLIPZI_TASK_ID", None)
+    for key, value in (extra_env or {}).items():
+        if str(value or "").strip():
+            env[str(key)] = str(value)
+    env_string, env_keys, env_skipped = build_template_env(env)
+
+    warnings: List[str] = []
+    missing = [key for key in WORKER_ENV_REQUIRED if not env.get(key)]
+    if missing:
+        warnings.append(f"Env wajib belum diisi di backend: {', '.join(missing)}.")
+    if env_skipped:
+        shown = ", ".join(env_skipped[:6]) + ("…" if len(env_skipped) > 6 else "")
+        warnings.append(
+            f"{len(env_skipped)} env tidak dibekukan di template karena batas Vast "
+            f"{TEMPLATE_ENV_MAX_LEN} char ({shown}). Nilainya tetap dikirim per task."
+        )
+
+    existing = await _find_template(resolved_name)
+    action = "updated" if existing else "created"
+    template_hash = _template_hash(existing)
+    template_id = None
+    if isinstance(existing, dict):
+        for key in ("id", "template_id"):
+            if existing.get(key) is not None:
+                template_id = existing.get(key)
+                break
+
+    if existing and template_hash:
+        try:
+            updated = await asyncio.to_thread(
+                client.update_template,
+                hash_id=template_hash,
+                name=resolved_name,
+                image=resolved_image,
+                env=env_string,
+                onstart_cmd=TEMPLATE_ONSTART,
+                disk_space=float(disk),
+                desc=PROVIDER_TEMPLATE_DESC,
+                public=bool(public),
+            )
+        except Exception as exc:  # noqa: BLE001 - Vast membalas HTTPError
+            raise RuntimeError(vast_error_message(exc)) from exc
+        template_hash = _template_hash(updated) or template_hash
+        template_id = _template_id_from(updated) or template_id
+    else:
+        action = "created"
+        try:
+            created = await asyncio.to_thread(
+                client.create_template,
+                name=resolved_name,
+                image=resolved_image,
+                env=env_string,
+                onstart_cmd=TEMPLATE_ONSTART,
+                disk_space=float(disk),
+                desc=PROVIDER_TEMPLATE_DESC,
+                public=bool(public),
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(vast_error_message(exc)) from exc
+        template_hash = _template_hash(created) or await _find_template_hash(resolved_name)
+        template_id = _template_id_from(created)
+        if not template_hash:
+            warnings.append(
+                "Template dibuat tetapi hash tidak terbaca; ambil manual di dashboard Vast."
+            )
+
+    logger.info(
+        "Template provider %s: action=%s hash=%s env=%s skipped=%s",
+        resolved_name,
+        action,
+        template_hash or "-",
+        len(env_keys),
+        len(env_skipped),
+    )
+    return {
+        "ok": bool(template_hash),
+        "action": action,
+        "name": resolved_name,
+        "template_hash": template_hash,
+        "template_id": template_id,
+        "image": resolved_image,
+        "disk_space": disk,
+        "env_count": len(env_keys),
+        "env_keys": env_keys,
+        "env_skipped": env_skipped,
+        "env_len": len(env_string),
+        "env_limit": TEMPLATE_ENV_MAX_LEN,
+        "warnings": warnings,
+    }
+
+
+async def provider_templates() -> Dict[str, Any]:
+    """Daftar template per provider model + mana yang sedang aktif."""
+    from app.services import model_sources
+
+    settings = get_settings()
+    active_hash = (settings.VAST_TEMPLATE_HASH or "").strip()
+    items: List[Dict[str, Any]] = []
+    for provider in model_sources.providers():
+        row = await _find_template(provider.template_name)
+        template_hash = _template_hash(row)
+        items.append(
+            {
+                "provider": provider.id,
+                "provider_label": provider.label,
+                "name": provider.template_name,
+                "exists": bool(row),
+                "template_hash": template_hash,
+                "template_id": (row or {}).get("id") if isinstance(row, dict) else None,
+                "active": bool(template_hash) and template_hash == active_hash,
+            }
+        )
+    return {"items": items, "active_hash": active_hash}
+

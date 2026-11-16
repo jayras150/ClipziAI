@@ -22,6 +22,7 @@ class WhisperModel(Base):
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     slug: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     label: Mapped[str] = mapped_column(String(160))
+    provider: Mapped[str] = mapped_column(String(24), default="gdrive", index=True)
     drive_folder_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
     drive_path: Mapped[str] = mapped_column(String(400))
     model_type: Mapped[str] = mapped_column(String(20), default="ct2")
@@ -43,6 +44,19 @@ class WhisperModel(Base):
 
     def __repr__(self) -> str:  # pragma: no cover - bantu debugging
         return f"<WhisperModel {self.slug} ({self.status})>"
+
+    # Nama generik agar kode multi-provider tidak perlu tahu istilah "drive".
+    @property
+    def remote_id(self) -> str:
+        return str(self.drive_folder_id or "")
+
+    @property
+    def remote_path(self) -> str:
+        return str(self.drive_path or "")
+
+    @property
+    def source(self) -> str:
+        return str(self.provider or "gdrive")
 
 
 __all__ = ["WhisperModel"]

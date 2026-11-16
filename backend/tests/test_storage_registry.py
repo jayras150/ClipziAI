@@ -171,7 +171,7 @@ def test_public_url_reachable_false_saat_403(monkeypatch):
     assert reg.public_url_reachable("https://pub.example/x") is False
 
 
-def test_get_storage_tidak_memuat_ulang_bila_sudah_terisi(monkeypatch):
+def test_get_storage_lazy_load_konfigurasi_kosong(monkeypatch):
     """Worker: `get_storage()` wajib lazy-load konfigurasi.
 
     Regresi: dulu worker tidak pernah memanggil `load_storage_config()` (hanya

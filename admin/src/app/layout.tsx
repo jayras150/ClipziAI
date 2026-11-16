@@ -45,6 +45,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 if (localStorage.theme === 'dark' || ((!('theme' in localStorage) || localStorage.theme === 'system') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
                   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '${META_THEME_COLORS.dark}')
                 }
+                // Mobile memakai tema WhatsApp kecuali admin sudah memilih tema sendiri.
+                if (window.matchMedia('(max-width: 767px)').matches && localStorage.getItem('clipzi-theme-user') !== '1') {
+                  document.documentElement.setAttribute('data-theme', 'whatsapp')
+                }
               } catch (_) {}
             `
           }}

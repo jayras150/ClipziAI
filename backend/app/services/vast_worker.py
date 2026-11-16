@@ -349,6 +349,17 @@ def build_worker_env(task_id: Optional[UUID] = None) -> Dict[str, str]:
         env["CLIPZI_RESTORE_TIMEOUT"] = str(settings.VAST_RESTORE_TIMEOUT)
         env["CLIPZI_RESTORE_MODEL_PATH"] = settings.VAST_RESTORE_MODEL_PATH
         env["GPU_WHISPER_MODEL"] = settings.VAST_RESTORE_MODEL_PATH
+    # Env restore dari provider model aktif (Dropbox / B2 / S3 / Hugging Face).
+    # Disimpan di platform settings saat model diaktifkan; tanpa ini worker
+    # hanya tahu jalur cloud_copy Google Drive.
+    try:
+        from app.services import model_sources
+
+        for key, value in model_sources.restore_env().items():
+            if str(value).strip():
+                env[key] = str(value)
+    except Exception:  # noqa: BLE001 - jangan gagalkan dispatch
+        pass
     return env
 
 

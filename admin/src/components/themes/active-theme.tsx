@@ -5,6 +5,10 @@ import { ReactNode, createContext, useContext, useEffect, useState } from 'react
 import { DEFAULT_THEME } from './theme.config';
 
 const COOKIE_NAME = 'active_theme';
+const DESKTOP_KEY = 'clipzi-theme-desktop';
+const USER_KEY = 'clipzi-theme-user';
+const MOBILE_THEME = 'whatsapp';
+const MOBILE_QUERY = '(max-width: 767px)';
 
 function setThemeCookie(theme: string) {
   if (typeof window === 'undefined') return;
@@ -27,7 +31,37 @@ export function ActiveThemeProvider({
   initialTheme?: string;
 }) {
   const themeToUse = initialTheme || DEFAULT_THEME;
-  const [activeTheme, setActiveTheme] = useState<string>(themeToUse);
+  const [activeTheme, setActiveThemeState] = useState<string>(themeToUse);
+
+  // Mobile: default tema WhatsApp (admin tidak bisa membuka pemilih tema di
+  // layar kecil). Desktop: pakai tema pilihan admin yang tersimpan.
+  useEffect(() => {
+    const query = window.matchMedia(MOBILE_QUERY);
+    const sync = () => {
+      const picked = window.localStorage.getItem(USER_KEY) === '1';
+      if (query.matches) {
+        if (!picked) setActiveThemeState(MOBILE_THEME);
+        return;
+      }
+      const saved = window.localStorage.getItem(DESKTOP_KEY);
+      if (saved) setActiveThemeState(saved);
+    };
+    sync();
+    query.addEventListener('change', sync);
+    return () => query.removeEventListener('change', sync);
+  }, []);
+
+  const setActiveTheme = (theme: string) => {
+    try {
+      window.localStorage.setItem(USER_KEY, '1');
+      if (!window.matchMedia(MOBILE_QUERY).matches) {
+        window.localStorage.setItem(DESKTOP_KEY, theme);
+      }
+    } catch (_) {
+      /* mode private: abaikan */
+    }
+    setActiveThemeState(theme);
+  };
 
   useEffect(() => {
     // Only update if theme has changed

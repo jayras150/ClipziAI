@@ -62,6 +62,19 @@ async def init_db() -> None:
             await conn.execute(
                 text(f"ALTER TABLE tasks ADD COLUMN IF NOT EXISTS {column} {ddl}")
             )
+        # Sumber model Whisper bisa diganti provider (gdrive/dropbox/b2/s3/hf).
+        await conn.execute(
+            text(
+                "ALTER TABLE whisper_models ADD COLUMN IF NOT EXISTS "
+                "provider VARCHAR(24) DEFAULT 'gdrive'"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_whisper_models_provider "
+                "ON whisper_models (provider)"
+            )
+        )
         await conn.execute(
             text(
                 "CREATE INDEX IF NOT EXISTS ix_tasks_download_status "

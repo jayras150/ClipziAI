@@ -2,7 +2,7 @@
 import json
 import re
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -13,8 +13,13 @@ from app.api.admin.deps import get_current_admin
 from app.api.deps import get_db_session
 from app.models.audit_log import ActorType, AuditLog
 from app.models.user import User
-from app.services import platform_settings as ps
-from app.services import whisper_model_manager as manager
+from app.services import (
+    model_sources,
+    platform_settings as ps,
+    vast_admin,
+    vast_config,
+    whisper_model_manager as manager,
+)
 from app.services.drive_service import DriveError
 
 router = APIRouter(dependencies=[Depends(get_current_admin)])
@@ -31,6 +36,23 @@ DRIVE_ID_QUERY_RE = re.compile(r"[?&]id=([A-Za-z0-9_-]{10,})")
 
 class ColabNotebookIn(BaseModel):
     notebook_file_id: str = ""
+
+
+class SourceSaveIn(BaseModel):
+    provider: str = "gdrive"
+    values: Dict[str, Any] = {}
+    auto_template: bool = True
+    activate: bool = True
+
+
+class SourceTestIn(BaseModel):
+    provider: Optional[str] = None
+    values: Dict[str, Any] = {}
+
+
+class SourceTemplateIn(BaseModel):
+    provider: Optional[str] = None
+    activate: bool = True
 
 
 
@@ -126,15 +148,23 @@ async def save_colab_config(
 
 
 @router.get("/colab/notebook")
-async def download_colab_notebook():
-    if not COLAB_NOTEBOOK_PATH.is_file():
-        raise HTTPException(status_code=500, detail="Template notebook tidak ditemukan.")
-    content = COLAB_NOTEBOOK_PATH.read_text(encoding="utf-8")
+async def download_colab_notebook(provider: str = "gdrive"):
+    """Template notebook Colab untuk provider terpilih (default Google Drive)."""
+    try:
+        path = model_sources.notebook_path(provider)
+    except model_sources.SourceError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    content = path.read_text(encoding="utf-8")
     try:
         json.loads(content)
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=500, detail="Template notebook bukan JSON valid.") from exc
-    return {"filename": COLAB_FILENAME, "content": content}
+    provider_meta = model_sources.get_provider(provider)
+    return {
+        "filename": f"clipzi-whisper-{provider_meta.id}.ipynb",
+        "provider": provider_meta.id,
+        "content": content,
+    }
 
 
 @router.get("")
@@ -143,13 +173,145 @@ async def read_models(db: AsyncSession = Depends(get_db_session)):
     status = await manager.drive_status()
     colab = await _colab_config(db)
     active = next((manager.model_to_dict(row) for row in rows if row.is_active), None)
+    try:
+        source = await manager.source_status(db)
+    except Exception as exc:  # noqa: BLE001 - jangan gagalkan halaman model
+        source = {"error": str(exc)[:300]}
     return {
         **status,
         **colab,
+        "source": source,
         "active_model_id": active["id"] if active else None,
         "active_model": active,
         "items": [manager.model_to_dict(row) for row in rows],
     }
+
+
+@router.get("/source")
+async def read_source(db: AsyncSession = Depends(get_db_session)):
+    """Provider aktif + manifest lengkap (untuk tombol provider di admin)."""
+    try:
+        source = await model_sources.get_source(db)
+        view = model_sources.public_view(source["provider"])
+    except model_sources.SourceError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    templates: Dict[str, Any] = {"items": [], "active_hash": ""}
+    try:
+        templates = await vast_admin.provider_templates()
+    except Exception as exc:  # noqa: BLE001 - Vast belum dikonfigurasi
+        templates["error"] = str(exc)[:300]
+    return {
+        **source,
+        "providers": view["providers"],
+        "warnings": view["warnings"],
+        "templates": templates,
+    }
+
+
+@router.put("/source")
+async def save_source(
+    payload: SourceSaveIn,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Simpan provider + kredensial, lalu buat/aktifkan template Vast-nya."""
+    try:
+        provider = model_sources.get_provider(payload.provider)
+        saved = await model_sources.save_source(
+            db, provider.id, payload.values, provider=provider
+        )
+    except model_sources.SourceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    template: Dict[str, Any] = {"skipped": True}
+    if payload.auto_template:
+        try:
+            template = await vast_admin.upsert_worker_template(
+                provider.template_name, provider.env
+            )
+            template["skipped"] = False
+            if payload.activate and template.get("template_hash"):
+                await vast_config.save_vast_config(
+                    db,
+                    {
+                        "template_hash": template["template_hash"],
+                        "worker_image": template["image"],
+                        "worker_disk": template["disk_space"],
+                    },
+                )
+                template["activated"] = True
+        except (ValueError, RuntimeError) as exc:
+            template = {"skipped": False, "error": str(exc)[:400]}
+    _audit(
+        db,
+        request,
+        current_admin,
+        "whisper_source_saved",
+        meta={
+            "provider": provider.id,
+            "template_name": provider.template_name,
+            "template_action": template.get("action"),
+            "template_hash": template.get("template_hash"),
+        },
+    )
+    await db.commit()
+    return {"ok": True, "source": saved, "template": template}
+
+
+@router.post("/source/test")
+async def test_source(
+    payload: SourceTestIn,
+    db: AsyncSession = Depends(get_db_session),
+):
+    try:
+        return await model_sources.test_source(db, payload.provider, payload.values)
+    except model_sources.SourceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/source/template")
+async def sync_source_template(
+    payload: SourceTemplateIn,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Buat/perbarui template Vast provider aktif ("Clipzy <Provider>")."""
+    try:
+        source = await model_sources.get_source(db)
+        provider = model_sources.get_provider(payload.provider or source["provider"])
+        template = await vast_admin.upsert_worker_template(
+            provider.template_name, provider.env
+        )
+    except model_sources.SourceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if payload.activate and template.get("template_hash"):
+        await vast_config.save_vast_config(
+            db,
+            {
+                "template_hash": template["template_hash"],
+                "worker_image": template["image"],
+                "worker_disk": template["disk_space"],
+            },
+        )
+        template["activated"] = True
+    _audit(
+        db,
+        request,
+        current_admin,
+        "vast_provider_template_synced",
+        meta={
+            "provider": provider.id,
+            "template_name": template.get("name"),
+            "action": template.get("action"),
+            "template_hash": template.get("template_hash"),
+        },
+    )
+    await db.commit()
+    return template
 
 
 @router.post("/scan")
@@ -194,14 +356,26 @@ async def activate_model(
         current_admin,
         "whisper_model_activated",
         model_id=payload["id"],
-        meta={"slug": payload["slug"], "drive_path": payload["drive_path"]},
+        meta={
+            "slug": payload["slug"],
+            "provider": payload.get("provider"),
+            "remote_path": payload.get("remote_path"),
+        },
     )
     await db.commit()
+    restore_env = model_sources.restore_env()
+    provider = model_sources.get_provider(payload.get("provider"))
     return {
         "ok": True,
         "model": payload,
-        "restore_src": payload["drive_path"],
-        "restore_model_path": manager.MODEL_WORKSPACE,
+        "provider": provider.id,
+        "provider_label": provider.label,
+        "restore_mode": provider.restore_mode,
+        "restore_src": restore_env.get("CLIPZI_MODEL_URL")
+        or restore_env.get("CLIPZI_HF_REPO")
+        or payload.get("remote_path"),
+        "restore_env": sorted(restore_env),
+        "restore_model_path": model_sources.MODEL_WORKSPACE,
     }
 
 
