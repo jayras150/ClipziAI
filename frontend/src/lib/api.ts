@@ -531,7 +531,7 @@ export class ApiClient {
   async applyThumbnailCaption(
     token: string,
     clipId: string,
-    payload: { text: string; style: string; position: string },
+    payload: { text: string; style: string; position: string; at_second?: number },
   ): Promise<{ ok: boolean; thumbnail_url: string; at_second: number; style: string; position: string }> {
     const response = await this.client.post(
       `/api/clips/${clipId}/thumbnail-caption`,

@@ -565,6 +565,8 @@ class ThumbnailCaptionIn(BaseModel):
     text: str = ""
     style: str = "hormozi-pop"
     position: str = "bottom-center"
+    # Frame yang dipilih user lewat scrubber (detik dari awal klip).
+    at_second: Optional[float] = None
 
 
 @router.get("/caption-styles")
@@ -603,13 +605,16 @@ async def apply_thumbnail_caption(
         info = await processor.get_video_info(source)
         duration = float(info.get("duration") or clip.duration or 1.0)
         factors = dict(clip.viral_factors or {})
-        hint = factors.get("hook_at")
-        try:
-            at_second = float(hint) if hint is not None else 0.0
-        except (TypeError, ValueError):
-            at_second = 0.0
-        if at_second <= 0:
-            at_second = round(max(0.5, duration * 0.45), 2)
+        if payload.at_second is not None:
+            at_second = max(0.0, min(duration - 0.05, float(payload.at_second)))
+        else:
+            hint = factors.get("hook_at")
+            try:
+                at_second = float(hint) if hint is not None else 0.0
+            except (TypeError, ValueError):
+                at_second = 0.0
+            if at_second <= 0:
+                at_second = round(max(0.5, duration * 0.45), 2)
 
         extracted = await processor.extract_thumbnail(
             source, frame_path, at_second=round(at_second, 2)
