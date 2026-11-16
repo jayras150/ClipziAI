@@ -41,6 +41,11 @@ export default function DashboardError({
           <pre className='bg-muted max-h-32 overflow-auto rounded-md p-3 text-xs whitespace-pre-wrap'>
             {error.message}
           </pre>
+          {error.digest ? (
+            <p className='text-muted-foreground text-xs'>
+              Kode error (sertakan saat lapor): <code>{error.digest}</code>
+            </p>
+          ) : null}
           <div className='flex flex-wrap gap-2'>
             <Button onClick={reset}>Coba lagi</Button>
             <Button variant='outline' render={<Link href='/dashboard/overview' />}>

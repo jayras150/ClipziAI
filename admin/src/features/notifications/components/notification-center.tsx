@@ -10,6 +10,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { NotificationCard } from '@/components/ui/notification-card';
+import { LogDialog, type LogDialogData } from '@/components/ui/log-dialog';
+import { fetchNotificationLog } from '@/app/dashboard/notifications/actions';
 import {
   fetchAdminNotifications,
   markAdminNotificationsRead,
@@ -32,6 +34,9 @@ export function NotificationCenter() {
   const [unread, setUnread] = useState(0);
   const [error, setError] = useState('');
   const [open, setOpen] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
+  const [logLoading, setLogLoading] = useState(false);
+  const [logData, setLogData] = useState<LogDialogData | null>(null);
 
   const load = useCallback(async () => {
     const result = await fetchAdminNotifications();
@@ -66,9 +71,30 @@ export function NotificationCenter() {
     await markAllAdminNotificationsRead();
   };
 
+  const openLog = async (notification: AdminNotification) => {
+    setLogOpen(true);
+    setLogLoading(true);
+    setLogData({
+      title: notification.title,
+      subtitle: `${notification.severity.toUpperCase()} · ${notification.created_at || ''}`,
+      detail: notification.body
+    });
+    const payload = await fetchNotificationLog(notification.key);
+    setLogLoading(false);
+    setLogData({
+      title: payload.title || notification.title,
+      subtitle: `${(payload.severity || notification.severity).toUpperCase()} · ${
+        payload.created_at || notification.created_at || ''
+      }`,
+      detail: payload.detail || notification.body,
+      log: payload.log_text || ''
+    });
+  };
+
   const visible = items.slice(0, MAX_VISIBLE);
 
   return (
+    <>
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger render={<Button variant='ghost' size='icon' className='relative h-8 w-8' />}>
         <Icons.notification className='h-4 w-4' />
@@ -119,6 +145,7 @@ export function NotificationCenter() {
           ) : (
             <div className='flex flex-col gap-1 p-2'>
               {visible.map((notification) => (
+                <div key={notification.key} className='space-y-1'>
                 <NotificationCard
                   key={notification.key}
                   id={notification.key}
@@ -137,11 +164,25 @@ export function NotificationCenter() {
                     if (actionId) router.push(actionId);
                   }}
                 />
+                <div className='flex justify-end'>
+                  <Button
+                    variant='ghost'
+                    size='sm'
+                    className='text-muted-foreground h-auto px-2 py-1 text-xs'
+                    onClick={() => void openLog(notification)}
+                  >
+                    Cek Log
+                  </Button>
+                </div>
+                </div>
               ))}
             </div>
           )}
         </ScrollArea>
       </PopoverContent>
     </Popover>
+  );
+      <LogDialog open={logOpen} data={logData} loading={logLoading} onClose={() => setLogOpen(false)} />
+    </>
   );
 }

@@ -188,6 +188,7 @@ async def _run_youtube_upload(
             made_for_kids=made_for_kids,
             publish_at=publish_at,
             progress_callback=on_progress,
+            thumbnail_url=thumbnail_url,
         )
         async with AsyncSessionLocal() as bg_db:
             clip = (
@@ -203,6 +204,8 @@ async def _run_youtube_upload(
                 "error": None,
                 "video_id": uploaded["video_id"],
                 "progress": 100,
+                "thumbnail_ok": uploaded.get("thumbnail_ok"),
+                "thumbnail_error": uploaded.get("thumbnail_error"),
             }
         )
         logger.info(
@@ -581,6 +584,7 @@ async def upload_to_youtube(
         category_id,
         made_for_kids,
         upload_data.publish_at,
+        clip.thumbnail_url,
     )
 
     return JSONResponse(

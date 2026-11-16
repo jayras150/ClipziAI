@@ -37,6 +37,8 @@ type UserRow = {
 };
 
 type SearchParams = {
+  ok?: string;
+  err?: string;
   q?: string;
   status?: string;
   plan?: string;
@@ -86,6 +88,16 @@ export default async function UsersPage({
       pageDescription={`${data.total} akun terdaftar — klik nama untuk detail, plan, kredit, dan log aktivitas`}
     >
       <div className='space-y-4'>
+        {params.ok ? (
+          <div className='rounded-md border border-emerald-500/50 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200'>
+            {params.ok}
+          </div>
+        ) : null}
+        {params.err ? (
+          <div className='rounded-md border border-destructive/60 bg-destructive/10 px-3 py-2 text-sm text-destructive'>
+            {params.err}
+          </div>
+        ) : null}
         <Card>
           <CardContent className='pt-6'>
             <form className='flex flex-wrap items-end gap-2' action='/dashboard/users'>

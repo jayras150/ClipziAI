@@ -348,6 +348,33 @@ class YouTubeService:
             return result
 
     @staticmethod
+    def thumbnail_state(access_token: str, video_id: str) -> Dict[str, Any]:
+        """Cek apakah YouTube sudah menyimpan thumbnail kustom untuk video ini."""
+        try:
+            response = requests.get(
+                "https://www.googleapis.com/youtube/v3/videos",
+                params={"part": "contentDetails,snippet", "id": video_id},
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "User-Agent": "ClipziAI-Backend/1.0",
+                },
+                timeout=20,
+            )
+            if not response.ok:
+                return {"ok": False, "has_custom_thumbnail": None, "error": YouTubeService._google_error(response)}
+            items = (response.json() or {}).get("items") or []
+            if not items:
+                return {"ok": False, "has_custom_thumbnail": None, "error": "Video tidak ditemukan"}
+            content = items[0].get("contentDetails") or {}
+            return {
+                "ok": True,
+                "has_custom_thumbnail": bool(content.get("hasCustomThumbnail")),
+                "error": None,
+            }
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "has_custom_thumbnail": None, "error": str(exc)[:200]}
+
+    @staticmethod
     def classify_thumbnail_error(message: str) -> str:
         """Klasifikasikan error `thumbnails.set` agar UI bisa menampilkan saran."""
         text = (message or "").lower()
@@ -586,16 +613,20 @@ class YouTubeService:
                 detail="YouTube did not return a video id.",
             )
         report(100, content_length, content_length)
+        thumb_ok: Optional[bool] = None
+        thumb_error: Optional[str] = None
         if thumbnail_url:
             thumb_result = self._set_thumbnail(access_token, str(video_id), thumbnail_url)
-            if not thumb_result.get("ok"):
-                logger.warning(
-                    "Thumbnail otomatis gagal untuk %s: %s", video_id, thumb_result.get("error")
-                )
+            thumb_ok = bool(thumb_result.get("ok"))
+            thumb_error = str(thumb_result.get("error") or "") or None
+            if not thumb_ok:
+                logger.warning("Thumbnail otomatis gagal untuk %s: %s", video_id, thumb_error)
         return {
             "success": True,
             "video_id": video_id,
             "video_url": f"https://youtu.be/{video_id}",
             "privacy_status": privacy,
+            "thumbnail_ok": thumb_ok,
+            "thumbnail_error": thumb_error,
         }
 

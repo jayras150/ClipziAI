@@ -262,6 +262,33 @@ async def host_metrics(
     sample = store.record(payload.model_dump(exclude_none=True))
     return {"ok": True, "ts": sample["ts"]}
 
+class HostCommandResultIn(BaseModel):
+    ok: bool = False
+    output: str | None = None
+
+
+@router.get("/host-commands")
+async def host_commands(request: Request):
+    """Agent host mengambil perintah admin yang belum dieksekusi."""
+    from app.services import host_commands as commands
+
+    _verify_agent_token(request)
+    agent = (request.headers.get("x-clipzi-agent") or "host").strip()[:80]
+    return {"items": commands.pending_for(agent)}
+
+
+@router.post("/host-commands/{job_id}/result")
+async def host_command_result(job_id: str, payload: HostCommandResultIn, request: Request):
+    """Agent host mengirim hasil eksekusi perintah."""
+    from app.services import host_commands as commands
+
+    _verify_agent_token(request)
+    job = commands.finish(job_id, bool(payload.ok), payload.output or "")
+    if job is None:
+        raise HTTPException(status_code=404, detail="Command tidak ditemukan")
+    return {"ok": True, "job": job}
+
+
 @router.get("/proxies/active.txt", response_class=PlainTextResponse)
 async def active_proxies(request: Request, db: AsyncSession = Depends(get_db_session)):
     """File proxy aktif untuk worker (fallback bila env YTDLP_PROXY_POOL kosong)."""

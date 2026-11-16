@@ -860,11 +860,30 @@ async def push_thumbnail_to_youtube(
             )
         raise HTTPException(status_code=502, detail=detail[:400])
 
+    # Verifikasi: YouTube kadang butuh beberapa detik sebelum thumbnail tercatat.
+    has_custom: Optional[bool] = None
+    for attempt in range(3):
+        state = await asyncio.to_thread(
+            YouTubeService.thumbnail_state, access_token, str(clip.youtube_video_id)
+        )
+        if state.get("ok"):
+            has_custom = bool(state.get("has_custom_thumbnail"))
+            if has_custom:
+                break
+        if attempt < 2:
+            await asyncio.sleep(2)
+
     factors = dict(clip.viral_factors or {})
     factors.pop("youtube_thumbnail_error", None)
     clip.viral_factors = factors
     await db.commit()
-    return {"ok": True, "video_id": str(clip.youtube_video_id), "thumbnail_url": clip.thumbnail_url}
+    return {
+        "ok": True,
+        "video_id": str(clip.youtube_video_id),
+        "thumbnail_url": clip.thumbnail_url,
+        "has_custom_thumbnail": has_custom,
+        "pending": has_custom is False,
+    }
 
 
 @router.post("/{clip_id}/thumbnails", response_model=ClipThumbnailResponse)

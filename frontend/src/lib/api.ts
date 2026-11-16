@@ -556,7 +556,13 @@ export class ApiClient {
   async pushThumbnailToYouTube(
     token: string,
     clipId: string,
-  ): Promise<{ ok: boolean; video_id: string; thumbnail_url: string }> {
+  ): Promise<{
+    ok: boolean
+    video_id: string
+    thumbnail_url: string
+    has_custom_thumbnail?: boolean | null
+    pending?: boolean
+  }> {
     const response = await this.client.post(
       `/api/clips/${clipId}/thumbnail/youtube`,
       {},

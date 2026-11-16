@@ -798,3 +798,39 @@
   }
 }
 
+
+/* ===== System dashboard: neon glass cards (data agent host) ===== */
+.ns-card{position:relative;overflow:hidden;border-radius:20px;padding:22px;border:1px solid color-mix(in oklab, var(--border) 80%, transparent);background:
+  radial-gradient(120% 130% at 0% 0%, color-mix(in oklab, var(--primary) 12%, transparent), transparent 60%),
+  color-mix(in oklab, var(--card) 92%, transparent);
+  box-shadow:0 8px 32px rgba(0,0,0,.28);backdrop-filter:blur(12px);transition:transform .3s ease,box-shadow .3s ease,border-color .3s ease}
+.ns-card:hover{transform:translateY(-4px)}
+.ns-card.ns-cpu:hover{border-color:rgba(0,243,255,.5);box-shadow:0 0 20px rgba(0,243,255,.35)}
+.ns-card.ns-ram:hover{border-color:rgba(188,19,254,.5);box-shadow:0 0 20px rgba(188,19,254,.35)}
+.ns-card.ns-storage:hover{border-color:rgba(255,0,128,.5);box-shadow:0 0 20px rgba(255,0,128,.35)}
+.ns-card.ns-server:hover{border-color:rgba(0,255,136,.5);box-shadow:0 0 20px rgba(0,255,136,.35)}
+.ns-card.ns-cache:hover{border-color:rgba(255,170,0,.5);box-shadow:0 0 20px rgba(255,170,0,.35)}
+.ns-card.ns-caddy:hover{border-color:rgba(0,183,255,.5);box-shadow:0 0 20px rgba(0,183,255,.35)}
+.ns-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
+.ns-head h3{font-size:0.95rem;font-weight:600;letter-spacing:.4px;color:var(--foreground)}
+.ns-dot{width:10px;height:10px;border-radius:50%;background:var(--muted-foreground);opacity:.5}
+.ns-cpu .ns-dot{background:#00f3ff;box-shadow:0 0 10px #00f3ff;opacity:1}
+.ns-ram .ns-dot{background:#bc13fe;box-shadow:0 0 10px #bc13fe;opacity:1}
+.ns-storage .ns-dot{background:#ff0080;box-shadow:0 0 10px #ff0080;opacity:1}
+.ns-server .ns-dot{background:#00ff88;box-shadow:0 0 10px #00ff88;opacity:1}
+.ns-cache .ns-dot{background:#ffaa00;box-shadow:0 0 10px #ffaa00;opacity:1}
+.ns-caddy .ns-dot{background:#00b7ff;box-shadow:0 0 10px #00b7ff;opacity:1}
+.ns-value{font-size:1.6rem;font-weight:700;line-height:1.15;color:var(--foreground)}
+.ns-muted{font-size:.95rem;font-weight:500;color:var(--muted-foreground)}
+.ns-sub{margin-top:4px;font-size:.8rem;color:var(--muted-foreground)}
+.ns-bar{margin-top:12px;height:8px;border-radius:999px;background:color-mix(in oklab, var(--foreground) 10%, transparent);overflow:hidden}
+.ns-bar > span{display:block;height:100%;border-radius:999px;box-shadow:0 0 12px currentColor;transition:width .5s ease}
+.ns-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:999px;font-size:.82rem;font-weight:600;margin-top:6px}
+.ns-badge.is-online{background:rgba(0,255,136,.12);color:#00c46a;border:1px solid rgba(0,255,136,.35)}
+.ns-badge.is-offline{background:rgba(255,77,77,.12);color:#e11d48;border:1px solid rgba(255,77,77,.35)}
+.ns-badge-dot{width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 8px currentColor;animation:nsPulse 1.6s infinite}
+@keyframes nsPulse{0%{transform:scale(.95);opacity:.85}50%{transform:scale(1.2);opacity:1}100%{transform:scale(.95);opacity:.85}}
+.ns-btn{border-radius:10px;font-weight:600;border:1px solid rgba(255,170,0,.45);background:rgba(255,170,0,.12);color:#b45309}
+.ns-btn:hover{background:rgba(255,170,0,.22);color:#7c2d12}
+.ns-caddy .ns-btn{border-color:rgba(0,183,255,.45);background:rgba(0,183,255,.12);color:#0369a1}
+.ns-caddy .ns-btn:hover{background:rgba(0,183,255,.22);color:#075985}

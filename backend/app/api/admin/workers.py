@@ -10,7 +10,7 @@ import asyncio
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,14 +19,17 @@ from app.api.deps import get_db_session
 from app.core.config import get_settings
 from app.models.user import User
 from app.models.worker_instance import WorkerInstance
-from app.services import vast_admin
+from app.models.worker_log import WorkerLog
+from app.services import vast_admin, worker_logs
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _serialize(row: WorkerInstance) -> Dict[str, Any]:
+def _serialize(row: WorkerInstance, has_log: bool = False) -> Dict[str, Any]:
     return {
+        "outcome": worker_logs.outcome_from(row.state, row.destroy_reason),
+        "has_log": bool(has_log),
         "id": str(row.id),
         "task_id": str(row.task_id),
         "instance_id": row.instance_id,
@@ -58,7 +61,22 @@ async def list_worker_instances(
     if active_only:
         query = query.where(WorkerInstance.state != "destroyed")
     rows = (await db.execute(query)).scalars().all()
-    return {"items": [_serialize(row) for row in rows], "count": len(rows)}
+    instance_ids = [row.instance_id for row in rows if row.instance_id is not None]
+    logged: set[int] = set()
+    if instance_ids:
+        logged = set(
+            (
+                await db.execute(
+                    select(WorkerLog.instance_id).where(WorkerLog.instance_id.in_(instance_ids))
+                )
+            )
+            .scalars()
+            .all()
+        )
+    return {
+        "items": [_serialize(row, has_log=row.instance_id in logged) for row in rows],
+        "count": len(rows),
+    }
 
 
 @router.get("/live")
@@ -103,6 +121,51 @@ async def worker_instance_logs(
             }
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {"source": "vast", "text": text, "local_tail": local_tail or None}
+
+
+@router.get("/logs")
+async def list_worker_logs(
+    outcome: str = Query(default="failed", description="failed|cancelled|success|all"),
+    q: Optional[str] = None,
+    limit: int = 50,
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+) -> Dict[str, Any]:
+    """Log worker tersimpan (audit kegagalan instance GPU)."""
+    return await worker_logs.list_logs(db, outcome=outcome, q=q, limit=limit)
+
+
+@router.get("/logs/{log_id}")
+async def read_worker_log(
+    log_id: str,
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+) -> Dict[str, Any]:
+    from uuid import UUID as _UUID
+
+    try:
+        parsed = _UUID(log_id)
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid log id.")
+    payload = await worker_logs.get_log(db, parsed)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Log worker tidak ditemukan.")
+    return payload
+
+
+@router.post("/logs/clear")
+async def clear_worker_logs(
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+) -> Dict[str, Any]:
+    """Hapus SEMUA log worker tersimpan (satu klik dari dashboard)."""
+    result = await worker_logs.clear_all(db)
+    logger.warning(
+        "Admin %s menghapus semua log worker (%s baris)",
+        current_user.email,
+        result.get("deleted"),
+    )
+    return result
 
 
 @router.post("/instances/{instance_id}/destroy")

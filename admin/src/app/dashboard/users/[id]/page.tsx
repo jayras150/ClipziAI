@@ -38,6 +38,7 @@ type UserDetail = {
   is_banned: boolean;
   ban_reason: string | null;
   email_verified: boolean;
+  is_admin?: boolean;
   two_factor_enabled: boolean;
   last_login_at: string | null;
   last_login_ip: string | null;
@@ -117,10 +118,10 @@ export default async function UserDetailPage({
   searchParams
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ temp?: string }>;
+  searchParams: Promise<{ temp?: string; ok?: string; err?: string }>;
 }) {
   const { id } = await params;
-  const { temp } = await searchParams;
+  const { temp, ok, err } = await searchParams;
 
   const [user, tasks, credits, transactions, logs] = await Promise.all([
     adminFetch<UserDetail>(`/api/admin/users/${id}`),
@@ -147,6 +148,22 @@ export default async function UserDetailPage({
             ← Kembali ke daftar
           </Button>
         </div>
+
+        {ok ? (
+          <div className='rounded-md border border-emerald-500/50 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200'>
+            {ok}
+          </div>
+        ) : null}
+        {err ? (
+          <div className='rounded-md border border-destructive/60 bg-destructive/10 px-3 py-2 text-sm text-destructive'>
+            {err}
+          </div>
+        ) : null}
+        {user.is_admin ? (
+          <div className='rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-sm text-amber-200'>
+            Akun admin dilindungi: blokir, ubah, dan hapus dinonaktifkan oleh backend.
+          </div>
+        ) : null}
 
         {temp ? (
           <Card className='border-amber-500/60'>
@@ -225,7 +242,7 @@ export default async function UserDetailPage({
                   <label className='text-muted-foreground mb-1 block text-xs'>Email</label>
                   <Input name='email' defaultValue={user.email || ''} className='h-9' />
                 </div>
-                <SubmitButton size='sm'>
+                <SubmitButton disabled={Boolean(user.is_admin)} size='sm'>
                   Simpan
                 </SubmitButton>
               </form>
@@ -271,7 +288,7 @@ export default async function UserDetailPage({
                     className='h-9 w-28'
                   />
                 </div>
-                <SubmitButton size='sm' variant='secondary'>
+                <SubmitButton disabled={Boolean(user.is_admin)} size='sm' variant='secondary'>
                   Terapkan plan
                 </SubmitButton>
               </form>
@@ -286,7 +303,7 @@ export default async function UserDetailPage({
                   <label className='text-muted-foreground mb-1 block text-xs'>Keterangan</label>
                   <Input name='description' placeholder='alasan penyesuaian' className='h-9' />
                 </div>
-                <SubmitButton size='sm'>
+                <SubmitButton disabled={Boolean(user.is_admin)} size='sm'>
                   Sesuaikan kredit
                 </SubmitButton>
               </form>
@@ -307,37 +324,37 @@ export default async function UserDetailPage({
                   <label className='text-muted-foreground mb-1 block text-xs'>Alasan blokir</label>
                   <Input name='reason' placeholder='alasan' className='h-9 w-52' />
                 </div>
-                <SubmitButton size='sm' variant='destructive'>
+                <SubmitButton disabled={Boolean(user.is_admin)} size='sm' variant='destructive'>
                   Blokir
                 </SubmitButton>
               </form>
               <form action={unbanUser}>
                 <input type='hidden' name='uid' value={user.id} />
-                <SubmitButton size='sm' variant='outline'>
+                <SubmitButton disabled={Boolean(user.is_admin)} size='sm' variant='outline'>
                   Buka blokir
                 </SubmitButton>
               </form>
               <form action={suspendUser}>
                 <input type='hidden' name='uid' value={user.id} />
-                <SubmitButton size='sm' variant='outline'>
+                <SubmitButton disabled={Boolean(user.is_admin)} size='sm' variant='outline'>
                   Tangguhkan
                 </SubmitButton>
               </form>
               <form action={activateUser}>
                 <input type='hidden' name='uid' value={user.id} />
-                <SubmitButton size='sm' variant='secondary'>
+                <SubmitButton disabled={Boolean(user.is_admin)} size='sm' variant='secondary'>
                   Aktifkan
                 </SubmitButton>
               </form>
               <form action={forceLogoutUser}>
                 <input type='hidden' name='uid' value={user.id} />
-                <SubmitButton size='sm' variant='outline'>
+                <SubmitButton disabled={Boolean(user.is_admin)} size='sm' variant='outline'>
                   Paksa logout
                 </SubmitButton>
               </form>
               <form action={resetUserPassword}>
                 <input type='hidden' name='uid' value={user.id} />
-                <SubmitButton size='sm' variant='outline'>
+                <SubmitButton disabled={Boolean(user.is_admin)} size='sm' variant='outline'>
                   Reset password
                 </SubmitButton>
               </form>

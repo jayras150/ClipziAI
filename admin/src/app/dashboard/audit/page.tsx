@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { adminFetch, type Paged } from '@/lib/clipzi';
+import { AuditDetailButton } from '@/features/notifications/components/audit-detail-button';
 
 export const metadata = { title: 'Admin: Audit Log' };
 export const dynamic = 'force-dynamic';
@@ -97,6 +98,7 @@ export default async function AuditPage({
                   <TableHead>Resource</TableHead>
                   <TableHead>IP</TableHead>
                   <TableHead>Waktu</TableHead>
+                  <TableHead className='text-right'>Log</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -118,11 +120,14 @@ export default async function AuditPage({
                       <TableCell className='text-muted-foreground text-xs'>
                         {fmt(row.created_at)}
                       </TableCell>
+                      <TableCell className='text-right'>
+                        <AuditDetailButton id={row.id} label={row.action} />
+                      </TableCell>
                     </TableRow>
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={5} className='text-muted-foreground text-center'>
+                    <TableCell colSpan={6} className='text-muted-foreground text-center'>
                       Tidak ada log pada filter ini.
                     </TableCell>
                   </TableRow>

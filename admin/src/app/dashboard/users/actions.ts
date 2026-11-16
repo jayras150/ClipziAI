@@ -12,13 +12,46 @@ import { adminFetch } from '@/lib/clipzi';
  * tidak menolak dengan 422 seperti versi lama.
  */
 
+
+/** Pesan error yang bisa dibaca dari ApiError / Error biasa. */
+function errorMessage(error: unknown): string {
+  if (error && typeof error === 'object') {
+    const detail = (error as { detail?: unknown }).detail;
+    if (typeof detail === 'string' && detail.trim()) return detail;
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return 'Aksi gagal diproses.';
+}
+
+/**
+ * Bungkus action agar TIDAK PERNAH melempar ke React Server Components.
+ *
+ * Sebelumnya penolakan backend (mis. `403 Akun admin dilindungi`) membuat RSC
+ * gagal render -> halaman global error (React #441). Sekarang kegagalan
+ * dikirim sebagai `?err=` dan ditampilkan sebagai banner.
+ */
+function guard(handler: (formData: FormData) => Promise<void>) {
+  return async (formData: FormData): Promise<void> => {
+    const uid = String(formData.get('uid') || '');
+    const target = uid ? `/dashboard/users/${uid}` : '/dashboard/users';
+    try {
+      await handler(formData);
+    } catch (error) {
+      const digest = (error as { digest?: string })?.digest;
+      if (typeof digest === 'string' && digest.startsWith('NEXT_REDIRECT')) throw error;
+      redirect(`${target}?err=${encodeURIComponent(errorMessage(error))}`);
+    }
+  };
+}
+
 function refreshUserPaths(uid: string) {
   revalidatePath('/dashboard/users');
   revalidatePath(`/dashboard/users/${uid}`);
   revalidatePath('/dashboard/overview');
 }
 
-export async function banUser(formData: FormData) {
+async function banUserImpl(formData: FormData) {
   const uid = String(formData.get('uid') || '');
   const reason = String(formData.get('reason') || 'Pelanggaran ketentuan layanan');
   if (!uid) return;
@@ -29,14 +62,14 @@ export async function banUser(formData: FormData) {
   refreshUserPaths(uid);
 }
 
-export async function unbanUser(formData: FormData) {
+async function unbanUserImpl(formData: FormData) {
   const uid = String(formData.get('uid') || '');
   if (!uid) return;
   await adminFetch(`/api/admin/users/${uid}/unban`, { method: 'POST' });
   refreshUserPaths(uid);
 }
 
-export async function suspendUser(formData: FormData) {
+async function suspendUserImpl(formData: FormData) {
   const uid = String(formData.get('uid') || '');
   const reason = String(formData.get('reason') || 'Ditangguhkan sementara');
   if (!uid) return;
@@ -47,14 +80,14 @@ export async function suspendUser(formData: FormData) {
   refreshUserPaths(uid);
 }
 
-export async function activateUser(formData: FormData) {
+async function activateUserImpl(formData: FormData) {
   const uid = String(formData.get('uid') || '');
   if (!uid) return;
   await adminFetch(`/api/admin/users/${uid}/activate`, { method: 'POST' });
   refreshUserPaths(uid);
 }
 
-export async function adjustCredits(formData: FormData) {
+async function adjustCreditsImpl(formData: FormData) {
   const uid = String(formData.get('uid') || '');
   const amount = Number(formData.get('amount') || 0);
   const description = String(formData.get('description') || 'Penyesuaian oleh admin');
@@ -66,7 +99,7 @@ export async function adjustCredits(formData: FormData) {
   refreshUserPaths(uid);
 }
 
-export async function setUserPlan(formData: FormData) {
+async function setUserPlanImpl(formData: FormData) {
   const uid = String(formData.get('uid') || '');
   const plan = String(formData.get('plan') || 'free');
   const resetCredits = formData.get('reset_credits');
@@ -82,7 +115,7 @@ export async function setUserPlan(formData: FormData) {
   refreshUserPaths(uid);
 }
 
-export async function updateUser(formData: FormData) {
+async function updateUserImpl(formData: FormData) {
   const uid = String(formData.get('uid') || '');
   if (!uid) return;
   const name = String(formData.get('name') || '').trim();
@@ -97,7 +130,7 @@ export async function updateUser(formData: FormData) {
   refreshUserPaths(uid);
 }
 
-export async function forceLogoutUser(formData: FormData) {
+async function forceLogoutUserImpl(formData: FormData) {
   const uid = String(formData.get('uid') || '');
   if (!uid) return;
   await adminFetch(`/api/admin/users/${uid}/force-logout`, { method: 'POST' });
@@ -108,7 +141,7 @@ export async function forceLogoutUser(formData: FormData) {
  * Buat password sementara lalu tampilkan sekali di halaman detail
  * (`?temp=...`). Admin harus segera menyalinnya.
  */
-export async function resetUserPassword(formData: FormData) {
+async function resetUserPasswordImpl(formData: FormData) {
   const uid = String(formData.get('uid') || '');
   if (!uid) return;
   const result = await adminFetch<{ temporary_password?: string }>(
@@ -120,7 +153,7 @@ export async function resetUserPassword(formData: FormData) {
 }
 
 /** Hapus satu user permanen (backend melindungi akun admin). */
-export async function deleteUser(formData: FormData) {
+async function deleteUserImpl(formData: FormData) {
   const uid = String(formData.get('uid') || '');
   if (!uid) return;
   await adminFetch(`/api/admin/users/${uid}`, { method: 'DELETE' });
@@ -129,7 +162,7 @@ export async function deleteUser(formData: FormData) {
 }
 
 /** Hapus banyak user sekaligus (checkbox). Backend memproses per-id. */
-export async function bulkDeleteUsers(formData: FormData) {
+async function bulkDeleteUsersImpl(formData: FormData) {
   const ids = formData.getAll('ids').map((value) => String(value)).filter(Boolean);
   if (!ids.length) return;
   await adminFetch('/api/admin/users/bulk-delete', {
@@ -140,3 +173,14 @@ export async function bulkDeleteUsers(formData: FormData) {
   revalidatePath('/dashboard/overview');
 }
 
+export const banUser = guard(banUserImpl);
+export const unbanUser = guard(unbanUserImpl);
+export const suspendUser = guard(suspendUserImpl);
+export const activateUser = guard(activateUserImpl);
+export const adjustCredits = guard(adjustCreditsImpl);
+export const setUserPlan = guard(setUserPlanImpl);
+export const updateUser = guard(updateUserImpl);
+export const forceLogoutUser = guard(forceLogoutUserImpl);
+export const resetUserPassword = guard(resetUserPasswordImpl);
+export const deleteUser = guard(deleteUserImpl);
+export const bulkDeleteUsers = guard(bulkDeleteUsersImpl);

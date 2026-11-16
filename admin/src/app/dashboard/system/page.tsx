@@ -1,7 +1,8 @@
 import PageContainer from '@/components/layout/page-container';
 import { StatCard } from '@/features/admin/table-shell';
-import { HostLive } from '@/features/system/host-live';
+import { NeonSystem } from '@/features/system/neon-system';
 import { adminFetch } from '@/lib/clipzi';
+import type { HostSnapshot } from './actions';
 
 export const metadata = { title: 'Admin: System' };
 
@@ -18,6 +19,7 @@ const PRUNE_CMD = `docker builder prune -af && docker image prune -af`;
 
 export default async function SystemPage() {
   const health = await adminFetch<Health>('/api/admin/system/health');
+  const host = await adminFetch<HostSnapshot>('/api/admin/system/host').catch(() => null);
   return (
     <PageContainer pageTitle='System' pageDescription='Status layanan, metrik VPS realtime & operasional'>
       <div className='space-y-6'>
@@ -31,10 +33,11 @@ export default async function SystemPage() {
           <div>
             <h3 className='text-sm font-medium'>VPS realtime</h3>
             <p className='text-muted-foreground text-xs'>
-              CPU, RAM, disk, jaringan, dan container — diperbarui tiap 3 detik dari agent host.
+              CPU, RAM, disk, uptime, Caddy, dan antrean task — data agent host (5 detik).
+              Tombol Clear Cache &amp; Restart Caddy dieksekusi agent host, bukan container API.
             </p>
           </div>
-          <HostLive />
+          <NeonSystem initial={host} />
         </section>
 
         <section className='space-y-3 rounded-lg border p-4 text-sm'>

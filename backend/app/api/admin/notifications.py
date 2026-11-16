@@ -21,6 +21,15 @@ async def read_notifications(db: AsyncSession = Depends(get_db_session)):
     return await notifications.build_notifications(db)
 
 
+@router.get("/log")
+async def read_notification_log(
+    key: str,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Detail + log lengkap satu notifikasi (tombol "Cek Log")."""
+    return await notifications.log_for(db, key)
+
+
 @router.post("/read")
 async def mark_notifications_read(
     payload: ReadNotificationsIn,

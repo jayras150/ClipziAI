@@ -3,6 +3,8 @@ import TableShell, { formatDate, type Column } from '@/features/admin/table-shel
 import { Button } from '@/components/ui/button';
 import { adminFetch } from '@/lib/clipzi';
 import WorkerLogsButton from '@/features/settings/components/worker-logs-button';
+import { WorkerLogAudit } from '@/features/settings/components/worker-log-audit';
+import type { StoredWorkerLog } from './actions';
 import { destroyInstance } from './actions';
 
 export const metadata = { title: 'Admin: Workers' };
@@ -31,12 +33,46 @@ type LocalRow = {
   attempt: number;
   created_at: string | null;
   log_tail: string | null;
+  outcome?: string;
+  has_log?: boolean;
 };
 
 type Paged<T> = { items: T[]; count: number };
 
+const OUTCOME_LABEL: Record<string, string> = {
+  success: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40',
+  failed: 'bg-red-500/15 text-red-300 border-red-500/40',
+  cancelled: 'bg-amber-500/15 text-amber-300 border-amber-500/40',
+  running: 'bg-sky-500/15 text-sky-300 border-sky-500/40'
+};
+
+function outcomeOf(row: Record<string, unknown>): string {
+  const explicit = String(row.outcome || '').toLowerCase();
+  if (explicit) return explicit;
+  const state = String(row.state || '').toLowerCase();
+  if (['failed', 'error', 'timeout'].includes(state)) return 'failed';
+  if (['exited', 'cancelled'].includes(state)) return 'cancelled';
+  return 'running';
+}
+
 const columns: Column[] = [
   { key: 'instance_id', label: 'Instance' },
+  {
+    key: 'outcome',
+    label: 'Hasil',
+    render: (row) => {
+      const outcome = outcomeOf(row);
+      return (
+        <span
+          className={`rounded border px-1.5 py-0.5 text-[11px] font-semibold uppercase ${
+            OUTCOME_LABEL[outcome] || OUTCOME_LABEL.running
+          }`}
+        >
+          {outcome}
+        </span>
+      );
+    }
+  },
   { key: 'state', label: 'State' },
   { key: 'gpu_name', label: 'GPU' },
   {
@@ -75,10 +111,12 @@ const columns: Column[] = [
 ];
 
 export default async function WorkersPage() {
-  const [liveResult, localResult] = await Promise.allSettled([
+  const [liveResult, localResult, logsResult] = await Promise.allSettled([
     adminFetch<Paged<LiveRow>>('/api/admin/workers/live'),
-    adminFetch<Paged<LocalRow>>('/api/admin/workers/instances?limit=50')
+    adminFetch<Paged<LocalRow>>('/api/admin/workers/instances?limit=50'),
+    adminFetch<{ items: StoredWorkerLog[] }>('/api/admin/workers/logs?outcome=all&limit=50')
   ]);
+  const storedLogs = logsResult.status === 'fulfilled' ? logsResult.value.items : [];
   const live = liveResult.status === 'fulfilled' ? liveResult.value.items : [];
   const local = localResult.status === 'fulfilled' ? localResult.value.items : [];
   const localByInstance = new Map(local.map((row) => [Number(row.instance_id), row]));
@@ -120,6 +158,7 @@ export default async function WorkersPage() {
           </p>
         ) : null}
         <TableShell columns={columns} rows={rows} empty='Tidak ada instance.' />
+        <WorkerLogAudit logs={storedLogs} />
       </div>
     </PageContainer>
   );

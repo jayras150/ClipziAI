@@ -7,10 +7,13 @@ export default function YouTubeSuccessToast({
   open,
   onClose,
   message = "Congratulations, the video has been successfully uploaded to YouTube.",
+  hint,
 }: {
   open: boolean
   onClose: () => void
   message?: string
+  /** Baris kedua, mis. minta user menunggu proses YouTube. */
+  hint?: string
 }) {
   const [closing, setClosing] = useState(false)
 
@@ -19,7 +22,7 @@ export default function YouTubeSuccessToast({
       setClosing(false)
       return
     }
-    const timer = window.setTimeout(() => setClosing(true), 8000)
+    const timer = window.setTimeout(() => setClosing(true), 10000)
     return () => window.clearTimeout(timer)
   }, [open])
 
@@ -55,7 +58,10 @@ export default function YouTubeSuccessToast({
             />
           </svg>
         </div>
-        <p className="yt-toast-message">{message}</p>
+        <div className="yt-toast-text">
+          <p className="yt-toast-message">{message}</p>
+          {hint ? <p className="yt-toast-hint">{hint}</p> : null}
+        </div>
         <button
           type="button"
           className="yt-close-btn"

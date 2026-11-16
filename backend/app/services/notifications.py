@@ -70,9 +70,11 @@ async def _task_items(db: AsyncSession) -> List[Dict[str, Any]]:
                 "severity": "error" if row.status == "FAILED" else "warning",
                 "title": f"{label}: {short}",
                 "body": str(row.detail or row.category or "Lihat detail task.")[:300],
+                "detail": str(row.detail or row.category or "")[:4000],
                 "href": f"/dashboard/tasks?task={row.id}",
                 "created_at": _iso(row.happened_at),
                 "kind": "task",
+                "log_ref": {"type": "task", "id": str(row.id)},
             }
         )
     return items
@@ -109,9 +111,11 @@ async def _worker_items(db: AsyncSession) -> List[Dict[str, Any]]:
                 "severity": "error",
                 "title": f"Worker Vast {row.state}: instance {row.id}",
                 "body": message[:300],
-                "href": "/dashboard/settings/vast",
+                "detail": message[:4000],
+                "href": "/dashboard/workers",
                 "created_at": _iso(row.created_at),
                 "kind": "worker",
+                "log_ref": {"type": "worker", "id": str(row.id)},
             }
         )
     return items
@@ -141,9 +145,11 @@ async def _runner_items(db: AsyncSession) -> List[Dict[str, Any]]:
             "severity": "warning",
             "title": f"Runner download bermasalah: {row.name}",
             "body": str(row.last_error)[:300],
+            "detail": str(row.last_error)[:4000],
             "href": "/dashboard/settings/runners",
             "created_at": datetime.now(timezone.utc).isoformat(),
             "kind": "runner",
+            "log_ref": {"type": "runner", "id": str(row.id)},
         }
         for row in rows
     ]
@@ -166,6 +172,8 @@ def _vast_items() -> List[Dict[str, Any]]:
                 "severity": "warning",
                 "title": "Env worker Vast belum lengkap",
                 "body": "Wajib diisi: " + ", ".join(str(name) for name in missing[:8]),
+                "detail": "Env template worker Vast belum lengkap: "
+                + ", ".join(str(name) for name in missing),
                 "href": "/dashboard/settings/vast",
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "kind": "vast",
@@ -174,10 +182,265 @@ def _vast_items() -> List[Dict[str, Any]]:
     return items
 
 
+async def _worker_log_items(db: AsyncSession) -> List[Dict[str, Any]]:
+    """Log worker yang sudah disimpan (audit) — muncul juga di lonceng."""
+    try:
+        rows = (
+            await db.execute(
+                text(
+                    """
+                    select id::text as id, instance_id, coalesce(reason, '') as reason,
+                           coalesce(gpu_name, '') as gpu_name, created_at
+                    from worker_logs
+                    where outcome in ('failed', 'cancelled')
+                      and created_at >= now() - interval '24 hours'
+                    order by created_at desc
+                    limit 5
+                    """
+                )
+            )
+        ).all()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("notifikasi worker_logs dilewati: %s", exc)
+        return []
+    items: List[Dict[str, Any]] = []
+    for row in rows:
+        reason = str(row.reason or "").strip() or "Worker gagal tanpa pesan."
+        items.append(
+            {
+                "key": f"worker_log:{row.id}",
+                "severity": "error",
+                "title": f"Worker gagal: instance {row.instance_id or '-'}"
+                + (f" ({row.gpu_name})" if row.gpu_name else ""),
+                "body": reason[:300],
+                "detail": reason[:4000],
+                "href": "/dashboard/workers",
+                "created_at": _iso(row.created_at),
+                "kind": "worker_log",
+                "log_ref": {"type": "worker_log", "id": str(row.id)},
+            }
+        )
+    return items
+
+
+async def _security_items(db: AsyncSession) -> List[Dict[str, Any]]:
+    try:
+        rows = (
+            await db.execute(
+                text(
+                    """
+                    select id::text as id, event_type::text as event_type,
+                           risk_level::text as risk_level, ip_address, created_at,
+                           coalesce(details::text, '') as details
+                    from security_events
+                    where is_resolved = false
+                      and created_at >= now() - interval '24 hours'
+                    order by created_at desc
+                    limit 5
+                    """
+                )
+            )
+        ).all()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("notifikasi security dilewati: %s", exc)
+        return []
+    items: List[Dict[str, Any]] = []
+    for row in rows:
+        severity = "error" if str(row.risk_level or "").upper() in {"HIGH", "CRITICAL"} else "warning"
+        items.append(
+            {
+                "key": f"security:{row.id}",
+                "severity": severity,
+                "title": f"Security: {row.event_type} ({row.risk_level})",
+                "body": f"IP {row.ip_address or '-'}: {str(row.details or '')[:200]}",
+                "detail": str(row.details or "")[:4000],
+                "href": "/dashboard/notifications",
+                "created_at": _iso(row.created_at),
+                "kind": "security",
+                "log_ref": {"type": "security", "id": str(row.id)},
+            }
+        )
+    return items
+
+
+async def log_for(db: AsyncSession, key: str) -> Dict[str, Any]:
+    """Detail + log lengkap untuk satu notifikasi (tombol "Cek Log")."""
+    kind, _, ident = str(key or "").partition(":")
+    payload: Dict[str, Any] = {
+        "key": key,
+        "kind": kind,
+        "title": "",
+        "severity": "info",
+        "created_at": "",
+        "detail": "",
+        "log_text": "",
+        "related": {},
+    }
+
+    if kind == "task" and ident:
+        row = (
+            await db.execute(
+                text(
+                    """
+                    select id::text as id, status::text as status, source_url,
+                           coalesce(error_message, '') as error_message,
+                           coalesce(user_message, '') as user_message,
+                           coalesce(error_category, '') as error_category,
+                           coalesce(retry_count, 0) as retry_count,
+                           coalesce(updated_at, created_at) as happened_at
+                    from tasks where id = cast(:ident as uuid)
+                    """
+                ),
+                {"ident": ident},
+            )
+        ).first()
+        if row is None:
+            return {**payload, "detail": "Task tidak ditemukan (mungkin sudah dihapus)."}
+        lines = [
+            f"Task: {row.id}",
+            f"Status: {row.status}",
+            f"Sumber: {row.source_url or '-'}",
+            f"Kategori: {row.error_category or '-'}",
+            f"Retry: {row.retry_count}",
+            "",
+            "Pesan untuk user:",
+            str(row.user_message or "-"),
+            "",
+            "Error internal:",
+            str(row.error_message or "-"),
+        ]
+        return {
+            **payload,
+            "title": f"Task {row.status}",
+            "severity": "error" if row.status == "FAILED" else "warning",
+            "created_at": _iso(row.happened_at),
+            "detail": str(row.error_message or row.user_message or ""),
+            "log_text": "\n".join(lines),
+            "related": {"task_id": row.id, "href": f"/dashboard/tasks?task={row.id}"},
+        }
+
+    if kind == "worker_log" and ident:
+        from uuid import UUID as _UUID
+
+        from app.models.worker_log import WorkerLog
+        from app.services import worker_logs as wl
+
+        try:
+            row = await db.get(WorkerLog, _UUID(ident))
+        except (ValueError, AttributeError, TypeError):
+            row = None
+        if row is None:
+            return {**payload, "detail": "Log worker tidak ditemukan (mungkin sudah dihapus)."}
+        data = wl.serialize(row, with_log=True)
+        return {
+            **payload,
+            "title": f"Worker {data['outcome']} — instance {data['instance_id'] or '-'}",
+            "severity": "error" if data["outcome"] == "failed" else "warning",
+            "created_at": data["created_at"] or "",
+            "detail": str(data.get("reason") or ""),
+            "log_text": str(data.get("log_text") or ""),
+            "related": {"instance_id": data["instance_id"], "href": "/dashboard/workers"},
+        }
+
+    if kind == "worker" and ident:
+        row = (
+            await db.execute(
+                text(
+                    """
+                    select instance_id, state::text as state, coalesce(status_msg, '') as status_msg,
+                           coalesce(log_tail, '') as log_tail, created_at
+                    from worker_instances where instance_id::text = :ident
+                    order by created_at desc limit 1
+                    """
+                ),
+                {"ident": ident},
+            )
+        ).first()
+        if row is None:
+            return {**payload, "detail": "Instance tidak ditemukan."}
+        return {
+            **payload,
+            "title": f"Worker {row.state} — instance {row.instance_id}",
+            "severity": "error",
+            "created_at": _iso(row.created_at),
+            "detail": str(row.status_msg or ""),
+            "log_text": str(row.log_tail or ""),
+            "related": {"instance_id": row.instance_id, "href": "/dashboard/workers"},
+        }
+
+    if kind == "runner" and ident:
+        row = (
+            await db.execute(
+                text(
+                    """
+                    select id::text as id, name, coalesce(last_error, '') as last_error,
+                           base_url
+                    from download_runners where id::text = :ident
+                    """
+                ),
+                {"ident": ident},
+            )
+        ).first()
+        if row is None:
+            return {**payload, "detail": "Runner tidak ditemukan."}
+        return {
+            **payload,
+            "title": f"Runner: {row.name}",
+            "severity": "warning",
+            "detail": str(row.last_error or ""),
+            "log_text": "\n".join(
+                [
+                    f"Runner: {row.name}",
+                    f"URL: {row.base_url or '-'}",
+                    "",
+                    str(row.last_error or "-"),
+                ]
+            ),
+            "related": {"href": "/dashboard/settings/runners"},
+        }
+
+    if kind == "security" and ident:
+        row = (
+            await db.execute(
+                text(
+                    """
+                    select event_type::text as event_type, risk_level::text as risk_level,
+                           ip_address, user_agent, coalesce(details::text, '') as details,
+                           created_at
+                    from security_events where id::text = :ident
+                    """
+                ),
+                {"ident": ident},
+            )
+        ).first()
+        if row is None:
+            return {**payload, "detail": "Security event tidak ditemukan."}
+        return {
+            **payload,
+            "title": f"Security: {row.event_type} ({row.risk_level})",
+            "severity": "error" if str(row.risk_level).upper() in {"HIGH", "CRITICAL"} else "warning",
+            "created_at": _iso(row.created_at),
+            "detail": str(row.details or ""),
+            "log_text": "\n".join(
+                [
+                    f"Event: {row.event_type}",
+                    f"Risk: {row.risk_level}",
+                    f"IP: {row.ip_address or '-'}",
+                    f"UA: {row.user_agent or '-'}",
+                    "",
+                    str(row.details or "-"),
+                ]
+            ),
+            "related": {"href": "/dashboard/notifications"},
+        }
+
+    return {**payload, "detail": "Tidak ada log tambahan untuk notifikasi ini."}
+
+
 async def build_notifications(db: AsyncSession) -> Dict[str, Any]:
     """Daftar notifikasi nyata + jumlah yang belum dibaca."""
     items: List[Dict[str, Any]] = []
-    for loader in (_task_items, _worker_items, _runner_items):
+    for loader in (_task_items, _worker_items, _worker_log_items, _security_items, _runner_items):
         try:
             items.extend(await loader(db))
         except Exception as exc:  # noqa: BLE001 - satu sumber gagal ≠ panel kosong
@@ -221,4 +484,4 @@ async def mark_all_read(db: AsyncSession) -> Dict[str, Any]:
     return await mark_read(db, [item["key"] for item in data["items"]])
 
 
-__all__ = ["build_notifications", "mark_all_read", "mark_read"]
+__all__ = ["build_notifications", "log_for", "mark_all_read", "mark_read"]

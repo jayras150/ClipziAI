@@ -13,7 +13,7 @@ bukan menarik semua baris ke Python.
 import time
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -302,3 +302,38 @@ async def system_host(db: AsyncSession = Depends(get_db_session)):
         "workers_active": int(workers_active),
     }
 
+
+
+@router.get("/actions")
+async def system_actions():
+    """Aksi host yang diizinkan + riwayat perintah terbaru."""
+    from app.services import host_commands as commands
+
+    return {"actions": commands.actions(), "jobs": commands.recent(20)}
+
+
+@router.post("/actions")
+async def run_system_action(payload: dict):
+    """Antrekan aksi host (clear cache / restart caddy / prune docker).
+
+    Dieksekusi oleh agent host `clipzi-host-commands.py` (systemd) karena
+    container API tidak punya akses /proc host maupun docker socket.
+    """
+    from app.services import host_commands as commands
+
+    action = str(payload.get("action") or "").strip()
+    try:
+        job = commands.enqueue(action, requested_by="admin")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "job": job}
+
+
+@router.get("/actions/{job_id}")
+async def read_system_action(job_id: str):
+    from app.services import host_commands as commands
+
+    job = commands.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Perintah tidak ditemukan")
+    return job

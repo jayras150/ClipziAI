@@ -105,7 +105,75 @@ async def get_audit_detail(log_id: UUID, db: AsyncSession = Depends(get_db_sessi
     log = (await db.execute(select(AuditLog).where(AuditLog.id == log_id))).scalar_one_or_none()
     if not log:
         raise HTTPException(status_code=404, detail="Log tidak ditemukan")
-    return _serialize(log, detail=True)
+    payload = _serialize(log, detail=True)
+
+    # ---------- Data pendukung untuk tombol "Cek Log" ----------
+    related_error = ""
+    log_text = ""
+    try:
+        resource_id = str(log.resource_id or "")
+        if log.resource_type == "task" and resource_id:
+            from sqlalchemy import text as sql_text
+
+            row = (
+                await db.execute(
+                    sql_text(
+                        """
+                        select status::text as status,
+                               coalesce(error_message, '') as error_message,
+                               coalesce(user_message, '') as user_message,
+                               coalesce(error_category, '') as error_category
+                        from tasks where id::text = :ident
+                        """
+                    ),
+                    {"ident": resource_id},
+                )
+            ).first()
+            if row is not None:
+                related_error = str(row.error_message or row.user_message or "")
+                log_text = "\n".join(
+                    [
+                        f"Task {resource_id}",
+                        f"Status: {row.status}",
+                        f"Kategori: {row.error_category or '-'}",
+                        "",
+                        "Pesan untuk user:",
+                        str(row.user_message or "-"),
+                        "",
+                        "Error internal:",
+                        str(row.error_message or "-"),
+                    ]
+                )
+        if log.resource_type in {"worker_instance", "worker"}:
+            from sqlalchemy import text as sql_text
+
+            row = (
+                await db.execute(
+                    sql_text(
+                        """
+                        select instance_id, state::text as state,
+                               coalesce(status_msg, '') as status_msg,
+                               coalesce(log_tail, '') as log_tail
+                        from worker_instances where id::text = :ident
+                        """
+                    ),
+                    {"ident": resource_id},
+                )
+            ).first()
+            if row is not None:
+                related_error = str(row.status_msg or "")
+                log_text = str(row.log_tail or "")
+    except Exception:  # noqa: BLE001 - detail audit tetap tampil walau data pendukung hilang
+        related_error = related_error or ""
+        log_text = log_text or ""
+
+    payload.update(
+        {
+            "related_error": related_error[:8000],
+            "log_text": log_text[:200_000],
+        }
+    )
+    return payload
 
 
 @router.get("/user/{user_id}/timeline")

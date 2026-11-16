@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { createPortal } from 'react-dom';
 
 import { loadAiModels, saveAi, testAi, type ModelsResult, type TestResult } from '@/app/dashboard/settings/actions';
 import { Badge } from '@/components/ui/badge';
@@ -34,6 +35,41 @@ function ComboField({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [anchor, setAnchor] = useState<{
+    left: number;
+    width: number;
+    top?: number;
+    bottom?: number;
+    maxHeight: number;
+  } | null>(null);
+
+  // Dropdown dirender lewat portal + posisi fixed supaya tidak terpotong
+  // container ber-overflow (mis. Card di halaman AI settings).
+  useEffect(() => {
+    if (!open) return;
+    const sync = () => {
+      const element = inputRef.current;
+      if (!element) return;
+      const rect = element.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const openUp = spaceBelow < 280;
+      setAnchor({
+        left: Math.max(8, Math.min(rect.left, window.innerWidth - rect.width - 8)),
+        width: Math.min(rect.width, window.innerWidth - 16),
+        top: openUp ? undefined : rect.bottom + 4,
+        bottom: openUp ? window.innerHeight - rect.top + 4 : undefined,
+        maxHeight: openUp ? Math.min(280, rect.top - 16) : Math.min(280, spaceBelow - 16)
+      });
+    };
+    sync();
+    window.addEventListener('scroll', sync, true);
+    window.addEventListener('resize', sync);
+    return () => {
+      window.removeEventListener('scroll', sync, true);
+      window.removeEventListener('resize', sync);
+    };
+  }, [open]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -51,6 +87,7 @@ function ComboField({
     <div className='relative space-y-2'>
       <Label>{label}</Label>
       <Input
+        ref={inputRef}
         value={open ? query : value}
         placeholder={open ? searchPlaceholder || 'cari...' : placeholder}
         onFocus={() => {
@@ -63,8 +100,18 @@ function ComboField({
         }}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
       />
-      {open ? (
-        <div className='bg-popover absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-md border shadow-md'>
+      {open && anchor
+        ? createPortal(
+            <div
+              className='bg-popover fixed z-[100] overflow-auto rounded-md border shadow-xl'
+              style={{
+                left: anchor.left,
+                width: anchor.width,
+                top: anchor.top,
+                bottom: anchor.bottom,
+                maxHeight: Math.max(140, anchor.maxHeight)
+              }}
+            >
           {filtered.length ? (
             filtered.map((option) => (
               <button
@@ -89,8 +136,10 @@ function ComboField({
           ) : (
             <p className='text-muted-foreground px-3 py-2 text-sm'>Tidak ada hasil.</p>
           )}
-        </div>
-      ) : null}
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 }

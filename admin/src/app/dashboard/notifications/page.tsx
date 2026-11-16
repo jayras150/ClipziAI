@@ -1,62 +1,45 @@
 import PageContainer from '@/components/layout/page-container';
-import TableShell, { formatDate, type Column } from '@/features/admin/table-shell';
 import { adminFetch } from '@/lib/clipzi';
+import { AlertsList, type AlertItem } from '@/features/notifications/components/alerts-list';
 
 export const metadata = { title: 'Admin: Alerts' };
+export const dynamic = 'force-dynamic';
 
-type TaskRow = {
-  id: string;
-  status: string;
-  source_url: string;
-  created_at: string;
-};
-
-type WorkerRow = { instance_id: number; state: string; status_msg: string | null; task_id: string };
-
-// Catatan: endpoint /api/admin/tasks dan /api/admin/workers/instances mengembalikan
-// `{ items: [...] }` (bukan array langsung), jadi selalu baca `.items`.
-
-const taskColumns: Column[] = [
-  { key: 'id', label: 'Task', render: (row) => String(row.id).slice(0, 8) },
-  { key: 'status', label: 'Status' },
-  { key: 'source_url', label: 'Sumber' },
-  { key: 'created_at', label: 'Waktu', render: (row) => formatDate(row.created_at) }
-];
-
-const workerColumns: Column[] = [
-  { key: 'instance_id', label: 'Instance' },
-  { key: 'state', label: 'State' },
-  { key: 'task_id', label: 'Task', render: (row) => String(row.task_id ?? '').slice(0, 8) },
-  { key: 'status_msg', label: 'Pesan', render: (row) => String(row.status_msg ?? '-').slice(0, 120) }
-];
-
+/**
+ * Halaman Alerts.
+ *
+ * Memakai sumber yang SAMA dengan lonceng header (`/api/admin/notifications`):
+ * task gagal, worker error (termasuk log tersimpan), runner, security event,
+ * dan env Vast. Setiap baris punya tombol "Detail / Cek Log" yang menampilkan
+ * pesan lengkap + potongan log.
+ */
 export default async function AlertsPage() {
-  const [tasks, workers] = await Promise.all([
-    adminFetch<{ items: TaskRow[] }>('/api/admin/tasks/?status=error&page_size=20'),
-    adminFetch<{ items: WorkerRow[] }>('/api/admin/workers/instances?limit=50')
-  ]);
-  const failedTasks = (tasks.items || []).slice(0, 20);
-  const failedWorkers = (workers.items || []).filter((row) => row.state === 'failed');
+  let items: AlertItem[] = [];
+  let error = '';
+
+  try {
+    const data = await adminFetch<{ items: AlertItem[]; unread_count: number }>(
+      '/api/admin/notifications'
+    );
+    items = data.items || [];
+  } catch (err) {
+    error = err instanceof Error ? err.message.replace(/^\d{3}\s+/, '') : 'Gagal memuat alert.';
+  }
+
+  const unread = items.filter((item) => !item.read).length;
 
   return (
-    <PageContainer pageTitle='Alerts' pageDescription='Task gagal & instance bermasalah'>
-      <div className='space-y-8'>
-        <section className='space-y-3'>
-          <p className='text-sm font-medium'>Task gagal ({failedTasks.length})</p>
-          <TableShell
-            columns={taskColumns}
-            rows={failedTasks as unknown as Record<string, unknown>[]}
-            empty='Tidak ada task gagal.'
-          />
-        </section>
-        <section className='space-y-3'>
-          <p className='text-sm font-medium'>Instance gagal ({failedWorkers.length})</p>
-          <TableShell
-            columns={workerColumns}
-            rows={failedWorkers as unknown as Record<string, unknown>[]}
-            empty='Tidak ada instance gagal.'
-          />
-        </section>
+    <PageContainer
+      pageTitle='Alerts'
+      pageDescription={`${items.length} alert aktif · ${unread} belum dibaca — sumber sama dengan lonceng header`}
+    >
+      <div className='space-y-4'>
+        {error ? (
+          <p className='text-destructive border-destructive/40 bg-destructive/10 rounded-md border px-3 py-2 text-sm'>
+            {error}
+          </p>
+        ) : null}
+        <AlertsList items={items} />
       </div>
     </PageContainer>
   );

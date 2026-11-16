@@ -361,6 +361,29 @@ class InstanceSupervisor:
             return True, ""
         return False, "task masih %s" % status
 
+    async def _store_failure_log(
+        self, record_id: Any, instance_id: int, reason: str, log_tail: str | None
+    ) -> None:
+        """Simpan log kegagalan ke tabel `worker_logs` agar bisa diaudit."""
+        from app.db.session import AsyncSessionLocal
+        from app.services import worker_logs
+
+        try:
+            async with AsyncSessionLocal() as db:
+                await worker_logs.record_failure(
+                    db,
+                    worker_record_id=record_id,
+                    task_id=self.task_id,
+                    instance_id=instance_id,
+                    state="failed",
+                    reason=str(reason or "")[:2000] or None,
+                    log_text=log_tail,
+                    gpu_name=str((self.offer or {}).get("gpu_name") or "")[:80] or None,
+                    outcome="failed",
+                )
+        except Exception as exc:  # noqa: BLE001 - observability tidak boleh menghentikan task
+            logger.warning("Gagal menyimpan log worker %s: %s", instance_id, exc)
+
     async def _destroy(self, instance_id: int, record_id: Any, reason: str) -> None:
         """Hapus instance lalu tunggu benar-benar hilang (biar tidak dobel tagih)."""
         allowed, why = await self._may_destroy(instance_id)
@@ -488,6 +511,9 @@ class InstanceSupervisor:
                     state="failed",
                     status_msg=reason[:1000],
                     log_tail=log_tail or None,
+                )
+                await self._store_failure_log(
+                    record_id, instance_id, reason, log_tail
                 )
                 self.allow_destroy_while_running = True
                 await self._destroy(

@@ -22,6 +22,7 @@ import { ClipzySpinner } from "@/components/ClipzySpinner"
 import YouTubeIcon from "@/components/YouTubeIcon"
 import YouTubeUploadCard from "@/components/YouTubeUploadCard"
 import AlertDialog from "@/components/AlertDialog"
+import StyledSelect from "@/components/StyledSelect"
 import YouTubeOpenCard from "@/components/YouTubeOpenCard"
 import YouTubeSuccessToast from "@/components/YouTubeSuccessToast"
 import {
@@ -97,8 +98,9 @@ export default function ClipModal({
   const [filmstrip, setFilmstrip] = useState<{ at_second: number; url: string }[]>([])
   const [ytThumbBusy, setYtThumbBusy] = useState(false)
   const [successOpen, setSuccessOpen] = useState(false)
+  const [ytToast, setYtToast] = useState<{ message: string; hint?: string } | null>(null)
+  const [coverOpen, setCoverOpen] = useState(false)
   const [liveThumb, setLiveThumb] = useState("")
-  const [posOpen, setPosOpen] = useState(false)
   const stripRef = useRef<HTMLDivElement | null>(null)
   const draggingRef = useRef(false)
   const [thumbBusy, setThumbBusy] = useState(false)
@@ -443,11 +445,19 @@ export default function ClipModal({
         at_second: currentTime > 0 ? currentTime : undefined,
       })
       setLiveThumb(result.thumbnail_url)
+      setCoverOpen(Boolean(result.thumbnail_url))
       onUpdated(clipId, { thumbnail_url: result.thumbnail_url })
       if (clip?.youtube_video_id) {
         try {
-          await api.pushThumbnailToYouTube(token, clipId)
-          setNotice("Thumbnail applied and synced to YouTube automatically.")
+          const synced = await api.pushThumbnailToYouTube(token, clipId)
+          setNotice("")
+          const pending = synced?.has_custom_thumbnail === false
+          setYtToast({
+            message: pending ? "Thumbnail sent to YouTube." : "Thumbnail updated on YouTube.",
+            hint: pending
+              ? "YouTube is still processing the new cover — give it about 2 minutes, then refresh the video page."
+              : "It can take about 2 minutes before the new cover appears on YouTube.",
+          })
         } catch (err: any) {
           const info = readApiErrorInfo(err?.response?.data, "YouTube sync failed.")
           if (info.code === "youtube_thumbnail_forbidden") {
@@ -478,8 +488,15 @@ export default function ClipModal({
     setError("")
     setNotice("")
     try {
-      await api.pushThumbnailToYouTube(token, clipId)
-      setNotice("Thumbnail updated on YouTube.")
+      const result = await api.pushThumbnailToYouTube(token, clipId)
+      setNotice("")
+      const pending = result?.has_custom_thumbnail === false
+      setYtToast({
+        message: pending ? "Thumbnail sent to YouTube." : "Thumbnail updated on YouTube.",
+        hint: pending
+          ? "YouTube is still processing the new cover — give it about 2 minutes, then refresh the video page."
+          : "It can take about 2 minutes before the new cover appears on YouTube.",
+      })
     } catch (err: any) {
       const info = readApiErrorInfo(err?.response?.data, "Could not set the YouTube thumbnail.")
       if (info.code === "youtube_thumbnail_forbidden") {
@@ -504,6 +521,8 @@ export default function ClipModal({
     try {
       const data = await api.selectClipThumbnail(token, clipId, url)
       setThumbs(data)
+      setLiveThumb(url)
+      setCoverOpen(true)
       onUpdated(clipId, { thumbnail_url: url })
       setNotice("Thumbnail updated.")
     } catch (err: any) {
@@ -595,8 +614,8 @@ export default function ClipModal({
             <p className="clip-modal-eyebrow">
               Clip #{clip.clip_index + 1} · {minutes}:{seconds} · {clip.start_time}–{clip.end_time}
             </p>
-            <h3 className="ui-subtitle" style={{ margin: 0 }}>
-              AI title, description &amp; tags
+            <h3 className="cs-modal-title" style={{ margin: 0 }}>
+              {clip.ai_suggested_title || clip.ai_hook || clip.title}
             </h3>
           </div>
           <button
@@ -656,6 +675,25 @@ export default function ClipModal({
                   </span>
                 </div>
               )}
+              {coverOpen && (liveThumb || clip.thumbnail_url) ? (
+                <div className="cs-cover-view" role="group" aria-label="YouTube cover preview">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={(liveThumb || clip.thumbnail_url) as string} alt="YouTube cover preview" />
+                  <span className="cs-cover-tag">Cover</span>
+                  <button
+                    type="button"
+                    className="cs-cover-close"
+                    aria-label="Close cover preview"
+                    onClick={() => setCoverOpen(false)}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : liveThumb ? (
+                <button type="button" className="cs-cover-reopen" onClick={() => setCoverOpen(true)}>
+                  Show cover
+                </button>
+              ) : null}
             </div>
 
             {clip.download_url ? (
@@ -722,13 +760,6 @@ export default function ClipModal({
                   </span>
                   <button
                     type="button"
-                    className="cs-btn"
-                    onClick={() => setPosOpen((open) => !open)}
-                  >
-                    Thumbnail position
-                  </button>
-                  <button
-                    type="button"
                     className="cs-btn cs-btn-play"
                     onClick={() => void applyCaption()}
                     disabled={busy || capBusy}
@@ -746,28 +777,18 @@ export default function ClipModal({
                     </button>
                   ) : null}
                 </div>
-                {posOpen ? (
-                  <div className="cs-pos-panel">
-                    {THUMBNAIL_CAPTION_ANCHORS.map((anchor) => (
-                      <button
-                        key={`pos-${anchor}`}
-                        type="button"
-                        className={capPosition === anchor ? "active" : ""}
-                        onClick={() => setCapPosition(anchor)}
-                        title={anchor}
-                      >
-                        {anchor.split("-").map((part) => part[0].toUpperCase()).join("")}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-                {liveThumb ? (
-                  <div className="cs-live-thumb">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={liveThumb} alt="Current thumbnail preview" />
-                    <span>Live thumbnail</span>
-                  </div>
-                ) : null}
+                <StyledSelect
+                  label="Thumbnail position"
+                  value={capPosition}
+                  onChange={(value) => setCapPosition(value)}
+                  options={THUMBNAIL_CAPTION_ANCHORS.map((anchor) => ({
+                    value: anchor,
+                    label: anchor
+                      .split("-")
+                      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+                      .join(" "),
+                  }))}
+                />
               </div>
             ) : null}
 
@@ -891,19 +912,17 @@ export default function ClipModal({
               </div>
 
               <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
-                <div className="thcap-pos">
-                  {THUMBNAIL_CAPTION_ANCHORS.map((anchor) => (
-                    <button
-                      key={anchor}
-                      type="button"
-                      className={capPosition === anchor ? "active" : ""}
-                      onClick={() => setCapPosition(anchor)}
-                      title={anchor}
-                    >
-                      {anchor.split("-").map((part) => part[0].toUpperCase()).join("")}
-                    </button>
-                  ))}
-                </div>
+                <StyledSelect
+                  value={capPosition}
+                  onChange={(value) => setCapPosition(value)}
+                  options={THUMBNAIL_CAPTION_ANCHORS.map((anchor) => ({
+                    value: anchor,
+                    label: anchor
+                      .split("-")
+                      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+                      .join(" "),
+                  }))}
+                />
                 <input
                   className="ui-input"
                   style={{ flex: 1, minWidth: 200 }}
@@ -1206,7 +1225,17 @@ export default function ClipModal({
             {notice && !error && <p className="clip-modal-notice">{notice}</p>}
           </div>
         </div>
-        <YouTubeSuccessToast open={successOpen} onClose={() => setSuccessOpen(false)} />
+        <YouTubeSuccessToast
+          open={successOpen}
+          onClose={() => setSuccessOpen(false)}
+          hint="YouTube is still processing the video — give it about 2 minutes before sharing the link."
+        />
+        <YouTubeSuccessToast
+          open={ytToast !== null}
+          onClose={() => setYtToast(null)}
+          message={ytToast?.message || "Thumbnail updated on YouTube."}
+          hint={ytToast?.hint}
+        />
         <AlertDialog
           open={ytAlert !== null}
           title={ytAlert?.title || ""}

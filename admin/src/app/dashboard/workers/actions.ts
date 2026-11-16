@@ -14,6 +14,33 @@ export async function destroyInstance(formData: FormData) {
   }
 }
 
+export type StoredWorkerLog = {
+  id: string;
+  worker_instance_id: string | null;
+  task_id: string | null;
+  instance_id: number | null;
+  outcome: string;
+  state: string | null;
+  reason: string | null;
+  gpu_name: string | null;
+  created_at: string | null;
+  size: number;
+  log_text?: string;
+};
+
+export async function getStoredWorkerLog(logId: string): Promise<StoredWorkerLog | null> {
+  try {
+    return await adminFetch<StoredWorkerLog>(`/api/admin/workers/logs/${logId}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function clearWorkerLogs(): Promise<void> {
+  await adminFetch('/api/admin/workers/logs/clear', { method: 'POST' });
+  revalidatePath('/dashboard/workers');
+}
+
 export type WorkerLogsResult = {
   source?: string;
   text?: string;
