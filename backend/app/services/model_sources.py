@@ -323,6 +323,12 @@ async def save_source(
         name = item["name"]
         raw = incoming.get(name)
         text = str(raw).strip() if raw is not None else ""
+        marker = truncation_marker(text)
+        if text and marker:
+            raise SourceError(
+                f"{provider.label}: '{item['label']}' tampaknya terpotong "
+                f"(mengandung '{marker}'). Salin ulang nilai LENGKAP dari dashboard provider."
+            )
         limit = int(item.get("max_length") or 0)
         if text and limit and len(text) > limit:
             if name == "app_secret" and text.startswith("sl.") and len(text) > 64:
@@ -609,7 +615,15 @@ class DropboxAdapter(BaseAdapter):
         except SourceError:
             raise
         except Exception as exc:  # noqa: BLE001 - pesan Dropbox
-            raise SourceError(f"Dropbox gagal membaca folder: {str(exc)[:300]}") from exc
+            detail = str(exc)
+            if "latin-1" in detail or "ordinal not in range" in detail:
+                raise SourceError(
+                    "Dropbox: kredensial mengandung karakter tidak valid (kemungkinan "
+                    "token terpotong seperti 'sl.u…5IH8'). Buka Settings > Instance > "
+                    "Model & Storage, tempel ulang Access token / App secret / Refresh "
+                    "token yang LENGKAP, lalu Scan Drive lagi."
+                ) from exc
+            raise SourceError(f"Dropbox gagal membaca folder: {detail[:300]}") from exc
 
     async def delete(self, remote_path: str) -> int:
         import asyncio
@@ -863,7 +877,25 @@ _ADAPTER_CLASSES = {
 }
 
 
+TRUNCATION_MARKERS = ("\u2026", "\u2022\u2022\u2022", "\u200b")
+
+
+def truncation_marker(text: str) -> str:
+    # Nilai yang disalin dari tampilan masked (mis. "sl.u...5IH8") tidak valid.
+    for marker in TRUNCATION_MARKERS:
+        if marker and marker in str(text or ""):
+            return marker
+    return ""
+
+
 def build_adapter(provider: Provider, values: Dict[str, str]) -> BaseAdapter:
+    for name, value in (values or {}).items():
+        marker = truncation_marker(str(value))
+        if marker:
+            raise SourceError(
+                f"{provider.label}: nilai '{name}' terpotong (mengandung '{marker}'). "
+                "Isi ulang kredensial lengkap di Settings > Instance > Model & Storage."
+            )
     cls = _ADAPTER_CLASSES.get(provider.adapter)
     if cls is None:
         raise SourceError(f"Adapter '{provider.adapter}' tidak tersedia di backend.")
@@ -895,6 +927,12 @@ async def test_source(
             text = str(values.get(name) or "").strip()
             if not text:
                 continue
+            marker = truncation_marker(text)
+            if marker:
+                raise SourceError(
+                    f"{provider.label}: '{field['label']}' tampaknya terpotong "
+                    f"(mengandung '{marker}'). Salin ulang nilai LENGKAP."
+                )
             limit = int(field.get("max_length") or 0)
             if limit and len(text) > limit:
                 raise SourceError(

@@ -314,6 +314,8 @@ async def scan_models(
         result = await manager.scan_models(db)
     except DriveError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except model_sources.SourceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     _audit(
         db,
         request,
@@ -339,6 +341,8 @@ async def activate_model(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except DriveError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except model_sources.SourceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     payload = manager.model_to_dict(row)
     _audit(
         db,
@@ -395,6 +399,8 @@ async def delete_model(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except DriveError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except model_sources.SourceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     _audit(
         db,
         request,
