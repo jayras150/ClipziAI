@@ -19,7 +19,7 @@ fi
 install -m 0755 "$SCRIPT_SRC" "$SCRIPT_DST"
 
 BASE_DIR="$(dirname "$SCRIPT_SRC")"
-for extra in clipzi-osinfo.sh clipzi-speedtest.sh; do
+for extra in clipzi-osinfo.sh clipzi-speedtest.sh clipzi-backup.sh clipzi-restore.sh; do
   if [[ -f "$BASE_DIR/$extra" ]]; then
     install -m 0755 "$BASE_DIR/$extra" "/usr/local/sbin/$extra"
     echo "terpasang: /usr/local/sbin/$extra"

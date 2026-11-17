@@ -47,6 +47,7 @@ from app.models.viral_prediction_history import ViralPredictionHistory
 from app.models.webhook_subscription import WebhookSubscription
 from app.models.worker_instance import WorkerInstance
 from app.models.worker_log import WorkerLog
+from app.models.migration_job import MigrationJob
 from app.models.whisper_model import WhisperModel
 from app.models.youtube_credential import YouTubeCredential
 from app.models.ytdlp_cookie import (
@@ -71,6 +72,7 @@ __all__ = [
     "YouTubeCredential",
     "WorkerInstance",
     "WorkerLog",
+    "MigrationJob",
     "WhisperModel",
     "YtdlpCookie", "COOKIE_STATUS_ACTIVE", "COOKIE_STATUS_EXPIRED", "COOKIE_STATUS_DISABLED",
     "DownloadAttempt", "TaskLog", "DownloadRunner", "RunnerJob", "TaskAsset",

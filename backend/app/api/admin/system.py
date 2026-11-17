@@ -12,7 +12,7 @@ bukan menarik semua baris ke Python.
 """
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select, text
@@ -324,7 +324,7 @@ async def run_system_action(payload: dict):
 
     action = str(payload.get("action") or "").strip()
     try:
-        job = commands.enqueue(action, requested_by="admin")
+        job = commands.enqueue(action, requested_by="admin", args=args or [])
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "job": job}
@@ -344,7 +344,9 @@ _HOST_INFO_CACHE: Dict[str, Any] = {"at": 0.0, "data": None}
 HOST_INFO_TTL = 600.0
 
 
-async def _run_host_command(action: str, wait_seconds: float = 60.0) -> Dict[str, Any]:
+async def _run_host_command(
+    action: str, wait_seconds: float = 60.0, args: Optional[List[str]] = None
+) -> Dict[str, Any]:
     """Antrekan aksi host lalu tunggu hasil (agent polling 3 detik)."""
     import asyncio
 
@@ -414,4 +416,136 @@ async def system_speedtest():
         "down_mbps": round(down, 2),
         "up_mbps": round(up, 2),
         "taken_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+import json
+import re
+from datetime import datetime, timezone
+
+from pydantic import BaseModel
+
+from app.models.migration_job import MigrationJob
+
+BACKUP_NAME_RE = re.compile(r"^\d{8}T\d{6}Z$")
+
+
+class RestoreIn(BaseModel):
+    archive: str
+
+
+def _job_row(job: MigrationJob) -> Dict[str, Any]:
+    return {
+        "id": str(job.id),
+        "kind": job.kind,
+        "status": job.status,
+        "archive": job.archive,
+        "size_bytes": job.size_bytes,
+        "detail": job.detail,
+        "created_at": job.created_at.isoformat() if job.created_at else None,
+        "finished_at": job.finished_at.isoformat() if job.finished_at else None,
+        "created_by": job.created_by,
+    }
+
+
+def _last_json(raw: str) -> Dict[str, Any]:
+    for line in reversed([item.strip() for item in (raw or "").splitlines() if item.strip()]):
+        try:
+            parsed = json.loads(line)
+        except Exception:  # noqa: BLE001
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return {}
+
+
+@router.get("/backups")
+async def backups_overview(db: AsyncSession = Depends(get_db_session)):
+    """Riwayat job backup/restore + daftar arsip di host."""
+    rows = (
+        await db.execute(select(MigrationJob).order_by(MigrationJob.created_at.desc()).limit(20))
+    ).scalars().all()
+    listing = await _run_host_command("list_backups", wait_seconds=20)
+    archives = [
+        line.strip()
+        for line in str(listing.get("output") or "").splitlines()
+        if BACKUP_NAME_RE.match(line.strip())
+    ]
+    return {
+        "jobs": [_job_row(row) for row in rows],
+        "archives": archives,
+        "agent_status": listing.get("status"),
+    }
+
+
+@router.post("/backups")
+async def create_backup(
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Jalankan backup penuh sekarang (DB + env + compose) lewat agent host."""
+    job = MigrationJob(kind="backup", status="running", created_by=current_admin.email)
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+
+    result = await _run_host_command("backup_now", wait_seconds=900)
+    raw = str(result.get("output") or "")
+    data = _last_json(raw)
+    ok = bool(result.get("ok")) and bool(data.get("ok", True))
+    size = 0
+    files = data.get("files")
+    if isinstance(files, list):
+        size = sum(int(item.get("size") or 0) for item in files if isinstance(item, dict))
+
+    job.status = "success" if ok else "error"
+    job.archive = (str(data.get("archive") or "")[:80]) or None
+    job.size_bytes = size or None
+    job.detail = str(
+        data.get("error")
+        or (f"Backup {job.archive} selesai ({round(size / 1048576, 2)} MB)" if ok else "Backup gagal")
+    )[:900]
+    job.log = raw[:12000]
+    job.finished_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(job)
+    return {"ok": ok, "job": _job_row(job), "log_text": raw}
+
+
+@router.post("/backups/restore")
+async def restore_backup(
+    payload: RestoreIn,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Pulihkan database + env dari arsip backup (validasi nama ketat)."""
+    archive = str(payload.archive or "").strip()
+    if not BACKUP_NAME_RE.match(archive):
+        raise HTTPException(status_code=400, detail="Nama arsip tidak valid.")
+
+    job = MigrationJob(
+        kind="restore", status="running", archive=archive, created_by=current_admin.email
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+
+    result = await _run_host_command("restore_backup", wait_seconds=1800, args=[archive])
+    raw = str(result.get("output") or "")
+    data = _last_json(raw)
+    ok = bool(result.get("ok")) and bool(data.get("ok", True))
+
+    job.status = "success" if ok else "error"
+    job.detail = str(
+        data.get("error") or ("Restore selesai. Restart layanan untuk memastikan state bersih." if ok else "Restore gagal")
+    )[:900]
+    job.log = raw[:12000]
+    job.finished_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(job)
+    return {
+        "ok": ok,
+        "job": _job_row(job),
+        "log_text": raw,
+        "restart_hint": "docker compose -f docker-compose.vps.yml up -d --force-recreate api admin web",
     }

@@ -1,5 +1,6 @@
 import PageContainer from '@/components/layout/page-container';
 import { StatCard } from '@/features/admin/table-shell';
+import BackupPanel from '@/features/system/backup-panel';
 import { NeonSystem } from '@/features/system/neon-system';
 import { adminFetch } from '@/lib/clipzi';
 import type { HostSnapshot } from './actions';
@@ -7,13 +8,6 @@ import type { HostSnapshot } from './actions';
 export const metadata = { title: 'Admin: System' };
 
 type Health = { status: string; database: string; version: string };
-
-const BACKUP_CMD = `cd /opt/clipzi/app && bash scripts/backup-all.sh
-# hasil: /opt/clipzi/app/backups/clipzi-YYYYmmdd-HHMMSS.tar.gz
-# dari Windows: .\scripts\backup-all.ps1`;
-
-const RESTORE_CMD = `bash scripts/restore-all.sh <arsip.tar.gz>
-# opsi: --db-only | --config-only`;
 
 const PRUNE_CMD = `docker builder prune -af && docker image prune -af`;
 
@@ -40,13 +34,12 @@ export default async function SystemPage() {
           <NeonSystem initial={host} />
         </section>
 
-        <section className='space-y-3 rounded-lg border p-4 text-sm'>
-          <p className='font-medium'>Backup sekarang (jalankan di VPS)</p>
-          <pre className='bg-muted overflow-x-auto rounded p-2 text-xs'>{BACKUP_CMD}</pre>
-          <p className='font-medium'>Restore</p>
-          <pre className='bg-muted overflow-x-auto rounded p-2 text-xs'>{RESTORE_CMD}</pre>
-          <p className='font-medium'>Bersihkan disk</p>
-          <pre className='bg-muted overflow-x-auto rounded p-2 text-xs'>{PRUNE_CMD}</pre>
+        <section className='space-y-3'>
+          <BackupPanel />
+          <div className='rounded-lg border p-4 text-sm'>
+            <p className='font-medium'>Bersihkan disk (manual, di VPS)</p>
+            <pre className='bg-muted overflow-x-auto rounded p-2 text-xs'>{PRUNE_CMD}</pre>
+          </div>
         </section>
       </div>
     </PageContainer>

@@ -50,9 +50,24 @@ ACTIONS: Dict[str, Dict[str, str]] = {
         "command": "/usr/local/sbin/clipzi-speedtest.sh",
         "description": "Ukur kecepatan unduh/unggah + latency host (Cloudflare).",
     },
+    "backup_now": {
+        "label": "Backup sekarang",
+        "command": "/usr/local/sbin/clipzi-backup.sh",
+        "description": "Dump database + simpan env/compose ke /opt/clipzi/backups.",
+    },
+    "list_backups": {
+        "label": "Daftar backup",
+        "command": "/usr/local/sbin/clipzi-backup.sh --list",
+        "description": "Tampilkan arsip backup terakhir di host.",
+    },
+    "restore_backup": {
+        "label": "Restore backup",
+        "command": "/usr/local/sbin/clipzi-restore.sh <arsip>",
+        "description": "Pulihkan database + env dari arsip backup terpilih.",
+    },
 }
 
-MAX_OUTPUT = 4000
+MAX_OUTPUT = 12000
 JOB_TTL = timedelta(hours=2)
 MAX_JOBS = 100
 
@@ -76,7 +91,9 @@ def _cleanup() -> None:
         _JOBS.pop(str(job["id"]), None)
 
 
-def enqueue(action: str, requested_by: str | None = None) -> Dict[str, Any]:
+def enqueue(
+    action: str, requested_by: str | None = None, args: Optional[List[str]] = None
+) -> Dict[str, Any]:
     key = str(action or "").strip()
     if key not in ACTIONS:
         raise ValueError(f"Aksi tidak dikenal: {action}")
@@ -90,6 +107,7 @@ def enqueue(action: str, requested_by: str | None = None) -> Dict[str, Any]:
         "ok": None,
         "agent": None,
         "requested_by": requested_by,
+        "args": [str(item) for item in (args or [])],
         "created_at": _now(),
         "started_at": None,
         "finished_at": None,
@@ -114,6 +132,7 @@ def pending_for(agent: str | None = None) -> List[Dict[str, Any]]:
                 "id": job["id"],
                 "action": job["action"],
                 "command": ACTIONS[job["action"]]["command"],
+                "args": list(job.get("args") or []),
             }
         )
     return claimed

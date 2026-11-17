@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -40,7 +41,15 @@ WHITELIST: dict[str, list[str]] = {
     # Info OS host + uji kecepatan internet (skrip terpasang oleh installer).
     "os_info": ["/usr/local/sbin/clipzi-osinfo.sh"],
     "speedtest": ["/usr/local/sbin/clipzi-speedtest.sh"],
+    # Backup / restore penuh (DB + env + compose).
+    "backup_now": ["/usr/local/sbin/clipzi-backup.sh"],
+    "list_backups": ["/usr/local/sbin/clipzi-backup.sh", "--list"],
+    "restore_backup": ["/usr/local/sbin/clipzi-restore.sh"],
 }
+
+# Perintah berat butuh waktu lebih lama dari default 120 detik.
+ACTION_TIMEOUTS = {"backup_now": 900, "restore_backup": 1800}
+SAFE_ARG = re.compile(r"^[0-9A-Za-z._-]{1,64}$")
 
 
 def log(message: str) -> None:
@@ -89,15 +98,24 @@ def request(path: str, method: str = "GET", payload: dict | None = None) -> dict
         return None
 
 
-def run_action(action: str) -> tuple[bool, str]:
-    command = WHITELIST.get(str(action or "").strip())
-    if command is None:
+def run_action(action: str, args: list[str] | None = None) -> tuple[bool, str]:
+    action = str(action or "").strip()
+    base = WHITELIST.get(action)
+    if base is None:
         return False, f"Aksi '{action}' tidak ada di whitelist agent"
+    command = list(base)
+    # Hanya aksi restore yang menerima argumen (nama arsip), divalidasi ketat.
+    if action == "restore_backup":
+        for extra in (args or [])[:1]:
+            if not SAFE_ARG.match(str(extra)):
+                return False, f"Argumen tidak aman: {extra!r}"
+            command.append(str(extra))
+    timeout = ACTION_TIMEOUTS.get(action, 120)
     started = time.time()
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=120)
+        result = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
-        return False, f"Timeout 120s saat menjalankan {action}"
+        return False, f"Timeout {timeout}s saat menjalankan {action}"
     except Exception as exc:  # noqa: BLE001
         return False, f"Gagal menjalankan {action}: {exc}"
     output = "\n".join(
@@ -117,7 +135,7 @@ def tick() -> None:
         action = str(item.get("action") or "")
         if not job_id:
             continue
-        ok, output = run_action(action)
+        ok, output = run_action(action, item.get("args") or [])
         request(
             f"/api/internal/host-commands/{job_id}/result",
             method="POST",

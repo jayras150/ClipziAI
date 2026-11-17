@@ -122,3 +122,64 @@ export async function runSpeedtest(): Promise<SpeedtestResult> {
     };
   }
 }
+
+
+export type BackupJob = {
+  id: string;
+  kind: string;
+  status: string;
+  archive?: string | null;
+  size_bytes?: number | null;
+  detail?: string | null;
+  created_at?: string | null;
+  finished_at?: string | null;
+  created_by?: string | null;
+};
+
+export type BackupsData = {
+  jobs: BackupJob[];
+  archives: string[];
+  agent_status?: string | null;
+  ok?: boolean;
+  job?: BackupJob;
+  log_text?: string;
+  error?: string;
+  restart_hint?: string;
+};
+
+function _detail(error: unknown): string {
+  const detail = (error as { detail?: unknown })?.detail;
+  if (typeof detail === 'string') return detail;
+  if (detail && typeof detail === 'object') {
+    const message = (detail as { message?: string }).message;
+    if (message) return message;
+  }
+  return error instanceof Error ? error.message.replace(/^\d{3}\s+/, '') : 'Request gagal.';
+}
+
+export async function fetchBackups(): Promise<BackupsData> {
+  try {
+    return await adminFetch<BackupsData>('/api/admin/system/backups');
+  } catch (error) {
+    return { jobs: [], archives: [], error: _detail(error) };
+  }
+}
+
+export async function createBackup(): Promise<BackupsData> {
+  try {
+    return await adminFetch<BackupsData>('/api/admin/system/backups', { method: 'POST' });
+  } catch (error) {
+    return { jobs: [], archives: [], error: _detail(error) };
+  }
+}
+
+export async function restoreBackup(archive: string): Promise<BackupsData> {
+  try {
+    return await adminFetch<BackupsData>('/api/admin/system/backups/restore', {
+      method: 'POST',
+      body: JSON.stringify({ archive })
+    });
+  } catch (error) {
+    return { jobs: [], archives: [], error: _detail(error) };
+  }
+}
