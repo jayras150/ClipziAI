@@ -26,7 +26,7 @@ TEMPLATE_ONSTART = "/app/deployments/pipeline_onstart.sh"
 # Docker options dasar template (port service pipeline; aman & sama seperti CLI lama).
 TEMPLATE_DOCKER_OPTIONS = "-p 8000:8000"
 # Env yang diisi PER TASK — jangan dibekukan di template.
-TEMPLATE_ENV_SKIP = {"CLIPZI_TASK_ID"}
+TEMPLATE_ENV_SKIP = {"CLIPZI_TASK_ID", "CLIPZI_MODEL_URL", "CLIPZI_MODEL_URL_ERROR"}
 TEMPLATE_DESC = "ClipziAI worker (dibuat otomatis dari admin) — jangan diedit manual."
 # Vast menolak field `env` template > 4096 char:
 #   {"error":"invalid_params","msg":"Param env greater than max length 4096 chars"}
@@ -670,7 +670,9 @@ async def create_worker_template(
         raise ValueError("Storage template harus antara 10 dan 500 GB.")
 
     env = build_worker_env()
-    env.pop("CLIPZI_TASK_ID", None)
+    # URL model bertanda tangan kedaluwarsa: jangan dibekukan di template.
+    for key in TEMPLATE_ENV_SKIP:
+        env.pop(key, None)
     if include_env:
         env_string, env_keys, env_skipped = build_template_env(env)
     else:
@@ -862,7 +864,9 @@ async def upsert_worker_template(
         raise ValueError("Storage template harus antara 10 dan 500 GB.")
 
     env = build_worker_env()
-    env.pop("CLIPZI_TASK_ID", None)
+    # URL model bertanda tangan kedaluwarsa: jangan dibekukan di template.
+    for key in TEMPLATE_ENV_SKIP:
+        env.pop(key, None)
     for key, value in (extra_env or {}).items():
         if str(value or "").strip():
             env[str(key)] = str(value)
