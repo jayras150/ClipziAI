@@ -970,9 +970,18 @@ TEMPLATE_META_KEY = "vast_template_meta"
 
 def env_fingerprint(env: Dict[str, str]) -> str:
     # Sidik jari env worker untuk mendeteksi template yang basi.
+    # Nilai volatil diabaikan: cookies (gzip memuat timestamp) dan query string
+    # pada URL bertanda tangan (presigned) berubah setiap panggilan.
     import hashlib
 
-    parts = [f"{key}={value}" for key, value in sorted((env or {}).items())]
+    parts = []
+    for key, value in sorted((env or {}).items()):
+        if str(key).startswith("YTDLP_COOKIES_") or key == "CLIPZI_TASK_ID":
+            continue
+        text = str(value)
+        if text.startswith(("http://", "https://")):
+            text = text.split("?", 1)[0]
+        parts.append(f"{key}={text}")
     return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
 
 
