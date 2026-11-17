@@ -33,6 +33,17 @@ class TemplateCreateIn(BaseModel):
     activate: bool = True
 
 
+class TemplateSyncIn(BaseModel):
+    """Sync satu template worker (env otomatis mengikuti provider model aktif)."""
+
+    name: Optional[str] = None
+    image: Optional[str] = None
+    disk_space: Optional[int] = None
+    public: bool = False
+    activate: bool = True
+    adopt_hash: Optional[str] = None
+
+
 class ProviderTemplateIn(BaseModel):
     """Template per provider model (Clipzy Gdrive / Dropbox / …)."""
 
@@ -250,9 +261,9 @@ async def sync_worker_env(
 
 
 @router.get("/template")
-async def read_worker_template():
-    """Status template worker: hash aktif, image, onstart, dan env yang dibekukan."""
-    return await vast_admin.worker_template_status()
+async def read_worker_template(db: AsyncSession = Depends(get_db_session)):
+    """Status template worker + deteksi drift env (satu template untuk semua model)."""
+    return await vast_admin.worker_template_status(db)
 
 
 @router.post("/template/create")
@@ -262,7 +273,11 @@ async def create_worker_template(
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db_session),
 ):
-    """Buat template Vast.ai (image + env pipeline) lalu aktifkan untuk dispatch."""
+    """Buat template worker (image + env pipeline) lalu aktifkan untuk dispatch.
+
+    Alias lama dari `/template/sync`; env tetap memakai build_worker_env()
+    sehingga otomatis mengikuti provider/model aktif.
+    """
     try:
         result = await vast_admin.create_worker_template(
             name=payload.name,
@@ -293,6 +308,17 @@ async def create_worker_template(
     else:
         result["activated"] = False
 
+    if result.get("template_hash"):
+        await vast_admin.save_template_meta(
+            db,
+            template_hash=result.get("template_hash"),
+            name=result.get("name"),
+            image=result.get("image"),
+            disk=result.get("disk_space"),
+            env_fingerprint=vast_admin.env_fingerprint(vast_admin.build_worker_env()),
+            env_count=len(vast_admin.build_worker_env()),
+        )
+
     _audit(
         db,
         request,
@@ -303,6 +329,50 @@ async def create_worker_template(
             "template_hash": result.get("template_hash"),
             "env_count": result.get("env_count"),
             "activated": result.get("activated"),
+        },
+    )
+    await db.commit()
+    return result
+
+
+@router.post("/template/sync")
+async def sync_worker_template(
+    payload: TemplateSyncIn,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Buat/update template worker tunggal lalu aktifkan untuk dispatch.
+
+    Env template berasal dari build_worker_env() sehingga otomatis memuat env
+    provider/model yang sedang aktif (Gdrive/Dropbox/B2/HF/S3).
+    """
+    try:
+        result = await vast_admin.sync_active_template(
+            db,
+            name=payload.name,
+            image=payload.image,
+            disk_space=payload.disk_space,
+            public=payload.public,
+            activate=payload.activate,
+            adopt_hash=payload.adopt_hash,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    _audit(
+        db,
+        request,
+        current_admin,
+        "vast_template_synced",
+        {
+            "name": result.get("name"),
+            "template_hash": result.get("template_hash"),
+            "env_count": result.get("env_count"),
+            "activated": result.get("activated"),
+            "adopted": result.get("adopted"),
         },
     )
     await db.commit()
@@ -325,47 +395,51 @@ async def sync_provider_template(
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db_session),
 ):
-    """Buat/perbarui template provider lalu (opsional) aktifkan untuk dispatch."""
+    """Legacy: hanya MENGADOPSI hash template per-provider lama.
+
+    Pembuatan template per provider sudah dihapus (satu template worker untuk
+    semua model). Endpoint ini dipakai sekali untuk memigrasikan hash lama.
+    """
     from app.services import model_sources
 
     try:
         provider = model_sources.get_provider(payload.provider)
-        known = (await vast_admin.remembered_templates(db)).get(provider.id) or {}
-        result = await vast_admin.upsert_worker_template(
-            payload.name or provider.template_name,
-            provider.env,
-            known_hash=known.get("template_hash"),
+    except model_sources.SourceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    known = (await vast_admin.remembered_templates(db)).get(provider.id) or {}
+    legacy_hash = str(known.get("template_hash") or "").strip()
+    if not legacy_hash:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Template per-provider lama tidak ditemukan. Gunakan "
+                "POST /api/admin/settings/vast/template/sync untuk satu template worker."
+            ),
+        )
+
+    try:
+        result = await vast_admin.sync_active_template(
+            db,
+            name=payload.name,
+            activate=payload.activate,
+            adopt_hash=legacy_hash,
+            provider=provider.id,
         )
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    if result.get("template_hash"):
-        await vast_admin.remember_template(
-            db,
-            provider.id,
-            result.get("name") or provider.template_name,
-            result["template_hash"],
-            result.get("template_id"),
-        )
-    if payload.activate and result.get("template_hash"):
-        await vast_config.save_vast_config(
-            db,
-            {
-                "template_hash": result["template_hash"],
-                "worker_image": result["image"],
-                "worker_disk": result["disk_space"],
-            },
-        )
-        result["activated"] = True
+
+    result["deprecated"] = True
+    result["provider"] = provider.id
     _audit(
         db,
         request,
         current_admin,
-        "vast_provider_template_synced",
+        "vast_provider_template_adopted",
         {
             "provider": provider.id,
-            "name": result.get("name"),
-            "action": result.get("action"),
             "template_hash": result.get("template_hash"),
+            "activated": result.get("activated"),
         },
     )
     await db.commit()

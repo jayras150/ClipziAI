@@ -100,6 +100,18 @@ export type VastTemplateStatus = {
   missing_required: string[];
   api_key_set: boolean;
   ready: boolean;
+  /** Deteksi template basi (env berubah setelah sync terakhir). */
+  fingerprint?: string;
+  stored_fingerprint?: string;
+  drift?: boolean;
+  env_count_current?: number;
+  last_synced_at?: string | null;
+  active_provider?: string | null;
+  template_image?: string | null;
+  template_disk?: number | null;
+  env_limit?: number;
+  env_len?: number;
+  env_skipped?: string[];
 };
 
 export async function loadVastTemplateStatus() {
@@ -184,5 +196,44 @@ export async function loadVastBilling(params: {
     );
   } catch (error) {
     return { ok: false, error: _error(error) };
+  }
+}
+
+
+export type TemplateSyncResult = {
+  ok?: boolean;
+  adopted?: boolean;
+  template_hash?: string;
+  name?: string;
+  image?: string;
+  disk_space?: number;
+  env_count?: number;
+  env_keys?: string[];
+  env_skipped?: string[];
+  env_len?: number;
+  warnings?: string[];
+  activated?: boolean;
+  fingerprint?: string;
+  error?: string;
+};
+
+/** Buat/update SATU template worker lalu aktifkan untuk dispatch. */
+export async function syncVastTemplate(payload: {
+  name?: string;
+  image?: string;
+  disk_space?: number;
+  activate?: boolean;
+  adopt_hash?: string;
+}) {
+  try {
+    const data = await adminFetch<TemplateSyncResult>(
+      '/api/admin/settings/vast/template/sync',
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    revalidatePath('/dashboard/settings/instance');
+    revalidatePath('/dashboard/settings/vast');
+    return { ok: true as const, data };
+  } catch (error) {
+    return { ok: false as const, error: _error(error) };
   }
 }

@@ -229,34 +229,16 @@ async def save_source(
     except model_sources.SourceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # Satu template worker untuk semua provider; env otomatis mengikuti model aktif.
     template: Dict[str, Any] = {"skipped": True}
     if payload.auto_template:
         try:
-            known = (await vast_admin.remembered_templates(db)).get(provider.id) or {}
-            template = await vast_admin.upsert_worker_template(
-                provider.template_name,
-                provider.env,
-                known_hash=known.get("template_hash"),
+            template = await vast_admin.sync_active_template(
+                db,
+                activate=payload.activate,
+                provider=provider.id,
             )
             template["skipped"] = False
-            if template.get("template_hash"):
-                await vast_admin.remember_template(
-                    db,
-                    provider.id,
-                    template.get("name") or provider.template_name,
-                    template["template_hash"],
-                    template.get("template_id"),
-                )
-            if payload.activate and template.get("template_hash"):
-                await vast_config.save_vast_config(
-                    db,
-                    {
-                        "template_hash": template["template_hash"],
-                        "worker_image": template["image"],
-                        "worker_disk": template["disk_space"],
-                    },
-                )
-                template["activated"] = True
         except (ValueError, RuntimeError) as exc:
             template = {"skipped": False, "error": str(exc)[:400]}
     _audit(
@@ -293,49 +275,32 @@ async def sync_source_template(
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db_session),
 ):
-    """Buat/perbarui template Vast provider aktif ("Clipzy <Provider>")."""
+    """Legacy alias: sekarang menyegarkan SATU template worker."""
     try:
         source = await model_sources.get_source(db)
         provider = model_sources.get_provider(payload.provider or source["provider"])
-        known = (await vast_admin.remembered_templates(db)).get(provider.id) or {}
-        template = await vast_admin.upsert_worker_template(
-            provider.template_name, provider.env, known_hash=known.get("template_hash")
+        template = await vast_admin.sync_active_template(
+            db, activate=payload.activate, provider=provider.id
         )
     except model_sources.SourceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    if template.get("template_hash"):
-        await vast_admin.remember_template(
-            db,
-            provider.id,
-            template.get("name") or provider.template_name,
-            template["template_hash"],
-            template.get("template_id"),
-        )
-    if payload.activate and template.get("template_hash"):
-        await vast_config.save_vast_config(
-            db,
-            {
-                "template_hash": template["template_hash"],
-                "worker_image": template["image"],
-                "worker_disk": template["disk_space"],
-            },
-        )
-        template["activated"] = True
     _audit(
         db,
         request,
         current_admin,
-        "vast_provider_template_synced",
-        meta={
+        "vast_template_synced",
+        {
             "provider": provider.id,
-            "template_name": template.get("name"),
-            "action": template.get("action"),
+            "name": template.get("name"),
             "template_hash": template.get("template_hash"),
+            "activated": template.get("activated"),
+            "via": "whisper-source",
         },
     )
     await db.commit()
+    template["deprecated"] = True
     return template
 
 
@@ -390,9 +355,19 @@ async def activate_model(
     await db.commit()
     restore_env = model_sources.restore_env()
     provider = model_sources.get_provider(payload.get("provider"))
+    template_sync: Dict[str, Any] = {}
+    try:
+        cfg = await vast_config.get_vast_config(db)
+        if str(cfg.get("worker_image") or "").strip() and str(cfg.get("api_key_enc") or ""):
+            template_sync = await vast_admin.sync_active_template(
+                db, activate=True, provider=provider.id
+            )
+    except Exception as exc:  # noqa: BLE001 - aktivasi model tetap sukses
+        template_sync = {"error": str(exc)[:300]}
     return {
         "ok": True,
         "model": payload,
+        "template_sync": template_sync,
         "provider": provider.id,
         "provider_label": provider.label,
         "restore_mode": provider.restore_mode,

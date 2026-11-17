@@ -1,5 +1,5 @@
 """Setelan AI versi admin: simpan, uji koneksi, injeksi ke environment."""
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -412,6 +412,7 @@ async def test_prompt(
             status_code=400,
             detail="Prompt kosong. Isi dulu atau pilih default.",
         )
+    messages: List[Dict[str, Any]] = []
     if key.endswith("_system"):
         messages = [
             {"role": "system", "content": text},
@@ -435,7 +436,7 @@ async def test_prompt(
         )
         response = await client.chat.completions.create(
             model=str(cfg.get("model_metadata") or ""),
-            messages=messages,
+            messages=cast(Any, messages),
             temperature=float(cfg.get("temperature") or 0.7),
             max_tokens=min(800, int(cfg.get("max_tokens") or 800)),
         )

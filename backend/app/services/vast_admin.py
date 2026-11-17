@@ -607,9 +607,28 @@ def worker_template_spec() -> Dict[str, Any]:
     }
 
 
-async def worker_template_status() -> Dict[str, Any]:
+async def worker_template_status(db=None) -> Dict[str, Any]:
     """Status template untuk panel admin (tanpa panggilan jaringan ke Vast)."""
-    return worker_template_spec()
+    spec = worker_template_spec()
+    if db is not None:
+        try:
+            drift = await template_drift(db)
+            meta = await template_meta(db)
+            spec.update(
+                {
+                    "fingerprint": drift["fingerprint"],
+                    "stored_fingerprint": drift["stored_fingerprint"],
+                    "drift": drift["drift"],
+                    "env_count_current": drift["env_count"],
+                    "last_synced_at": meta.get("synced_at"),
+                    "active_provider": meta.get("provider"),
+                    "template_image": meta.get("image"),
+                    "template_disk": meta.get("disk"),
+                }
+            )
+        except Exception as exc:  # noqa: BLE001 - panel tetap tampil
+            logger.warning("Gagal membaca metadata template: %s", exc)
+    return spec
 
 
 async def create_worker_template(
@@ -944,6 +963,146 @@ async def upsert_worker_template(
         "env_limit": TEMPLATE_ENV_MAX_LEN,
         "warnings": warnings,
     }
+
+
+TEMPLATE_META_KEY = "vast_template_meta"
+
+
+def env_fingerprint(env: Dict[str, str]) -> str:
+    # Sidik jari env worker untuk mendeteksi template yang basi.
+    import hashlib
+
+    parts = [f"{key}={value}" for key, value in sorted((env or {}).items())]
+    return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
+
+
+async def template_meta(db) -> Dict[str, Any]:
+    from app.services import platform_settings as ps
+
+    try:
+        raw = await ps.get_setting(db, TEMPLATE_META_KEY, {})
+    except Exception as exc:  # noqa: BLE001 - metadata bersifat opsional
+        logger.warning("Gagal membaca metadata template: %s", exc)
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+async def save_template_meta(db, **values) -> Dict[str, Any]:
+    from datetime import datetime, timezone
+
+    from app.services import platform_settings as ps
+
+    current = await template_meta(db)
+    current.update({key: value for key, value in values.items() if value is not None})
+    current["synced_at"] = datetime.now(timezone.utc).isoformat()
+    try:
+        await ps.set_setting(db, TEMPLATE_META_KEY, current)
+    except Exception as exc:  # noqa: BLE001 - jangan gagalkan sync template
+        logger.warning("Gagal menyimpan metadata template: %s", exc)
+    return current
+
+
+async def template_drift(db) -> Dict[str, Any]:
+    env = build_worker_env()
+    meta = await template_meta(db)
+    stored = str(meta.get("env_fingerprint") or "")
+    current = env_fingerprint(env)
+    return {
+        "fingerprint": current,
+        "stored_fingerprint": stored,
+        "drift": bool(stored) and stored != current,
+        "env_count": len(env),
+        "last_synced_at": meta.get("synced_at"),
+    }
+
+
+async def sync_active_template(
+    db,
+    *,
+    name: Optional[str] = None,
+    image: Optional[str] = None,
+    disk_space: Optional[int] = None,
+    public: bool = False,
+    activate: bool = True,
+    adopt_hash: Optional[str] = None,
+    provider: Optional[str] = None,
+) -> Dict[str, Any]:
+    # SATU pintu template worker: env = build_worker_env() (sudah termasuk provider aktif).
+    from app.services import vast_config
+
+    settings = get_settings()
+    meta = await template_meta(db)
+    env = build_worker_env()
+    fingerprint = env_fingerprint(env)
+
+    if adopt_hash:
+        hash_id = str(adopt_hash).strip()
+        if not hash_id:
+            raise ValueError("Hash template kosong.")
+        await save_template_meta(
+            db,
+            template_hash=hash_id,
+            name=name or settings.VAST_TEMPLATE_NAME or "clipzi-worker",
+            image=image or settings.VAST_WORKER_IMAGE,
+            disk=disk_space or settings.VAST_WORKER_DISK,
+            env_fingerprint=fingerprint,
+            env_count=len(env),
+            provider=provider,
+            adopted=True,
+        )
+        if activate:
+            await vast_config.save_vast_config(
+                db,
+                {
+                    "template_hash": hash_id,
+                    "worker_image": image or settings.VAST_WORKER_IMAGE,
+                    "worker_disk": int(disk_space or settings.VAST_WORKER_DISK or 40),
+                },
+            )
+        return {
+            "ok": True,
+            "adopted": True,
+            "template_hash": hash_id,
+            "name": name or settings.VAST_TEMPLATE_NAME,
+            "image": image or settings.VAST_WORKER_IMAGE,
+            "env_count": len(env),
+            "fingerprint": fingerprint,
+            "activated": bool(activate),
+        }
+
+    result = await upsert_worker_template(
+        name or settings.VAST_TEMPLATE_NAME or "clipzi-worker",
+        {},
+        image=image,
+        disk_space=disk_space,
+        public=public,
+        known_hash=str(meta.get("template_hash") or "") or None,
+    )
+    hash_id = str(result.get("template_hash") or "")
+    await save_template_meta(
+        db,
+        template_hash=hash_id or None,
+        name=result.get("name"),
+        image=result.get("image"),
+        disk=result.get("disk_space"),
+        env_fingerprint=fingerprint,
+        env_count=len(env),
+        provider=provider,
+        adopted=False,
+    )
+    if activate and hash_id:
+        await vast_config.save_vast_config(
+            db,
+            {
+                "template_hash": hash_id,
+                "worker_image": result.get("image"),
+                "worker_disk": int(result.get("disk_space") or 40),
+            },
+        )
+    result.update(
+        {"activated": bool(activate and hash_id), "fingerprint": fingerprint, "drift": False}
+    )
+    return result
 
 
 async def provider_templates(db=None) -> Dict[str, Any]:

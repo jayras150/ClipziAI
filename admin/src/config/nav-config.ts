@@ -125,18 +125,10 @@ export const navGroups: NavGroup[] = [
         items: []
       },
       {
-        title: 'Vast.ai',
-        url: '/dashboard/settings/vast',
+        title: 'Instance',
+        url: '/dashboard/settings/instance',
         icon: 'settings',
-        shortcut: ['v', 'a'],
-        isActive: false,
-        items: []
-      },
-      {
-        title: 'Whisper Models',
-        url: '/dashboard/settings/models',
-        icon: 'sparkles',
-        shortcut: ['w', 'm'],
+        shortcut: ['i', 'n'],
         isActive: false,
         items: []
       },

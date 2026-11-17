@@ -9,7 +9,8 @@
     "**/node_modules",
     "frontend",
     "docker-data",
-    ".next"
+    ".next",
+    ".tmp"
   ],
   "extraPaths": ["backend"],
   // Venv proyek (berisi semua dependency backend). Dibuat dengan:

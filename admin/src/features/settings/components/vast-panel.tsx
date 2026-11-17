@@ -8,14 +8,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import {
   autoVastConnection,
-  createVastTemplate,
   loadVastConnections,
-  loadVastTemplateStatus,
   resetVastConfig,
   saveVastConfig,
   testVastConnection,
   testVastOffers,
-  type VastTemplateStatus
 } from '@/app/dashboard/settings/vast/actions';
 import VastEnvPanel from '@/features/settings/components/vast-env-panel';
 import VastBillingPanel from '@/features/settings/components/vast-billing-panel';
@@ -79,18 +76,6 @@ export default function VastPanel({
   const [connectionsBusy, setConnectionsBusy] = useState(false);
   const [connectionsError, setConnectionsError] = useState('');
   const [connectionsLoaded, setConnectionsLoaded] = useState(false);
-  // --- Template worker otomatis (image + env pipeline) ---
-  const [template, setTemplate] = useState<VastTemplateStatus | null>(null);
-  const [templateBusy, setTemplateBusy] = useState(false);
-  const [templateName, setTemplateName] = useState('');
-  const [templateImage, setTemplateImage] = useState('');
-  const [templateDisk, setTemplateDisk] = useState('');
-  const [templateIncludeEnv, setTemplateIncludeEnv] = useState(true);
-  const [templateSyncEnv, setTemplateSyncEnv] = useState(true);
-  const [templateMessage, setTemplateMessage] = useState('');
-  const [templateError, setTemplateError] = useState('');
-  const [templateWarnings, setTemplateWarnings] = useState<string[]>([]);
-
   const set = (key: keyof VastConfigData, value: unknown) => {
     setForm((current) => ({ ...current, [key]: value }));
   };
@@ -140,59 +125,8 @@ export default function VastPanel({
     }
   };
 
-  const refreshTemplate = async () => {
-    const response = await loadVastTemplateStatus();
-    if ('error' in response && response.error) {
-      setTemplateError(String(response.error));
-      return;
-    }
-    const status = response as VastTemplateStatus;
-    setTemplate(status);
-    setTemplateError('');
-    setTemplateName((current) => current || status.template_name || '');
-    setTemplateImage((current) => current || status.worker_image || '');
-    setTemplateDisk((current) => current || String(status.worker_disk || ''));
-  };
-
-  const runCreateTemplate = async () => {
-    setTemplateBusy(true);
-    setTemplateMessage('');
-    setTemplateError('');
-    setTemplateWarnings([]);
-    try {
-      const response = await createVastTemplate({
-        name: templateName.trim() || undefined,
-        image: templateImage.trim() || undefined,
-        disk_space: templateDisk ? Number(templateDisk) : undefined,
-        include_env: templateIncludeEnv,
-        sync_env_vars: templateSyncEnv,
-        activate: true
-      });
-      if ('error' in response && response.error) {
-        setTemplateError(String(response.error));
-        return;
-      }
-      const data = (response as { data?: Record<string, unknown> }).data || {};
-      const hash = String(data.template_hash || '');
-      const envCount = Number(data.env_count || 0);
-      setTemplateWarnings(Array.isArray(data.warnings) ? data.warnings.map(String) : []);
-      if (hash) {
-        setForm((current) => ({ ...current, template_hash: hash }));
-      }
-      setTemplateMessage(
-        hash
-          ? `Template dibuat (${envCount} env) dan langsung dipakai dispatch. Hash: ${hash}`
-          : 'Template dibuat tetapi hash belum terbaca — isi manual di kolom Template hash.'
-      );
-      await refreshTemplate();
-    } finally {
-      setTemplateBusy(false);
-    }
-  };
-
   useEffect(() => {
     void refreshConnections();
-    void refreshTemplate();
     // Muat sekali saat panel dibuka; tombol Refresh tersedia untuk memuat ulang.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -365,124 +299,6 @@ export default function VastPanel({
                 <label className='text-muted-foreground text-xs'>Filter GPU (query Vast)</label>
                 <Input value={form.gpu_filter} onChange={(event) => set('gpu_filter', event.target.value)} placeholder='gpu_ram>=16 disk_space>=40 inet_down>200' />
               </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Template worker otomatis</CardTitle>
-              <CardDescription>
-                Buat template Vast.ai dari image worker + onstart pipeline, lalu hash-nya langsung
-                disimpan sebagai Template hash dan dipakai saat instance oneshot dibuat. Env pipeline
-                ikut dibekukan di template (terlihat di web Vast, maks 4096 char) dan tetap dikirim
-                ulang per task — nilai per-task seperti CLIPZI_TASK_ID selalu menang. Nilai secret
-                tidak pernah ditampilkan di panel ini.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className='space-y-3'>
-              <div className='flex flex-wrap items-center gap-2 text-xs'>
-                <Badge variant={template?.template_hash ? 'secondary' : 'destructive'}>
-                  {template?.template_hash
-                    ? `hash ${template.template_hash.slice(0, 12)}…`
-                    : 'belum ada template'}
-                </Badge>
-                <Badge variant={template?.ready ? 'secondary' : 'outline'}>
-                  {template?.ready ? 'siap dispatch' : 'belum siap'}
-                </Badge>
-                <span className='text-muted-foreground'>
-                  onstart {template?.onstart || '/app/deployments/pipeline_onstart.sh'}
-                </span>
-                <span className='text-muted-foreground'>
-                  {template?.env_count ?? 0} env pipeline
-                </span>
-                {template?.missing_required?.length ? (
-                  <Badge variant='destructive'>
-                    env kurang: {template.missing_required.join(', ')}
-                  </Badge>
-                ) : null}
-              </div>
-              <div className='grid gap-3 md:grid-cols-3'>
-                <div className='space-y-1'>
-                  <label className='text-muted-foreground text-xs' htmlFor='tpl-name'>
-                    Nama template
-                  </label>
-                  <Input
-                    id='tpl-name'
-                    value={templateName}
-                    onChange={(event) => setTemplateName(event.target.value)}
-                    placeholder='clipzi-worker'
-                  />
-                </div>
-                <div className='space-y-1'>
-                  <label className='text-muted-foreground text-xs' htmlFor='tpl-image'>
-                    Image worker
-                  </label>
-                  <Input
-                    id='tpl-image'
-                    value={templateImage}
-                    onChange={(event) => setTemplateImage(event.target.value)}
-                    placeholder={form.worker_image || 'sujinwo555/clipzi-backend:worker'}
-                  />
-                </div>
-                <div className='space-y-1'>
-                  <label className='text-muted-foreground text-xs' htmlFor='tpl-disk'>
-                    Storage template (GB)
-                  </label>
-                  <Input
-                    id='tpl-disk'
-                    type='number'
-                    min={10}
-                    max={500}
-                    value={templateDisk}
-                    onChange={(event) => setTemplateDisk(event.target.value)}
-                    placeholder='40'
-                  />
-                </div>
-              </div>
-              <div className='flex flex-wrap items-center gap-4 text-xs'>
-                <label className='text-muted-foreground flex items-center gap-2'>
-                  <input
-                    type='checkbox'
-                    checked={templateIncludeEnv}
-                    onChange={(event) => setTemplateIncludeEnv(event.target.checked)}
-                  />
-                  Bekukan env pipeline di template (muncul di web Vast)
-                </label>
-                <label className='text-muted-foreground flex items-center gap-2'>
-                  <input
-                    type='checkbox'
-                    checked={templateSyncEnv}
-                    onChange={(event) => setTemplateSyncEnv(event.target.checked)}
-                  />
-                  Sinkronkan juga ke Environment Variables akun Vast
-                </label>
-              </div>
-              <div className='flex flex-wrap items-center gap-2'>
-                <button
-                  type='button'
-                  disabled={templateBusy}
-                  onClick={() => void runCreateTemplate()}
-                  className='bg-primary text-primary-foreground rounded-md px-3 py-2 text-sm disabled:opacity-50'
-                >
-                  {templateBusy ? 'Membuat template…' : 'Buat template otomatis'}
-                </button>
-                <button
-                  type='button'
-                  disabled={templateBusy}
-                  onClick={() => void refreshTemplate()}
-                  className='hover:bg-muted rounded-md border px-3 py-2 text-sm disabled:opacity-50'
-                >
-                  Muat status
-                </button>
-              </div>
-              {templateMessage ? <p className='text-xs text-emerald-600'>{templateMessage}</p> : null}
-              {templateWarnings.length ? (
-                <ul className='list-disc space-y-1 pl-4 text-xs text-amber-600'>
-                  {templateWarnings.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              ) : null}
-              {templateError ? <p className='text-destructive text-xs'>{templateError}</p> : null}
             </CardContent>
           </Card>
           <Card>

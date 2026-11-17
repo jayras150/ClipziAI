@@ -11,7 +11,7 @@ import logging
 import re
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -114,9 +114,9 @@ async def _append_history(db: AsyncSession, entries: List[Dict[str, Any]]) -> No
     current = row.value if row is not None and isinstance(row.value, list) else []
     merged = (entries + list(current))[:HISTORY_LIMIT]
     if row is None:
-        db.add(PlatformSetting(key=HISTORY_KEY, value=merged))
+        db.add(PlatformSetting(key=HISTORY_KEY, value=cast(Any, merged)))
     else:
-        row.value = merged
+        row.value = cast(Any, merged)
 
 
 async def get_history(db: AsyncSession) -> List[Dict[str, Any]]:
@@ -174,7 +174,7 @@ def preview(
     text: Optional[str] = None,
     ctx: Optional[Dict[str, Any]] = None,
     prompts: Optional[Dict[str, str]] = None,
-) -> Dict[str, str]:
+) -> Dict[str, Any]:
     # Render pratinjau prompt dengan sample context (tanpa memanggil model).
     if key not in PROMPT_KEYS:
         raise ValueError(f"Prompt tidak dikenal: {key}")

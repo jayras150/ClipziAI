@@ -19,7 +19,6 @@ import { Separator } from '@/components/ui/separator';
 import {
   downloadWhisperNotebook,
   saveWhisperSource,
-  syncWhisperTemplate,
   testWhisperSource
 } from '@/app/dashboard/settings/models/actions';
 import { ProviderLogo } from './provider-logos';
@@ -163,25 +162,6 @@ export default function WhisperSourcePanel({ data }: { data: WhisperSourceData }
     });
   };
 
-  const runTemplate = () => {
-    setMessage('');
-    setError('');
-    startTransition(async () => {
-      const result = await syncWhisperTemplate(provider.id);
-      if (result.error) {
-        setError(result.error);
-        return;
-      }
-      const payload = result.data as { name?: string; action?: string; template_hash?: string };
-      setMessage(
-        `Template ${payload.name || provider.template_name} ${
-          payload.action === 'updated' ? 'diperbarui' : 'dibuat'
-        }${payload.template_hash ? ` · hash ${payload.template_hash.slice(0, 8)}…​` : ''}.`
-      );
-      router.refresh();
-    });
-  };
-
   const runReset = () => {
     setMessage('');
     setError('');
@@ -193,7 +173,7 @@ export default function WhisperSourcePanel({ data }: { data: WhisperSourceData }
       }
       setValues(defaultsFor(provider));
       setMessage(
-        `Kredensial ${provider.label} dihapus. Isi ulang App key/App secret/refresh token, lalu Simpan.`
+        `Kredensial ${provider.label} dihapus. Isi ulang kredensial lalu Simpan.`
       );
       router.refresh();
     });
@@ -303,10 +283,7 @@ export default function WhisperSourcePanel({ data }: { data: WhisperSourceData }
             Uji koneksi
           </Button>
           <Button onClick={runSave} disabled={pending}>
-            Simpan &amp; buat template
-          </Button>
-          <Button variant='secondary' onClick={runTemplate} disabled={pending}>
-            Segarkan template Vast
+            Simpan kredensial &amp; sync template
           </Button>
           <Button variant='ghost' onClick={runNotebook} disabled={pending}>
             Unduh notebook Colab
@@ -329,29 +306,15 @@ export default function WhisperSourcePanel({ data }: { data: WhisperSourceData }
 
         <Separator />
 
-        <div className='space-y-2'>
-          <p className='text-sm font-medium'>Template Vast per provider</p>
-          {data.templates?.error ? (
-            <p className='text-destructive text-xs'>{data.templates.error}</p>
-          ) : null}
-          <ul className='space-y-1 text-sm'>
-            {(data.templates?.items || []).map((item) => (
-              <li key={item.provider} className='flex flex-wrap items-center gap-2'>
-                <span className='w-40 truncate'>{item.name}</span>
-                <Badge variant={item.exists ? 'secondary' : 'outline'}>
-                  {item.exists ? 'terpasang' : 'belum ada'}
-                </Badge>
-                {item.active ? <Badge>aktif di dispatch</Badge> : null}
-                {item.template_hash ? (
-                  <code className='text-muted-foreground text-xs'>
-                    {item.template_hash.slice(0, 8)}…
-                  </code>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+        <div className='rounded-md border border-dashed p-3 text-xs'>
+          <p className='font-medium'>Template Vast dikelola di satu tempat</p>
+          <p className='text-muted-foreground mt-1'>
+            Template worker dibuat dari image + env pipeline dan otomatis memuat pengaturan
+            provider di atas. Buka tab <strong>Worker Template</strong> untuk membuat,
+            menyegarkan, atau memeriksa template yang dipakai dispatch.
+          </p>
           {activeProvider ? (
-            <p className='text-muted-foreground text-xs'>
+            <p className='text-muted-foreground mt-2'>
               Provider aktif sekarang: <strong>{activeProvider.label}</strong> · restore{' '}
               {MODE_LABEL[activeProvider.restore_mode] || activeProvider.restore_mode}
             </p>
