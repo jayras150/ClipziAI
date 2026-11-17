@@ -127,7 +127,15 @@ def classify_download_error(text: Optional[str]) -> str:
         return CATEGORY_COOKIES_INVALID
     if "429" in lowered or "too many requests" in lowered:
         return CATEGORY_RATE_LIMITED
-    if "requested format is not available" in lowered or "no video formats" in lowered:
+    # YouTube tanpa stream video: JS challenge (nsig) tidak terpecahkan atau
+    # hanya storyboard yang tersedia.
+    if (
+        "signature extraction failed" in lowered
+        or "only images are available" in lowered
+        or "storyboard" in lowered
+        or "no video formats" in lowered
+        or "requested format is not available" in lowered
+    ):
         return CATEGORY_FORMAT_UNAVAILABLE
     if "timed out" in lowered or "timeout" in lowered:
         return CATEGORY_TIMEOUT

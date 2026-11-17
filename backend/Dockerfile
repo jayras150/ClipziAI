@@ -86,8 +86,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 \
     libgomp1 \
     curl \
+    unzip \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Runtime JS untuk memecahkan JS challenge YouTube (nsig). Tanpa Deno,
+# `yt-dlp` hanya menerima storyboard → "Requested format is not available".
+# Dipasang di stage runtime supaya image `api` (probe admin) juga bisa menilai
+# cookies dengan benar, bukan hanya worker.
+ARG DENO_VERSION=v2.9.8
+RUN curl -fsSL "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip" \
+      -o /tmp/deno.zip \
+    && unzip -o /tmp/deno.zip -d /usr/local/bin \
+    && chmod 0755 /usr/local/bin/deno \
+    && rm -f /tmp/deno.zip \
+    && deno --version
 
 # yt-dlp standalone versi terbaru. Ditaruh di /usr/local/bin yang ada di depan
 # /opt/venv/bin pada PATH agar versi ini yang dipakai (YouTube sering berubah).

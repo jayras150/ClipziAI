@@ -296,8 +296,14 @@ async def report_failure(
     cookie.last_error = (error_text or "")[:2000]
 
     bot_check = looks_like_bot_check(error_text)
+    text_lower = (error_text or "").lower()
+    # Storyboard-only bisa berarti server tidak punya runtime JS (Deno/ejs),
+    # bukan cookies mati — jangan tandai expired karena lingkungan.
+    environment_issue = "storyboard-only" in text_lower
     expired = looks_expired(error_text) or (
-        not bot_check and cookie.fail_count >= settings.YTDLP_COOKIE_MAX_FAILURES
+        not bot_check
+        and not environment_issue
+        and cookie.fail_count >= settings.YTDLP_COOKIE_MAX_FAILURES
     )
     if expired:
         cookie.status = COOKIE_STATUS_EXPIRED
@@ -341,9 +347,12 @@ def _probe_sync(cookiefile: str, url: str) -> tuple[bool, Optional[str]]:
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
+        "format": "all",
         "cookiefile": cookiefile,
-        "extract_flat": True,
-        "socket_timeout": 20,
+        "socket_timeout": 25,
+        # `web` = client yang paling terpengaruh JS challenge: kalau cookie
+        # benar-benar valid + runtime JS tersedia, format video akan muncul.
+        "extractor_args": {"youtube": {"player_client": ["web"]}},
     }
     if settings.YTDLP_PROXY:
         opts["proxy"] = settings.YTDLP_PROXY
@@ -352,10 +361,22 @@ def _probe_sync(cookiefile: str, url: str) -> tuple[bool, Optional[str]]:
         # yt-dlp mengetik params sebagai TypedDict `_Params`; cast agar dict
         # dinamis ini tidak dianggap salah tipe.
         with yt_dlp.YoutubeDL(cast(Any, opts)) as ydl:
-            ydl.extract_info(url, download=False)
-        return True, None
+            info = ydl.extract_info(url, download=False) or {}
     except Exception as exc:  # DownloadError dan turunannya
         return False, str(exc)
+
+    formats = info.get("formats") or []
+    videos = [fmt for fmt in formats if fmt.get("vcodec") not in (None, "none")]
+    if not videos:
+        # Storyboard saja = YouTube tidak memberi stream video. Bisa karena
+        # cookies tidak valid ATAU karena server tidak punya runtime JS
+        # (Deno/yt-dlp-ejs). Jangan tandai cookies mati hanya karena ini.
+        return (
+            False,
+            f"storyboard-only: {len(formats)} format tanpa video "
+            "(JS challenge tidak terpecahkan / cookies tidak memberi akses video)",
+        )
+    return True, None
 
 
 async def probe(db: AsyncSession, cookie: YtdlpCookie) -> tuple[bool, Optional[str]]:

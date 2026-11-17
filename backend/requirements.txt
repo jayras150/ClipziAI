@@ -18,7 +18,11 @@ argon2-cffi>=23.1.0
 python-dotenv>=1.0.0
 cryptography>=41.0.0
 pyotp>=2.9.0
-yt-dlp>=2026.10.26
+# `[default]` WAJIB: menarik `yt-dlp-ejs` — pemecah JS challenge (nsig) yang
+# dipakai YouTube sejak 2025. Tanpa paket ini yt-dlp hanya mendapat storyboard
+# ("Requested format is not available") walau Deno sudah terpasang.
+yt-dlp[default]>=2026.10.26
+yt-dlp-ejs>=0.3.0
 # CATATAN: faster-whisper (+ ctranslate2/onnxruntime/av/tokenizers ±700 MB) TIDAK
 # lagi dipasang default, karena transkripsi memakai API provider (lihat
 # TRANSCRIPTION_PROVIDER di .env). Kalau ingin transkripsi lokal, install paket

@@ -533,6 +533,18 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
                                 task.error_category = None
                                 await db.commit()
                                 raise RunnerFallbackQueued() from exc
+                            # Fallback tidak tersedia (runner belum diset/cooldown):
+                            # catat alasannya agar tidak terlihat seperti loop tanpa sebab.
+                            note = (
+                                "\n\nDownloader alternatif (runner) tidak tersedia atau "
+                                "sedang cooldown. Periksa Admin > Settings > Runners."
+                            )
+                            task.error_message = (str(exc) + note)[:4000]
+                            task.user_message = (task.user_message or exc.user_message or "") + (
+                                "\n\nWe're refreshing our download access — please try "
+                                "again in a few minutes."
+                            )
+                            await db.commit()
                     raise
                 finally:
                     # Simpan balik token yang mungkin sudah dirotasi yt-dlp

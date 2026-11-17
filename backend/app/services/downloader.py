@@ -15,9 +15,12 @@ private / member-only.
 import asyncio
 import base64
 import binascii
+import importlib.util
 import json
 import logging
 import os
+import shutil
+import time
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, cast
 
@@ -25,6 +28,7 @@ from app.core.config import get_settings
 from app.services.download_errors import (
     CATEGORY_BOT_CHECK,
     CATEGORY_COOKIES_MISSING,
+    CATEGORY_FORMAT_UNAVAILABLE,
     DownloadError,
     classify_download_error,
     http_status_from,
@@ -86,6 +90,29 @@ CLIENT_LADDER: list[Optional[list[str]]] = [
     ["tv_embedded", "web"],
     ["mweb"],
 ]
+
+
+# Cache pre-flight: YouTube butuh JS challenge (nsig). Tanpa runtime JS + paket
+# `yt-dlp-ejs`, hasilnya hanya storyboard → semua selector gagal.
+_PREFLIGHT_CACHE: Dict[str, tuple[float, int, int, str]] = {}
+PREFLIGHT_TTL = 300.0
+PREFLIGHT_HOSTS = ("youtube.com", "youtu.be")
+
+
+def _ejs_available() -> bool:
+    """True bila paket `yt-dlp-ejs` (pemecah JS challenge) terpasang."""
+    try:
+        return bool(importlib.util.find_spec("yt_dlp_ejs"))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _js_runtime() -> str:
+    """Runtime JS yang terdeteksi (deno direkomendasikan yt-dlp)."""
+    for name in ("deno", "node", "bun", "quickjs"):
+        if shutil.which(name):
+            return name
+    return "-"
 
 
 def _ytdlp_version() -> str:
@@ -357,6 +384,48 @@ class VideoDownloader:
                 cookie_id=cookie_id,
                 ytdlp_version=_ytdlp_version(),
             )
+
+        # ---------- Pre-flight: apakah YouTube memberi format VIDEO? ----------
+        # Sejak 2025 YouTube memakai JS challenge (nsig). Tanpa runtime JS
+        # (Deno) + paket `yt-dlp-ejs`, yt-dlp hanya menerima storyboard dan
+        # SEMUA selector gagal dengan "Requested format is not available".
+        # Lebih baik gagal cepat dengan pesan yang benar daripada mencoba
+        # puluhan kombinasi client x format.
+        video_formats, total_formats, preflight_note = await asyncio.to_thread(
+            self._preflight_formats, url, base_opts
+        )
+        logger.info(
+            "pre-flight yt-dlp: %s format (%s video) — %s | ejs=%s deno=%s",
+            total_formats,
+            video_formats,
+            preflight_note or "ok",
+            _ejs_available(),
+            _js_runtime(),
+        )
+        if video_formats <= 0:
+            raise DownloadError(
+                (
+                    "yt-dlp tidak mendapat format video untuk video ini "
+                    f"(hanya {total_formats} format storyboard). "
+                    "Penyebab tersering: JS challenge YouTube tidak terpecahkan — "
+                    "runtime JS (Deno) dan paket yt-dlp-ejs/PO token harus tersedia "
+                    "di image worker, atau cookies/proxy diblokir."
+                ),
+                category=CATEGORY_FORMAT_UNAVAILABLE,
+                attempts=[
+                    {
+                        "clients": ["preflight"],
+                        "format": "all",
+                        "cookies": cookie_available,
+                        "category": CATEGORY_FORMAT_UNAVAILABLE,
+                        "error": f"video_formats=0 total={total_formats} {preflight_note}".strip(),
+                    }
+                ],
+                cookie_id=cookie_id,
+                cookie_used=cookie_available,
+                ytdlp_version=_ytdlp_version(),
+            )
+
         if require_audio:
             # Hanya format yang menjamin audio (video + audio-only).
             formats = [
@@ -536,6 +605,37 @@ class VideoDownloader:
                     return str(path)
             return str(path)
         return None
+
+    def _preflight_formats(self, url: str, base_opts: dict) -> tuple[int, int, str]:
+        """(jumlah format video, total format, catatan) — dengan cache 5 menit.
+
+        Hanya untuk YouTube: pengecekan ini memastikan yt-dlp benar-benar
+        mendapat stream video, bukan storyboard (gejala JS challenge gagal).
+        """
+        host = url.lower()
+        if not any(marker in host for marker in PREFLIGHT_HOSTS):
+            return 1, 0, "dilewati (bukan YouTube)"
+        key = f"{url}|{base_opts.get('cookiefile') or ''}"
+        now = time.time()
+        cached = _PREFLIGHT_CACHE.get(key)
+        if cached and now - cached[0] < PREFLIGHT_TTL:
+            return cached[1], cached[2], cached[3]
+
+        try:
+            _info, formats = self._probe_formats_sync(url, base_opts)
+        except Exception as exc:  # noqa: BLE001 - probe gagal ≠ video tidak ada
+            logger.warning("pre-flight gagal: %s", str(exc)[:200])
+            return 1, 0, f"probe gagal ({type(exc).__name__})"
+
+        videos = [f for f in (formats or []) if f.get("vcodec") not in (None, "none")]
+        note = ""
+        if not videos:
+            note = (
+                "storyboard-only: JS challenge tidak terpecahkan "
+                f"(ejs={_ejs_available()}, runtime={_js_runtime()})"
+            )
+        _PREFLIGHT_CACHE[key] = (now, len(videos), len(formats or []), note)
+        return len(videos), len(formats or []), note
 
     def _probe_formats_sync(self, url, base_opts):
         """Baca daftar format (setara `yt-dlp --list-formats`) DENGAN cookies."""
