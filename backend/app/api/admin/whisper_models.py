@@ -201,10 +201,16 @@ async def read_source(db: AsyncSession = Depends(get_db_session)):
         templates = await vast_admin.provider_templates(db)
     except Exception as exc:  # noqa: BLE001 - Vast belum dikonfigurasi
         templates["error"] = str(exc)[:300]
+    warnings = list(view["warnings"])
+    url_error = str(model_sources.restore_env().get("CLIPZI_MODEL_URL_ERROR") or "").strip()
+    if url_error:
+        warnings.append(
+            "Tautan model terakhir gagal dibuat ulang: " + url_error[:200]
+        )
     return {
         **source,
         "providers": view["providers"],
-        "warnings": view["warnings"],
+        "warnings": warnings,
         "templates": templates,
     }
 
@@ -255,6 +261,19 @@ async def save_source(
     )
     await db.commit()
     return {"ok": True, "source": saved, "template": template}
+
+
+@router.post("/source/refresh-url")
+async def refresh_source_url(db: AsyncSession = Depends(get_db_session)):
+    """Buat ulang tautan unduh model (Dropbox/S3 expire) dan laporkan hasilnya."""
+    env = await model_sources.refresh_model_url(db)
+    has_url = bool(str(env.get("CLIPZI_MODEL_URL") or "").strip())
+    return {
+        "ok": has_url,
+        "has_url": has_url,
+        "error": str(env.get("CLIPZI_MODEL_URL_ERROR") or "")[:300] or None,
+        "keys": sorted(env),
+    }
 
 
 @router.post("/source/test")

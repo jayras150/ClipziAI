@@ -147,7 +147,7 @@ download_model_url() {
     mkdir -p "$dest" 2>/dev/null || true
     log "mengunduh model dari CLIPZI_MODEL_URL ke ${dest}"
     if command -v curl >/dev/null 2>&1; then
-        if curl -fL --retry 3 --retry-delay 5 --connect-timeout 30 -o "${dest}/model.bin" "$url"; then
+        if curl -fL --retry 2 --retry-delay 5 --connect-timeout 30 --max-time 900 -o "${dest}/model.bin" "$url"; then
             return 0
         fi
     fi
@@ -172,11 +172,19 @@ download_hf_repo() {
     mkdir -p "$dest" 2>/dev/null || true
     log "mengunduh model Hugging Face ${repo} ke ${dest}"
     "$PYTHON_BIN" - "$repo" "$dest" <<'PYHF'
+import os
 import sys
 
-from faster_whisper.utils import download_model
+repo, dest = sys.argv[1], sys.argv[2]
+token = os.environ.get("CLIPZI_HF_TOKEN") or os.environ.get("HF_TOKEN") or None
+try:
+    from huggingface_hub import snapshot_download
 
-download_model(sys.argv[1], output_dir=sys.argv[2])
+    snapshot_download(repo_id=repo, local_dir=dest, token=token)
+except Exception:
+    from faster_whisper.utils import download_model
+
+    download_model(repo, output_dir=dest)
 PYHF
 }
 
@@ -197,7 +205,8 @@ if [ -n "${CLIPZI_RESTORE_TIMEOUT:-}" ]; then
             MODEL_PREFETCHED=1
             RESTORE_PATH="$MODEL_DIR"
         else
-            log "PERINGATAN: unduh CLIPZI_MODEL_URL gagal; lanjut fallback"
+            log "PERINGATAN: unduh CLIPZI_MODEL_URL gagal (tautan expired/410); lanjut fallback"
+            MODEL_URL_FAILED=1
         fi
     elif [ ! -f "${MODEL_DIR}/model.bin" ] && [ -n "${CLIPZI_HF_REPO:-}" ]; then
         if download_hf_repo "${CLIPZI_HF_REPO}" "${MODEL_DIR}"; then
@@ -226,11 +235,18 @@ if [ -n "${CLIPZI_RESTORE_TIMEOUT:-}" ]; then
     fi
     export GPU_WHISPER_MODEL="$MODEL_PATH"
     export HF_HOME="${HF_HOME:-/app/.cache/huggingface}"
+if [ -n "${CLIPZI_HF_TOKEN:-}" ] && [ -z "${HF_TOKEN:-}" ]; then
+    export HF_TOKEN="$CLIPZI_HF_TOKEN"
+fi
     if [ "$MODEL_PREFETCHED" = "1" ] && [ -f "$MODEL_PATH/model.bin" ]; then
         # Model sudah diunduh dari provider (Dropbox/B2/S3/HF): tidak perlu
         # menunggu cloud_copy yang hanya disiapkan untuk Google Drive.
         log "model siap dari provider ${MODEL_SOURCE} (${MODEL_PATH}/model.bin)"
     else
+    if [ "${MODEL_URL_FAILED:-0}" = "1" ] || [ -n "${CLIPZI_MODEL_URL_ERROR:-}" ]; then
+        log "URL model tidak bisa dipakai (${CLIPZI_MODEL_URL_ERROR:-HTTP 410}); langsung fallback tanpa menunggu"
+        FAST_FAIL=0
+    fi
     started=$(date +%s)
     deadline=$(( started + CLIPZI_RESTORE_TIMEOUT ))
     fast_deadline=$(( started + FAST_FAIL ))

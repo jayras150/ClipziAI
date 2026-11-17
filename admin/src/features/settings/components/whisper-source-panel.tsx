@@ -18,6 +18,7 @@ import { Separator } from '@/components/ui/separator';
 
 import {
   downloadWhisperNotebook,
+  refreshModelUrl,
   saveWhisperSource,
   testWhisperSource
 } from '@/app/dashboard/settings/models/actions';
@@ -281,6 +282,25 @@ export default function WhisperSourcePanel({ data }: { data: WhisperSourceData }
         <div className='flex flex-wrap gap-2'>
           <Button variant='outline' onClick={runTest} disabled={pending}>
             Uji koneksi
+          </Button>
+          <Button
+            variant='secondary'
+            disabled={pending}
+            onClick={() => {
+              setMessage('');
+              setError('');
+              startTransition(async () => {
+                const result = await refreshModelUrl();
+                if (result.ok) {
+                  if (result.data.has_url) setMessage('Tautan model baru berhasil dibuat.');
+                  else setError(result.data.error || 'Tautan model gagal dibuat.');
+                } else {
+                  setError(result.error);
+                }
+              });
+            }}
+          >
+            Tes tautan model
           </Button>
           <Button onClick={runSave} disabled={pending}>
             Simpan kredensial &amp; sync template

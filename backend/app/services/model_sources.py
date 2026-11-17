@@ -1066,6 +1066,7 @@ async def refresh_model_url(db: AsyncSession) -> Dict[str, str]:
         fresh = await adapter.model_url(remote_path)
         if fresh:
             env["CLIPZI_MODEL_URL"] = fresh
+            env.pop("CLIPZI_MODEL_URL_ERROR", None)
             await ps.set_setting(
                 db,
                 RESTORE_SETTING_KEY,
@@ -1077,7 +1078,26 @@ async def refresh_model_url(db: AsyncSession) -> Dict[str, str]:
             )
             await db.commit()
     except Exception as exc:  # noqa: BLE001 - jangan gagalkan dispatch
-        logger.warning("Gagal menyegarkan URL model %s: %s", provider.id, exc)
+        reason = str(exc)[:240]
+        logger.warning("Gagal menyegarkan URL model %s: %s", provider.id, reason)
+        # Jangan pernah mengirim tautan basi (410 Gone). Worker akan lompat ke
+        # fallback Hugging Face tanpa menunggu 150 detik.
+        env.pop("CLIPZI_MODEL_URL", None)
+        env["CLIPZI_MODEL_URL_ERROR"] = reason
+        try:
+            await ps.set_setting(
+                db,
+                RESTORE_SETTING_KEY,
+                {
+                    **raw,
+                    "env": env,
+                    "url_error": reason,
+                    "refreshed_at": __import__("datetime").datetime.utcnow().isoformat(),
+                },
+            )
+            await db.commit()
+        except Exception as save_exc:  # noqa: BLE001
+            logger.warning("Gagal menyimpan status URL model: %s", save_exc)
     set_restore_env(env)
     return restore_env()
 
