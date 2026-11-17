@@ -403,153 +403,7 @@ def build_worker_env(task_id: Optional[UUID] = None) -> Dict[str, str]:
         env["CLIPZI_MODEL_SOURCE"] = "baked"
         env["GPU_WHISPER_MODEL"] = "/app/whisper_model"
         return _pack_worker_env(env)
-    if getattr(settings, "VAST_RESTORE_ENABLED", False):
-        env["CLIPZI_RESTORE_TIMEOUT"] = str(settings.VAST_RESTORE_TIMEOUT)
-        env["CLIPZI_RESTORE_MODEL_PATH"] = settings.VAST_RESTORE_MODEL_PATH
-        env["GPU_WHISPER_MODEL"] = settings.VAST_RESTORE_MODEL_PATH
-    # Env restore dari provider model aktif (Dropbox / B2 / S3 / Hugging Face).
-    # Disimpan di platform settings saat model diaktifkan; tanpa ini worker
-    # hanya tahu jalur cloud_copy Google Drive.
-    try:
-        from app.services import model_sources
-
-        for key, value in model_sources.restore_env().items():
-            if str(value).strip():
-                env[key] = str(value)
-    except Exception:  # noqa: BLE001 - jangan gagalkan dispatch
-        pass
     return _pack_worker_env(env)
-
-
-def pick_connection_id(
-    connections: List[Dict[str, Any]],
-    configured: str = "",
-) -> str:
-    """Pilih ID Cloud Sync yang aman untuk restore.
-
-    Urutan:
-      1. ID tersimpan jika masih terdaftar.
-      2. Satu-satunya koneksi di akun.
-      3. Satu-satunya koneksi bernama gdrive/drive/google.
-    Selain itu lempar error agar admin memilih, bukan menebak akun.
-    """
-    ids = [
-        str(item.get("id") or "").strip()
-        for item in connections or []
-        if isinstance(item, dict) and str(item.get("id") or "").strip()
-    ]
-    current = str(configured or "").strip()
-    if current and current in ids:
-        return current
-    if len(ids) == 1:
-        return ids[0]
-    drive = [
-        str(item.get("id") or "").strip()
-        for item in connections or []
-        if isinstance(item, dict)
-        and any(
-            marker in str(item.get("name") or "").lower()
-            for marker in ("gdrive", "google", "drive")
-        )
-        and str(item.get("id") or "").strip()
-    ]
-    if len(drive) == 1:
-        return drive[0]
-    if not ids:
-        raise RuntimeError("Tidak ada koneksi Cloud Sync di akun Vast.")
-    available = ", ".join(
-        f"{item.get('id')} ({item.get('name') or '-'})"
-        for item in connections
-        if isinstance(item, dict) and item.get("id")
-    )
-    raise RuntimeError(
-        f"Connection Vast '{current or '(kosong)'}' tidak ditemukan. "
-        f"Pilih salah satu: {available}"
-    )
-
-
-async def _restore_workspace(instance_id: int) -> None:
-    """Salin cache model dari Google Drive ke /workspace setelah instance hidup."""
-    if not getattr(settings, "VAST_RESTORE_ENABLED", False):
-        return
-    src = (settings.VAST_RESTORE_SRC or "").strip()
-    dst = (settings.VAST_RESTORE_DST or "/workspace").strip()
-    configured_connection = (settings.VAST_RESTORE_CONNECTION or "").strip()
-    if not src:
-        logger.warning("Restore dilewati: src kosong")
-        return
-    client = _get_vast_client()
-    connections: Optional[List[Dict[str, Any]]]
-    try:
-        connections = await asyncio.to_thread(client.show_connections)
-    except Exception as exc:
-        logger.warning("Gagal membaca koneksi Vast, memakai ID tersimpan: %s", exc)
-        connections = None
-    if connections is None:
-        # API daftar koneksi gagal: jangan blok restore; cloud_copy akan memberi
-        # error yang jelas kalau ID tersimpan ternyata sudah tidak valid.
-        if not configured_connection:
-            logger.error("Restore GDrive dibatalkan: connection kosong dan daftar tidak tersedia")
-            return
-        connection = configured_connection
-    else:
-        try:
-            connection = pick_connection_id(connections or [], configured_connection)
-        except RuntimeError as exc:
-            logger.error("Restore GDrive dibatalkan: %s", exc)
-            return
-    if connection != configured_connection:
-        logger.warning(
-            "VAST_RESTORE_CONNECTION %s tidak valid; memakai koneksi aktif %s",
-            configured_connection or "(kosong)",
-            connection,
-        )
-    deadline = time.monotonic() + int(settings.VAST_RESTORE_TIMEOUT or 900)
-    while time.monotonic() < deadline:
-        try:
-            response = await asyncio.to_thread(
-                client.cloud_copy,
-                src=src,
-                dst=dst,
-                instance=str(instance_id),
-                connection=connection,
-                transfer="Cloud to Instance",
-            )
-        except Exception as exc:
-            text = str(exc)
-            if "copy_in_progress" in text or "409" in text:
-                logger.info("Restore sudah berjalan di instance %s", instance_id)
-                return
-            logger.warning("cloud_copy restore gagal (coba lagi): %s", exc)
-            await asyncio.sleep(15)
-            continue
-        url = (response or {}).get("result_url")
-        if not url:
-            logger.warning("cloud_copy restore tanpa result_url: %s", response)
-            return
-        while time.monotonic() < deadline:
-            try:
-                log_text = (await asyncio.to_thread(requests.get, url, timeout=30)).text
-            except Exception:
-                await asyncio.sleep(10)
-                continue
-            lowered = log_text.lower()
-            if any(
-                marker in lowered
-                for marker in (
-                    "failed to create file system",
-                    "invalid_grant",
-                    "couldn't fetch token",
-                )
-            ):
-                logger.warning("Restore GDrive gagal: %s", log_text[-300:])
-                return
-            if "total objects" in lowered:
-                logger.info("Restore workspace selesai untuk instance %s", instance_id)
-                return
-            await asyncio.sleep(10)
-        return
-    logger.warning("Restore workspace timeout untuk instance %s", instance_id)
 
 
 def _vast_error_text(exc: Exception, limit: int = 700) -> str:
@@ -674,15 +528,6 @@ def _make_create_instance(task_id: UUID, client: Any):
         offer_id = selected.get("id")
         if not offer_id:
             raise RuntimeError(f"offer tidak punya id: {selected}")
-        # Segarkan tautan model (Dropbox/S3/B2 expire) sebelum dispatch.
-        try:
-            from app.db.session import AsyncSessionLocal
-            from app.services import model_sources
-
-            async with AsyncSessionLocal() as _db:
-                await model_sources.refresh_model_url(_db)
-        except Exception as exc:  # noqa: BLE001 - jangan gagalkan dispatch
-            logger.warning("Gagal menyegarkan URL model: %s", exc)
         worker_env = build_worker_env(task_id)
 
         # Ask Vast cepat hilang (diambil mesin lain). Kalau itu terjadi, ambil
@@ -742,8 +587,6 @@ def _make_create_instance(task_id: UUID, client: Any):
             if not instance_id:
                 raise RuntimeError(f"create_instance tidak mengembalikan instance id: {created}")
             instance_id = int(instance_id)
-            if getattr(settings, "VAST_RESTORE_ENABLED", False):
-                asyncio.create_task(_restore_workspace(instance_id))
             return instance_id
 
         raise RuntimeError(

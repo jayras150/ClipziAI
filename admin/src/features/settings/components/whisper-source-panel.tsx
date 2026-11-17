@@ -18,7 +18,6 @@ import { Separator } from '@/components/ui/separator';
 
 import {
   downloadWhisperNotebook,
-  refreshModelUrl,
   saveWhisperSource,
   testWhisperSource
 } from '@/app/dashboard/settings/models/actions';
@@ -38,7 +37,6 @@ export type ProviderMeta = {
   label: string;
   icon: string;
   color: string;
-  restore_mode: string;
   template_name: string;
   notebook: string;
   description: string;
@@ -67,7 +65,6 @@ export type WhisperSourceData = {
 };
 
 const MODE_LABEL: Record<string, string> = {
-  vast_cloud_copy: 'Vast cloud_copy',
   url_download: 'Unduh model via URL',
   hf_snapshot: 'Unduh dari Hugging Face'
 };
@@ -232,7 +229,6 @@ export default function WhisperSourcePanel({ data }: { data: WhisperSourceData }
                 <span className='min-w-0 flex-1'>
                   <span className='block truncate font-medium'>{item.label}</span>
                   <span className='text-muted-foreground block truncate text-xs'>
-                    {MODE_LABEL[item.restore_mode] || item.restore_mode}
                   </span>
                 </span>
                 {isActive ? <Badge variant='secondary'>aktif</Badge> : null}
@@ -283,25 +279,6 @@ export default function WhisperSourcePanel({ data }: { data: WhisperSourceData }
           <Button variant='outline' onClick={runTest} disabled={pending}>
             Uji koneksi
           </Button>
-          <Button
-            variant='secondary'
-            disabled={pending}
-            onClick={() => {
-              setMessage('');
-              setError('');
-              startTransition(async () => {
-                const result = await refreshModelUrl();
-                if (result.ok) {
-                  if (result.data.has_url) setMessage('Tautan model baru berhasil dibuat.');
-                  else setError(result.data.error || 'Tautan model gagal dibuat.');
-                } else {
-                  setError(result.error);
-                }
-              });
-            }}
-          >
-            Tes tautan model
-          </Button>
           <Button onClick={runSave} disabled={pending}>
             Simpan kredensial &amp; sync template
           </Button>
@@ -336,7 +313,6 @@ export default function WhisperSourcePanel({ data }: { data: WhisperSourceData }
           {activeProvider ? (
             <p className='text-muted-foreground mt-2'>
               Provider aktif sekarang: <strong>{activeProvider.label}</strong> · restore{' '}
-              {MODE_LABEL[activeProvider.restore_mode] || activeProvider.restore_mode}
             </p>
           ) : null}
         </div>

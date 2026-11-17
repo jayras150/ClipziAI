@@ -108,16 +108,6 @@ async def lifespan(app: FastAPI):
         await load_and_apply_vast_config()
     except Exception as exc:
         logger.warning("Gagal memuat setelan Vast.ai dari database: %s", exc)
-    # Env restore model per provider (Dropbox/B2/S3/Hugging Face) supaya
-    # dispatch pertama setelah deploy sudah memakai sumber yang benar.
-    try:
-        from app.db.session import AsyncSessionLocal
-        from app.services import model_sources
-
-        async with AsyncSessionLocal() as _db:
-            await model_sources.refresh_restore_env(_db)
-    except Exception as exc:
-        logger.warning("Env restore model tidak dimuat: %s", exc)
     # Registry storage multi-provider (R2/B2/S3/...). Bila belum ada, otomatis
     # dibuat dari env R2_* agar deployment lama tetap jalan.
     try:

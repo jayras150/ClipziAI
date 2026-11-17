@@ -68,36 +68,7 @@ async def list_connections() -> List[Dict[str, str]]:
     return items
 
 
-async def detect_connection() -> Dict[str, Any]:
-    """Deteksi koneksi yang cocok dengan konfigurasi restore saat ini."""
-    from app.services.vast_worker import pick_connection_id
-
-    settings = get_settings()
-    configured = (settings.VAST_RESTORE_CONNECTION or "").strip()
-    connections = await list_connections()
-    try:
-        selected = pick_connection_id(connections, configured)
-        error = None
-    except RuntimeError as exc:
-        selected = None
-        error = str(exc)
-    return {
-        "connections": connections,
-        "configured": configured,
-        "valid": bool(configured) and any(item["id"] == configured for item in connections),
-        "selected": selected,
-        "error": error,
-    }
-
-
-def _number(value: Any) -> Optional[float]:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _iso(value: Any) -> Optional[str]:
+def _iso(value):
     if value in (None, ""):
         return None
     if isinstance(value, (int, float)):
@@ -112,52 +83,11 @@ def _iso(value: Any) -> Optional[str]:
         return text
 
 
-async def live_instances() -> List[Dict[str, Any]]:
-    """Instance yang benar-benar ada di akun Vast (bukan hanya riwayat lokal)."""
-    client = _client()
+def _number(value):
     try:
-        rows = await asyncio.to_thread(client.show_instances)
-    except Exception as exc:
-        raise RuntimeError(f"Gagal mengambil instance Vast: {exc}") from exc
-    items: List[Dict[str, Any]] = []
-    for row in rows or []:
-        items.append(
-            {
-                "instance_id": row.get("id"),
-                "machine_id": row.get("machine_id"),
-                "gpu_name": row.get("gpu_name"),
-                "num_gpus": row.get("num_gpus"),
-                "price_per_hour": _number(row.get("dph_total")),
-                "disk_space": _number(row.get("disk_space")),
-                "disk_util": _number(row.get("disk_util")),
-                "gpu_util": _number(row.get("gpu_util")),
-                "state": row.get("actual_status") or row.get("cur_state"),
-                "status_msg": row.get("status_msg"),
-                "label": row.get("label"),
-                "start_date": _iso(row.get("start_date")),
-                "uptime": _number(row.get("uptime")),
-                "image": row.get("image_uuid"),
-            }
-        )
-    items.sort(key=lambda item: item.get("instance_id") or 0, reverse=True)
-    return items
-
-
-async def instance_logs(instance_id: int, tail: int = 1000, daemon: bool = False) -> str:
-    """Log container instance; `daemon=True` menampilkan daemon/engine logs."""
-    client = _client()
-    size = max(50, min(2000, int(tail or 1000)))
-    try:
-        text = await asyncio.to_thread(
-            client.logs, int(instance_id), str(size), None, daemon
-        )
-    except TypeError:
-        text = await asyncio.to_thread(
-            client.logs, int(instance_id), tail=str(size), daemon_logs=daemon
-        )
-    except Exception as exc:
-        raise RuntimeError(f"Gagal mengambil log instance {instance_id}: {exc}") from exc
-    return (text or "").strip()
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 async def test_connection() -> Dict[str, Any]:

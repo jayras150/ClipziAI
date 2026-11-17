@@ -257,23 +257,9 @@ async def activate_model(db: AsyncSession, model_id: Any) -> WhisperModel:
     if not row.remote_path:
         raise ValueError("Path sumber model kosong; scan ulang provider.")
 
-    provider_id = str(row.provider or "gdrive")
-    plan = await model_sources.restore_plan(db, provider_id, row.remote_path)
-
     await db.execute(update(WhisperModel).values(is_active=False))
     row.is_active = True
     await db.flush()
-
-    try:
-        await model_sources.save_restore_env(
-            db, provider_id, plan.get("env") or {}, remote_path=row.remote_path
-        )
-        config = plan.get("config") or {}
-        if config:
-            await vast_config.save_vast_config(db, config)
-    except Exception:
-        await db.rollback()
-        raise
     await db.commit()
     await db.refresh(row)
     return row
@@ -347,7 +333,6 @@ async def source_status(db: AsyncSession) -> Dict[str, Any]:
         "provider": provider.id,
         "provider_label": provider.label,
         "configured": bool(source.get("configured")),
-        "restore_mode": provider.restore_mode,
         "template_name": provider.template_name,
         "values": source.get("values") or {},
         "warnings": model_sources.manifest_warnings(),

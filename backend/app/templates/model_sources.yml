@@ -16,8 +16,6 @@ providers:
     icon: google-drive
     color: '#0F9D58'
     adapter: gdrive
-    restore_mode: vast_cloud_copy
-    vast_template_name: Clipzy Gdrive
     notebook: whisper_colab.ipynb
     folder_url: 'https://drive.google.com/drive/folders/{remote_id}'
     scan: true
@@ -45,8 +43,6 @@ providers:
     icon: dropbox
     color: '#0061FF'
     adapter: dropbox
-    restore_mode: url_download
-    vast_template_name: Clipzy Dropbox
     notebook: whisper_colab_dropbox.ipynb
     folder_url: 'https://www.dropbox.com/home{remote_path}'
     scan: true
@@ -58,10 +54,6 @@ providers:
       Dropbox App Console -> Scoped access (Full Dropbox) -> Permissions
       files.content.read + files.content.write, lalu jalankan notebook
       Colab untuk mengambil refresh token.
-    env:
-      CLIPZI_MODEL_SOURCE: dropbox
-      CLIPZI_RESTORE_MODEL_PATH: /app/whisper_model
-      GPU_WHISPER_MODEL: /app/whisper_model
     fields:
       - name: access_token
         label: Access token (sl.…)
@@ -101,8 +93,6 @@ providers:
     icon: backblaze
     color: '#E21E29'
     adapter: b2
-    restore_mode: url_download
-    vast_template_name: Clipzy Backblaze
     notebook: whisper_colab_backblaze.ipynb
     folder_url: ''
     scan: true
@@ -114,10 +104,6 @@ providers:
       Backblaze -> Application Keys (read/write ke bucket) lalu isi
       keyID, applicationKey, bucket, dan endpoint S3 (mis.
       https://s3.us-west-004.backblazeb2.com).
-    env:
-      CLIPZI_MODEL_SOURCE: b2
-      CLIPZI_RESTORE_MODEL_PATH: /app/whisper_model
-      GPU_WHISPER_MODEL: /app/whisper_model
     fields:
       - name: key_id
         label: Key ID
@@ -146,8 +132,6 @@ providers:
     icon: huggingface
     color: '#FFD21E'
     adapter: huggingface
-    restore_mode: hf_snapshot
-    vast_template_name: Clipzy Huggingface
     notebook: whisper_colab_huggingface.ipynb
     folder_url: 'https://huggingface.co/{remote_id}'
     scan: true
@@ -158,10 +142,6 @@ providers:
     hint: >-
       Buat token read di huggingface.co/settings/tokens lalu isi repo
       model CT2 (bukan repo PyTorch openai/whisper-*).
-    env:
-      CLIPZI_MODEL_SOURCE: huggingface
-      CLIPZI_RESTORE_MODEL_PATH: /app/whisper_model
-      GPU_WHISPER_MODEL: /app/whisper_model
     fields:
       - name: hf_token
         label: HF token
@@ -178,8 +158,6 @@ providers:
     icon: aws
     color: '#FF9900'
     adapter: s3
-    restore_mode: url_download
-    vast_template_name: Clipzy S3
     notebook: whisper_colab_s3.ipynb
     folder_url: ''
     scan: true
@@ -190,10 +168,6 @@ providers:
     hint: >-
       IAM user dengan izin s3:ListBucket + s3:GetObject + s3:PutObject
       pada bucket model. Region wajib sama dengan bucket.
-    env:
-      CLIPZI_MODEL_SOURCE: s3
-      CLIPZI_RESTORE_MODEL_PATH: /app/whisper_model
-      GPU_WHISPER_MODEL: /app/whisper_model
     fields:
       - name: access_key
         label: Access key ID

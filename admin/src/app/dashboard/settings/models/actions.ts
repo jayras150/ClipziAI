@@ -168,14 +168,3 @@ export async function syncWhisperTemplate(provider: string) {
 
 
 
-export async function refreshModelUrl() {
-  try {
-    const data = await adminFetch<{ ok: boolean; has_url: boolean; error: string | null }>(
-      '/api/admin/whisper-models/source/refresh-url',
-      { method: 'POST' }
-    );
-    return { ok: true as const, data };
-  } catch (error) {
-    return { ok: false as const, error: _error(error) };
-  }
-}

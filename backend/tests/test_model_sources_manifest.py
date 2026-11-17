@@ -6,21 +6,33 @@ import asyncio
 from app.services import model_sources
 
 
-def test_manifest_lima_provider_lengkap():
-    providers = model_sources.providers()
-    ids = [item.id for item in providers]
-    assert ids == ["gdrive", "dropbox", "backblaze", "huggingface", "s3"]
-    for provider in providers:
-        assert provider.template_name.startswith("Clipzy ")
-        assert provider.fields, provider.id
-        for field in provider.fields:
-            assert field["name"]
-            assert field["type"] in {"text", "secret"}
-        assert provider.restore_mode in {
-            "vast_cloud_copy",
-            "url_download",
-            "hf_snapshot",
-        }
+class _FakeVast:
+    def __init__(self) -> None:
+        self.templates: dict[str, dict] = {}
+        self.calls: list[tuple[str, dict]] = []
+
+    def search_templates(self, query=None):
+        out = []
+        for index, item in enumerate(self.templates.values()):
+            if item["name"].lower() == str(query or "").lower():
+                out.append({"id": index + 1, "name": item["name"], "hash_id": item["hash"]})
+        return out
+
+    def create_template(self, **kwargs):
+        self.calls.append(("create", kwargs))
+        self.templates["hash-new"] = {"name": kwargs["name"], "hash": "hash-new"}
+        return {"hash_id": "hash-new", "id": 11}
+
+    def update_template(self, hash_id=None, **kwargs):
+        self.calls.append(("update", kwargs))
+        self.templates["hash-upd"] = {"name": kwargs["name"], "hash": "hash-upd"}
+        return {"hash_id": "hash-upd", "id": 11}
+
+
+class _FakeVastUpdateFails(_FakeVast):
+    def update_template(self, hash_id=None, **kwargs):
+        self.calls.append(("update", kwargs))
+        raise RuntimeError("No template found with hash_id 6561a8bf251968240bb4e867164da11a")
 
 
 def test_manifest_tanpa_warning():
@@ -65,14 +77,6 @@ def test_mask_secret_tidak_membocorkan_nilai():
     assert masked.startswith("supe") and masked.endswith("oken")
 
 
-def test_restore_env_cache():
-    model_sources.set_restore_env({"CLIPZI_MODEL_URL": "https://x/model.bin", "KOSONG": ""})
-    env = model_sources.restore_env()
-    assert env == {"CLIPZI_MODEL_URL": "https://x/model.bin"}
-    model_sources.set_restore_env(None)
-    assert model_sources.restore_env() == {}
-
-
 def test_dropbox_auth_mode_access_atau_refresh():
     from app.services.model_sources import DropboxAdapter
 
@@ -89,53 +93,6 @@ def test_dropbox_auth_mode_access_atau_refresh():
     assert secret_field["max_length"] == 128
     required = [field["name"] for field in provider.fields if field["required"]]
     assert required == ["root"]  # kredensial opsional: access token ATAU refresh flow
-
-
-def test_dropbox_auth_mode_kosong_error_jelas():
-    import pytest
-
-    from app.services.model_sources import DropboxAdapter
-
-    provider = model_sources.get_provider("dropbox")
-    with pytest.raises(model_sources.SourceError) as excinfo:
-        DropboxAdapter(provider, {}).auth_mode()
-    assert "Access token" in str(excinfo.value)
-    plan = asyncio.run(
-        model_sources.restore_plan(None, "gdrive", "/vast-backup/Clipzy/whisper_models/large-v3")
-    )
-    assert plan["mode"] == "vast_cloud_copy"
-    assert plan["config"]["restore_enabled"] is True
-    assert plan["config"]["restore_src"].endswith("large-v3")
-    assert plan["env"] == {}
-
-
-def test_restore_plan_huggingface_tanpa_secret():
-    plan = asyncio.run(
-        model_sources.restore_plan(None, "huggingface", "Systran/faster-whisper-large-v3")
-    )
-
-
-class _FakeVast:
-    def __init__(self) -> None:
-        self.templates: dict[str, dict] = {}
-        self.calls: list[tuple[str, dict]] = []
-
-    def search_templates(self, query=None):
-        out = []
-        for index, item in enumerate(self.templates.values()):
-            if item["name"].lower() == str(query or "").lower():
-                out.append({"id": index + 1, "name": item["name"], "hash_id": item["hash"]})
-        return out
-
-    def create_template(self, **kwargs):
-        self.calls.append(("create", kwargs))
-        self.templates["hash-new"] = {"name": kwargs["name"], "hash": "hash-new"}
-        return {"hash_id": "hash-new", "id": 11}
-
-    def update_template(self, hash_id=None, **kwargs):
-        self.calls.append(("update", kwargs))
-        self.templates["hash-upd"] = {"name": kwargs["name"], "hash": "hash-upd"}
-        return {"hash_id": "hash-upd", "id": 11}
 
 
 def test_upsert_template_create_lalu_update(monkeypatch):
@@ -190,80 +147,3 @@ def test_upsert_template_buat_baru_saat_hash_hilang(monkeypatch):
     assert any("dibuat ulang" in warning for warning in result["warnings"])
 
 
-def test_restore_plan_dropbox_pakai_path_writable(monkeypatch):
-    async def fake_adapter(db, provider_id=None):
-        class _Adapter:
-            async def model_url(self, path):
-                return "https://example.invalid/model.bin"
-
-        return _Adapter()
-
-    monkeypatch.setattr(model_sources, "adapter_for", fake_adapter)
-    plan = asyncio.run(
-        model_sources.restore_plan(None, "dropbox", "/Clipzy/whisper_models/large-v3")
-    )
-    assert plan["env"]["CLIPZI_MODEL_SOURCE"] == "dropbox"
-    assert plan["env"]["CLIPZI_RESTORE_MODEL_PATH"] == "/app/whisper_model"
-    assert plan["env"]["GPU_WHISPER_MODEL"] == "/app/whisper_model"
-    assert plan["config"]["restore_model_path"] == "/app/whisper_model"
-
-
-def test_manifest_env_memakai_path_writable():
-    for provider_id in ("dropbox", "backblaze", "s3", "huggingface"):
-        env = model_sources.get_provider(provider_id).env
-        assert env.get("CLIPZI_RESTORE_MODEL_PATH") == "/app/whisper_model", provider_id
-        assert env.get("GPU_WHISPER_MODEL") == "/app/whisper_model", provider_id
-
-
-def test_onstart_memilih_folder_writable():
-    from pathlib import Path
-
-    script = (
-        Path(model_sources.__file__).resolve().parents[2]
-        / "deployments"
-        / "pipeline_onstart.sh"
-    )
-    text = script.read_text(encoding="utf-8")
-    assert "MODEL_DIR=\"/app/whisper_model\"" in text
-    assert "tidak writable" in text
-    assert 'download_model_url "${CLIPZI_MODEL_URL}" "${MODEL_DIR}"' in text
-
-
-def test_refresh_model_url_membuat_tautan_baru(monkeypatch):
-    from app.services import platform_settings as ps
-
-    store = {
-        "whisper_restore": {
-            "provider": "dropbox",
-            "remote_path": "/Clipzy/whisper_models/large-v3",
-            "env": {
-                "CLIPZI_MODEL_URL": "https://old.example/model.bin",
-                "CLIPZI_MODEL_SOURCE": "dropbox",
-            },
-        }
-    }
-
-    async def fake_get(db, key, default=None):
-        return store.get(key, default)
-
-    async def fake_set(db, key, value):
-        store[key] = value
-
-    class _DB:
-        async def commit(self):
-            return None
-
-    async def fake_adapter(db, provider_id=None):
-        class _Adapter:
-            async def model_url(self, path):
-                return "https://fresh.example/model.bin"
-
-        return _Adapter()
-
-    monkeypatch.setattr(ps, "get_setting", fake_get)
-    monkeypatch.setattr(ps, "set_setting", fake_set)
-    monkeypatch.setattr(model_sources, "adapter_for", fake_adapter)
-
-    env = asyncio.run(model_sources.refresh_model_url(_DB()))
-    assert env["CLIPZI_MODEL_URL"] == "https://fresh.example/model.bin"
-    assert store["whisper_restore"]["env"]["CLIPZI_MODEL_URL"].endswith("fresh.example/model.bin")

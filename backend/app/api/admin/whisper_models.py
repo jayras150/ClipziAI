@@ -201,16 +201,11 @@ async def read_source(db: AsyncSession = Depends(get_db_session)):
         templates = await vast_admin.provider_templates(db)
     except Exception as exc:  # noqa: BLE001 - Vast belum dikonfigurasi
         templates["error"] = str(exc)[:300]
-    warnings = list(view["warnings"])
-    url_error = str(model_sources.restore_env().get("CLIPZI_MODEL_URL_ERROR") or "").strip()
-    if url_error:
-        warnings.append(
-            "Tautan model terakhir gagal dibuat ulang: " + url_error[:200]
-        )
     return {
         **source,
         "providers": view["providers"],
-        "warnings": warnings,
+        "warnings": view["warnings"],
+        "templates": templates,
         "templates": templates,
     }
 
@@ -261,19 +256,6 @@ async def save_source(
     )
     await db.commit()
     return {"ok": True, "source": saved, "template": template}
-
-
-@router.post("/source/refresh-url")
-async def refresh_source_url(db: AsyncSession = Depends(get_db_session)):
-    """Buat ulang tautan unduh model (Dropbox/S3 expire) dan laporkan hasilnya."""
-    env = await model_sources.refresh_model_url(db)
-    has_url = bool(str(env.get("CLIPZI_MODEL_URL") or "").strip())
-    return {
-        "ok": has_url,
-        "has_url": has_url,
-        "error": str(env.get("CLIPZI_MODEL_URL_ERROR") or "")[:300] or None,
-        "keys": sorted(env),
-    }
 
 
 @router.post("/source/test")
@@ -376,29 +358,12 @@ async def activate_model(
         },
     )
     await db.commit()
-    restore_env = model_sources.restore_env()
     provider = model_sources.get_provider(payload.get("provider"))
-    template_sync: Dict[str, Any] = {}
-    try:
-        cfg = await vast_config.get_vast_config(db)
-        if str(cfg.get("worker_image") or "").strip() and str(cfg.get("api_key_enc") or ""):
-            template_sync = await vast_admin.sync_active_template(
-                db, activate=True, provider=provider.id
-            )
-    except Exception as exc:  # noqa: BLE001 - aktivasi model tetap sukses
-        template_sync = {"error": str(exc)[:300]}
     return {
         "ok": True,
         "model": payload,
-        "template_sync": template_sync,
         "provider": provider.id,
         "provider_label": provider.label,
-        "restore_mode": provider.restore_mode,
-        "restore_src": restore_env.get("CLIPZI_MODEL_URL")
-        or restore_env.get("CLIPZI_HF_REPO")
-        or payload.get("remote_path"),
-        "restore_env": sorted(restore_env),
-        "restore_model_path": model_sources.MODEL_WORKSPACE,
     }
 
 

@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useState, useTransition } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -335,102 +334,6 @@ export default function VastPanel({
               </div>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Restore model dari Google Drive</CardTitle>
-              <CardDescription>
-                Setelah instance dibuat, backend menyalin folder model ke /workspace dan
-                pipeline menunggu sampai file stabil. Jika gagal, worker mengunduh ulang.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className='grid gap-3 md:grid-cols-3'>
-              <Link
-                href='/dashboard/settings/models'
-                className='text-primary text-xs underline md:col-span-3'
-              >
-                Kelola / tambah model Whisper dari Google Drive →
-              </Link>
-              <label className='text-muted-foreground flex items-center gap-2 text-sm md:col-span-3'>
-                <input
-                  type='checkbox'
-                  checked={Boolean(form.restore_enabled)}
-                  onChange={(event) => set('restore_enabled', event.target.checked)}
-                />
-                Aktifkan restore workspace sebelum pipeline
-              </label>
-              <div className='space-y-1'>
-                <div className='flex items-center justify-between gap-2'>
-                  <label className='text-muted-foreground text-xs'>Connection ID Vast</label>
-                  <div className='flex gap-1'>
-                    <button
-                      type='button'
-                      className='rounded border px-2 py-1 text-[11px] hover:bg-muted'
-                      onClick={() => void refreshConnections()}
-                      disabled={connectionsBusy}
-                    >
-                      {connectionsBusy ? 'Memuat…' : 'Refresh'}
-                    </button>
-                    <button
-                      type='button'
-                      className='rounded border px-2 py-1 text-[11px] hover:bg-muted'
-                      onClick={() => void applyAutoConnection()}
-                      disabled={connectionsBusy}
-                      title='Pilih koneksi yang valid dan simpan otomatis'
-                    >
-                      Deteksi otomatis
-                    </button>
-                  </div>
-                </div>
-                <select
-                  className='border-input bg-background h-9 w-full rounded-md border px-3 text-sm'
-                  value={String(form.restore_connection || '')}
-                  onChange={(event) => set('restore_connection', event.target.value)}
-                >
-                  <option value=''>Auto-detect saat restore</option>
-                  {connections.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.id} — {item.name}
-                    </option>
-                  ))}
-                  {connectionsLoaded &&
-                  form.restore_connection &&
-                  !connectionKnown ? (
-                    <option value={String(form.restore_connection)}>
-                      {String(form.restore_connection)} — tidak ditemukan
-                    </option>
-                  ) : null}
-                </select>
-                {connectionsError ? (
-                  <p className='text-destructive text-[11px]'>{connectionsError}</p>
-                ) : connectionsLoaded && !connectionKnown && form.restore_connection ? (
-                  <p className='text-amber-600 text-[11px]'>
-                    ID ini tidak ada di akun Vast. Klik “Deteksi otomatis”.
-                  </p>
-                ) : connections.length === 0 && connectionsLoaded ? (
-                  <p className='text-amber-600 text-[11px]'>
-                    Belum ada Cloud Sync di akun Vast.
-                  </p>
-                ) : null}
-              </div>
-              <div className='space-y-1'>
-                <label className='text-muted-foreground text-xs'>Path model di instance</label>
-                <Input value={form.restore_model_path} onChange={(event) => set('restore_model_path', event.target.value)} placeholder='/workspace/whisper_model' />
-              </div>
-              <div className='space-y-1'>
-                <label className='text-muted-foreground text-xs'>Timeout restore (detik)</label>
-                <Input type='number' min={60} max={3600} value={String(form.restore_timeout)} onChange={(event) => set('restore_timeout', event.target.value)} />
-              </div>
-              <div className='space-y-1 md:col-span-2'>
-                <label className='text-muted-foreground text-xs'>Source di Google Drive</label>
-                <Input value={form.restore_src} onChange={(event) => set('restore_src', event.target.value)} placeholder='/vast-backup/Clipzy/whisper_model' />
-              </div>
-              <div className='space-y-1'>
-                <label className='text-muted-foreground text-xs'>Destination di instance</label>
-                <Input value={form.restore_dst} onChange={(event) => set('restore_dst', event.target.value)} placeholder='/workspace/whisper_model' />
-              </div>
-            </CardContent>
-          </Card>
-
           <Card>
             <CardHeader>
               <CardTitle>Timeout & retry</CardTitle>

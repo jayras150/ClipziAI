@@ -114,51 +114,6 @@ async def reset_vast_config(
     return vast_config.public_vast_config(cfg)
 
 
-@router.get("/connections")
-async def vast_connections():
-    """Daftar Cloud Sync + status ID restore yang sedang dipakai."""
-    try:
-        return await vast_admin.detect_connection()
-    except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-
-@router.post("/connections/auto")
-async def vast_connection_auto(
-    request: Request,
-    current_admin: User = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db_session),
-):
-    """Pilih otomatis koneksi yang valid lalu simpan ke konfigurasi restore."""
-    try:
-        result = await vast_admin.detect_connection()
-    except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    if not result.get("selected"):
-        raise HTTPException(
-            status_code=409,
-            detail=str(result.get("error") or "Tidak ada koneksi yang bisa dipilih otomatis."),
-        )
-    cfg = await vast_config.save_vast_config(
-        db, {"restore_connection": result["selected"]}
-    )
-    _audit(
-        db,
-        request,
-        current_admin,
-        "vast_restore_connection_auto",
-        {
-            "configured": result.get("configured"),
-            "selected": result.get("selected"),
-        },
-    )
-    await db.commit()
-    return {
-        **result,
-        "config": vast_config.public_vast_config(cfg),
-    }
-
-
 @router.post("/test")
 async def test_vast_connection(
     request: Request,

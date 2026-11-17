@@ -40,12 +40,6 @@ DEFAULT_VAST: Dict[str, Any] = {
     "retry_backoff": 5,
     "request_timeout": 600,
     "supervisor_interval": 5,
-    "restore_enabled": False,
-    "restore_connection": "47129",
-    "restore_src": "/vast-backup/Clipzy/whisper_model",
-    "restore_dst": "/workspace/whisper_model",
-    "restore_model_path": "/workspace/whisper_model",
-    "restore_timeout": 900,
     "api_key_enc": "",
 }
 
@@ -72,12 +66,6 @@ FIELD_TO_ENV: Dict[str, str] = {
     "retry_backoff": "VAST_RETRY_BACKOFF",
     "request_timeout": "VAST_REQUEST_TIMEOUT",
     "supervisor_interval": "VAST_SUPERVISOR_INTERVAL",
-    "restore_enabled": "VAST_RESTORE_ENABLED",
-    "restore_connection": "VAST_RESTORE_CONNECTION",
-    "restore_src": "VAST_RESTORE_SRC",
-    "restore_dst": "VAST_RESTORE_DST",
-    "restore_model_path": "VAST_RESTORE_MODEL_PATH",
-    "restore_timeout": "VAST_RESTORE_TIMEOUT",
 }
 
 _INT_RANGES = {
@@ -93,7 +81,6 @@ _INT_RANGES = {
     "retry_backoff": (1, 300),
     "request_timeout": (30, 3600),
     "supervisor_interval": (2, 120),
-    "restore_timeout": (60, 3600),
 }
 
 _STR_FIELDS = (
@@ -102,10 +89,6 @@ _STR_FIELDS = (
     "worker_image",
     "template_hash",
     "gpu_filter",
-    "restore_connection",
-    "restore_src",
-    "restore_dst",
-    "restore_model_path",
 )
 
 _MODES = {"", "auto", "http", "sdk", "oneshot"}

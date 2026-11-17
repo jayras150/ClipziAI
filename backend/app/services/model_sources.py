@@ -7,7 +7,6 @@ Modul ini memuat manifest tersebut, menyimpan konfigurasi provider aktif
 
     adapter.list_items()    -> daftar folder/repo model + isi filenya
     adapter.delete(path)    -> hapus folder/repo (bila didukung)
-    adapter.model_url(path) -> URL unduh model.bin (restore url_download)
 """
 from __future__ import annotations
 
@@ -27,9 +26,7 @@ logger = logging.getLogger(__name__)
 
 MANIFEST_PATH = Path(__file__).resolve().parents[1] / "templates" / "model_sources.yml"
 SETTING_KEY = "whisper_source"
-RESTORE_SETTING_KEY = "whisper_restore"
 ADAPTERS = {"gdrive", "dropbox", "b2", "s3", "huggingface"}
-RESTORE_MODES = {"vast_cloud_copy", "url_download", "hf_snapshot"}
 
 
 class SourceError(RuntimeError):
@@ -43,7 +40,6 @@ class Provider:
     adapter: str
     icon: str = "bucket"
     color: str = ""
-    restore_mode: str = "url_download"
     template_name: str = ""
     notebook: str = ""
     folder_url: str = ""
@@ -73,7 +69,6 @@ class Provider:
             "adapter": self.adapter,
             "icon": self.icon,
             "color": self.color,
-            "restore_mode": self.restore_mode,
             "template_name": self.template_name,
             "notebook": self.notebook,
             "folder_url": self.folder_url,
@@ -122,12 +117,6 @@ def _read_manifest() -> Tuple[Dict[str, Provider], List[str]]:
                 f"Provider '{pid}' memakai adapter tak dikenal ({adapter!r}); dilewati."
             )
             continue
-        mode = str(entry.get("restore_mode") or "url_download").strip()
-        if mode not in RESTORE_MODES:
-            warnings.append(
-                f"Provider '{pid}' punya restore_mode tidak dikenal ({mode!r}); dilewati."
-            )
-            continue
         fields: List[Dict[str, Any]] = []
         for item in entry.get("fields") or []:
             if not isinstance(item, dict):
@@ -161,7 +150,6 @@ def _read_manifest() -> Tuple[Dict[str, Provider], List[str]]:
             adapter=adapter,
             icon=str(entry.get("icon") or "bucket"),
             color=str(entry.get("color") or ""),
-            restore_mode=mode,
             template_name=str(entry.get("vast_template_name") or f"Clipzy {pid.title()}"),
             notebook=notebook,
             folder_url=str(entry.get("folder_url") or ""),
@@ -388,29 +376,8 @@ async def resolved_values(
 
 
 # Env restore dipakai `build_worker_env()` (sinkron) saat dispatch.
-_restore_env: Dict[str, str] = {}
 
 
-def restore_env() -> Dict[str, str]:
-    return dict(_restore_env)
-
-
-def set_restore_env(env: Optional[Dict[str, str]]) -> None:
-    global _restore_env
-    _restore_env = {str(k): str(v) for k, v in (env or {}).items() if str(v).strip()}
-
-
-async def refresh_restore_env(db: AsyncSession) -> Dict[str, str]:
-    """Muat env restore aktif dari platform settings (dipanggil saat startup)."""
-    from app.services import platform_settings as ps
-
-    raw = await ps.get_setting(db, RESTORE_SETTING_KEY, {})
-    env = raw.get("env") if isinstance(raw, dict) else {}
-    set_restore_env(env if isinstance(env, dict) else {})
-    return restore_env()
-
-
-# ------------------------------------------------------------------- adapter
 class BaseAdapter:
     """Antarmuka seragam semua provider model."""
 
@@ -439,13 +406,6 @@ class BaseAdapter:
 
     async def delete(self, remote_path: str) -> int:  # pragma: no cover - abstrak
         raise SourceError(f"Adapter {self.provider.adapter} tidak mendukung hapus.")
-
-    async def model_url(self, remote_path: str) -> str:
-        raise SourceError(
-            f"Provider {self.provider.label} tidak memakai restore URL; "
-            "model diunduh langsung oleh worker."
-        )
-
 
 class GDriveAdapter(BaseAdapter):
     """Provider lama: Google Drive (service account)."""
@@ -637,18 +597,6 @@ class DropboxAdapter(BaseAdapter):
         except Exception as exc:  # noqa: BLE001
             raise SourceError(f"Dropbox gagal menghapus {path}: {str(exc)[:300]}") from exc
 
-    async def model_url(self, remote_path: str) -> str:
-        import asyncio
-
-        path = str(remote_path or "").strip().rstrip("/") + "/model.bin"
-        try:
-            meta = await asyncio.to_thread(self._client().files_get_temporary_link, path)
-            return str(meta.link)
-        except Exception as exc:  # noqa: BLE001
-            raise SourceError(
-                f"Dropbox gagal membuat tautan unduh {path}: {str(exc)[:300]}"
-            ) from exc
-
     async def test(self) -> Dict[str, Any]:
         import asyncio
 
@@ -794,23 +742,6 @@ class S3Adapter(BaseAdapter):
         except Exception as exc:  # noqa: BLE001
             raise SourceError(
                 f"{self.provider.label} gagal menghapus: {str(exc)[:300]}"
-            ) from exc
-
-    async def model_url(self, remote_path: str) -> str:
-        import asyncio
-
-        client = self._client()
-        key = self._prefix(remote_path) + "/model.bin"
-        try:
-            return await asyncio.to_thread(
-                client.generate_presigned_url,
-                "get_object",
-                Params={"Bucket": self._value("bucket"), "Key": key},
-                ExpiresIn=6 * 3600,
-            )
-        except Exception as exc:  # noqa: BLE001
-            raise SourceError(
-                f"{self.provider.label} gagal membuat URL: {str(exc)[:300]}"
             ) from exc
 
     async def test(self) -> Dict[str, Any]:
@@ -961,147 +892,6 @@ MODEL_WORKSPACE = "/workspace/whisper_model"
 MODEL_WORKSPACE_WRITABLE = "/app/whisper_model"
 
 
-async def restore_plan(
-    db: AsyncSession, provider_id: str, remote_path: str
-) -> Dict[str, Any]:
-    """Rencana restore model untuk provider terpilih (env + config Vast)."""
-    provider = get_provider(provider_id)
-    if provider.restore_mode == "vast_cloud_copy":
-        return {
-            "mode": provider.restore_mode,
-            "env": {},
-            "config": {
-                "restore_enabled": True,
-                "restore_src": remote_path,
-                "restore_dst": MODEL_WORKSPACE,
-                "restore_model_path": MODEL_WORKSPACE,
-            },
-        }
-    if provider.restore_mode == "url_download":
-        adapter = await adapter_for(db, provider.id)
-        url = await adapter.model_url(remote_path)
-        env = {
-            "CLIPZI_MODEL_SOURCE": provider.id,
-            "CLIPZI_MODEL_URL": url,
-            "CLIPZI_RESTORE_TIMEOUT": "600",
-            "CLIPZI_RESTORE_MODEL_PATH": MODEL_WORKSPACE_WRITABLE,
-            "GPU_WHISPER_MODEL": MODEL_WORKSPACE_WRITABLE,
-        }
-        return {
-            "mode": provider.restore_mode,
-            "env": env,
-            "config": {
-                "restore_enabled": False,
-                "restore_model_path": MODEL_WORKSPACE_WRITABLE,
-            },
-        }
-    env = {
-        "CLIPZI_MODEL_SOURCE": "huggingface",
-        "CLIPZI_HF_REPO": remote_path,
-        "CLIPZI_RESTORE_MODEL_PATH": MODEL_WORKSPACE_WRITABLE,
-        "GPU_WHISPER_MODEL": MODEL_WORKSPACE_WRITABLE,
-    }
-    try:
-        _, values = await resolved_values(db, provider.id)
-        token = str(values.get("hf_token") or "").strip()
-    except Exception:  # noqa: BLE001 - token opsional untuk repo publik
-        token = ""
-    if token:
-        env["HF_TOKEN"] = token
-    return {
-        "mode": provider.restore_mode,
-        "env": env,
-        "config": {
-            "restore_enabled": False,
-            "restore_model_path": MODEL_WORKSPACE_WRITABLE,
-        },
-    }
-
-
-async def save_restore_env(
-    db: AsyncSession,
-    provider_id: str,
-    env: Dict[str, str],
-    remote_path: str = "",
-) -> Dict[str, str]:
-    """Simpan env restore aktif supaya dispatch berikutnya memakainya."""
-    from app.services import platform_settings as ps
-
-    cleaned = {str(k): str(v) for k, v in (env or {}).items() if str(v).strip()}
-    await ps.set_setting(
-        db,
-        RESTORE_SETTING_KEY,
-        {
-            "provider": get_provider(provider_id).id,
-            "remote_path": str(remote_path or ""),
-            "env": cleaned,
-            "updated_at": __import__("datetime").datetime.utcnow().isoformat(),
-        },
-    )
-    await db.commit()
-    set_restore_env(cleaned)
-    return restore_env()
-
-
-async def refresh_model_url(db: AsyncSession) -> Dict[str, str]:
-    """Buat ulang CLIPZI_MODEL_URL dari provider aktif (link Dropbox/S3 expired).
-
-    Dipanggil tepat sebelum dispatch supaya worker selalu menerima tautan segar
-    (Dropbox temporary link hanya berlaku ~4 jam).
-    """
-    from app.services import platform_settings as ps
-
-    raw = await ps.get_setting(db, RESTORE_SETTING_KEY, {})
-    if not isinstance(raw, dict):
-        return restore_env()
-    env = dict(raw.get("env") or {})
-    provider_id = str(raw.get("provider") or "").strip()
-    remote_path = str(raw.get("remote_path") or "").strip()
-    provider = get_provider(provider_id) if provider_id else None
-    if not provider or provider.restore_mode != "url_download" or not remote_path:
-        set_restore_env(env)
-        return restore_env()
-    try:
-        adapter = await adapter_for(db, provider.id)
-        fresh = await adapter.model_url(remote_path)
-        if fresh:
-            env["CLIPZI_MODEL_URL"] = fresh
-            env.pop("CLIPZI_MODEL_URL_ERROR", None)
-            await ps.set_setting(
-                db,
-                RESTORE_SETTING_KEY,
-                {
-                    **raw,
-                    "env": env,
-                    "refreshed_at": __import__("datetime").datetime.utcnow().isoformat(),
-                },
-            )
-            await db.commit()
-    except Exception as exc:  # noqa: BLE001 - jangan gagalkan dispatch
-        reason = str(exc)[:240]
-        logger.warning("Gagal menyegarkan URL model %s: %s", provider.id, reason)
-        # Jangan pernah mengirim tautan basi (410 Gone). Worker akan lompat ke
-        # fallback Hugging Face tanpa menunggu 150 detik.
-        env.pop("CLIPZI_MODEL_URL", None)
-        env["CLIPZI_MODEL_URL_ERROR"] = reason
-        try:
-            await ps.set_setting(
-                db,
-                RESTORE_SETTING_KEY,
-                {
-                    **raw,
-                    "env": env,
-                    "url_error": reason,
-                    "refreshed_at": __import__("datetime").datetime.utcnow().isoformat(),
-                },
-            )
-            await db.commit()
-        except Exception as save_exc:  # noqa: BLE001
-            logger.warning("Gagal menyimpan status URL model: %s", save_exc)
-    set_restore_env(env)
-    return restore_env()
-
-
 def public_view(active_provider: str) -> Dict[str, Any]:
     """Ringkasan manifest untuk UI (tanpa secret)."""
     items: List[Dict[str, Any]] = []
@@ -1118,7 +908,6 @@ def public_view(active_provider: str) -> Dict[str, Any]:
 
 
 __all__ = [
-    "MODEL_WORKSPACE",
     "Provider",
     "SourceError",
     "adapter_for",
@@ -1132,15 +921,9 @@ __all__ = [
     "notebook_path",
     "providers",
     "public_view",
-    "refresh_model_url",
-    "refresh_restore_env",
     "resolved_values",
-    "restore_env",
-    "restore_plan",
-    "save_restore_env",
     "save_source",
     "scan_items",
-    "set_restore_env",
     "test_source",
 ]
 
