@@ -115,3 +115,25 @@ export async function saveAiEndpoints(payload: {
     return { ok: false as const, error: _error(error) };
   }
 }
+
+
+export async function testAiCapability(capability: string) {
+  try {
+    const data = await adminFetch<{
+      ok: boolean;
+      capability: string;
+      endpoint: string;
+      model: string;
+      elapsed: number;
+      output: string;
+      log_text: string;
+    }>(`/api/admin/settings/ai/test?capability=${encodeURIComponent(capability)}`, {
+      method: 'POST'
+    });
+    return { ok: true as const, data };
+  } catch (error) {
+    const detail = (error as { detail?: unknown })?.detail;
+    const log = typeof detail === 'object' ? (detail as { log_text?: string }).log_text || '' : '';
+    return { ok: false as const, error: _error(error), log_text: log };
+  }
+}

@@ -18,6 +18,7 @@ from app.services.ai_config import (
     effective_base_url,
     get_ai_config,
     public_ai_config,
+    resolve_capability,
     set_ai_config,
     decrypt_api_key,
 )
@@ -26,9 +27,11 @@ router = APIRouter()
 
 
 class AIConfigIn(BaseModel):
-    # Multi-endpoint: daftar endpoint (api_key plain hanya saat menyimpan) + rute fitur.
-    endpoints: Optional[List[Dict[str, Any]]] = None
-    endpoint_routes: Optional[Dict[str, str]] = None
+    # Satu provider + satu API key; endpoint boleh beda per kemampuan.
+    endpoint_chat: Optional[str] = None
+    endpoint_transcribe: Optional[str] = None
+    endpoint_rerank: Optional[str] = None
+    model_transcribe: Optional[str] = None
     # None = "jangan ubah": mengirim API key baru otomatis mengaktifkan AI.
     enabled: Optional[bool] = None
     provider: str = "openrouter"
@@ -101,11 +104,6 @@ async def list_ai_models(
         )
 
     api_key = (payload.api_key or "").strip() or decrypt_api_key(cfg.get("api_key_enc")) or ""
-    if not api_key and provider not in ("ollama", "vllm", "custom"):
-        raise HTTPException(
-            status_code=400,
-            detail="API key belum ada. Simpan API key dulu, lalu muat ulang daftar model.",
-        )
 
     cache_key = f"{provider}|{base_url.rstrip('/')}"
     cached = _MODEL_CACHE.get(cache_key)
@@ -129,6 +127,19 @@ async def list_ai_models(
             detail=f"Gagal menghubungi {url}: {type(exc).__name__}: {str(exc)[:160]}",
         )
 
+    if response.status_code in (401, 403):
+        # Tanpa API key tetap boleh: admin bisa mengisi model manual.
+        return {
+            "provider": provider,
+            "base_url": base_url,
+            "cached": False,
+            "count": 0,
+            "models": [],
+            "warning": (
+                "Provider menolak permintaan tanpa API key. Isi nama model manual "
+                "atau simpan API key lalu muat ulang."
+            ),
+        }
     if response.status_code >= 400:
         raise HTTPException(
             status_code=response.status_code,
@@ -222,69 +233,124 @@ async def update_ai(
 
 @router.post("/ai/test")
 async def test_ai(
+    capability: str = "chat",
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db_session),
 ):
-    """Panggil provider dengan prompt mini untuk memastikan kredensial hidup."""
-    import time
+    """Uji satu kemampuan: chat, regenerate, transcribe, atau rerank.
 
-    from openai import AsyncOpenAI
+    Endpoint & model diambil dari `resolve_capability` (satu API key provider).
+    """
+    import io
+    import time
+    import wave
+
+    import httpx
 
     cfg = await get_ai_config(db)
-    if not ai_is_configured(cfg):
-        raise HTTPException(
-            status_code=400,
-            detail=ai_status_hint(cfg) or "AI belum siap dipakai. Periksa Settings › AI.",
-        )
+    name = capability if capability in ("chat", "regenerate", "transcribe", "rerank") else "chat"
+    cap = resolve_capability(cfg, name)
+    if not cap.get("url"):
+        raise HTTPException(status_code=400, detail="Endpoint provider belum diketahui.")
 
-    client = AsyncOpenAI(
-        api_key=decrypt_api_key(cfg.get("api_key_enc")) or "sk-no-key-provided",
-        base_url=effective_base_url(cfg),
-        timeout=float(cfg["timeout_seconds"]),
-        max_retries=0,
-    )
+    key = decrypt_api_key(cfg.get("api_key_enc"))
+    headers = {"Authorization": f"Bearer {key}"} if key else {}
     started = time.monotonic()
+    output = ""
     try:
-        response = await client.chat.completions.create(
-            model=cfg["model_metadata"],
-            messages=[
-                {"role": "system", "content": "Balas satu kata: pong."},
-                {"role": "user", "content": "ping"},
-            ],
-            max_tokens=64,
-            temperature=0,
+        if name == "transcribe":
+            buffer = io.BytesIO()
+            with wave.open(buffer, "wb") as handle:
+                handle.setnchannels(1)
+                handle.setsampwidth(2)
+                handle.setframerate(16000)
+                handle.writeframes(b"\x00\x00" * 8000)
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    cap["url"],
+                    headers=headers,
+                    data={"model": cap["model"] or "whisper-1"},
+                    files={"file": ("silence.wav", buffer.getvalue(), "audio/wav")},
+                )
+            if response.status_code >= 400:
+                raise RuntimeError(f"{response.status_code}: {response.text[:200]}")
+            output = (response.json() or {}).get("text", "") or "(audio diterima)"
+        elif name == "rerank":
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    cap["url"],
+                    headers={**headers, "Content-Type": "application/json"},
+                    json={
+                        "model": cap["model"],
+                        "query": "cara produktif tanpa burnout",
+                        "documents": [
+                            "produktivitas dan fokus harian",
+                            "resep kue coklat",
+                        ],
+                    },
+                )
+            if response.status_code >= 400:
+                raise RuntimeError(f"{response.status_code}: {response.text[:200]}")
+            payload = response.json() or {}
+            results = payload.get("results") or payload.get("data") or []
+            output = "; ".join(
+                f"{item.get('index')}={round(float(item.get('relevance_score') or 0), 4)}"
+                for item in results
+                if isinstance(item, dict)
+            ) or str(payload)[:300]
+        else:
+            from openai import AsyncOpenAI
+
+            base = cap["url"].split("/chat/completions")[0]
+            client = AsyncOpenAI(
+                api_key=key or "sk-no-key-provided",
+                base_url=base,
+                timeout=float(cfg.get("timeout_seconds") or 90),
+                max_retries=0,
+            )
+            response = await client.chat.completions.create(
+                model=cap["model"] or cfg.get("model_metadata"),
+                messages=[
+                    {"role": "system", "content": "Balas satu kata: pong."},
+                    {"role": "user", "content": "ping"},
+                ],
+                max_tokens=32,
+                temperature=0,
+            )
+            output = (response.choices[0].message.content or "").strip() or "(kosong)"
+    except Exception as exc:  # noqa: BLE001 - tampilkan penyebab ke admin
+        elapsed = round(time.monotonic() - started, 2)
+        log_text = "\n".join(
+            [
+                f"Kemampuan : {name}",
+                f"Endpoint  : {cap['url']}",
+                f"Model     : {cap['model'] or '-'}",
+                f"Durasi    : {elapsed}s",
+                f"Error     : {str(exc)[:400]}",
+            ]
         )
-        choice = response.choices[0]
-        answer = (choice.message.content or "").strip()
-        finish = getattr(choice, "finish_reason", None)
-        usage = getattr(response, "usage", None)
-        usage_data = (
-            usage.model_dump()
-            if usage is not None and hasattr(usage, "model_dump")
-            else None
-        )
-    except Exception as exc:
-        return {
-            "ok": False,
-            "provider": cfg["provider"],
-            "model": cfg["model_metadata"],
-            "base_url": effective_base_url(cfg),
-            "latency_ms": int((time.monotonic() - started) * 1000),
-            "error": (type(exc).__name__ + ": " + str(exc))[:300],
-        }
-    latency_ms = int((time.monotonic() - started) * 1000)
+        raise HTTPException(status_code=502, detail={"message": str(exc)[:300], "log_text": log_text}) from exc
+
+    elapsed = round(time.monotonic() - started, 2)
+    log_text = "\n".join(
+        [
+            f"Kemampuan : {name}",
+            f"Endpoint  : {cap['url']}",
+            f"Model     : {cap['model'] or '-'}",
+            f"Durasi    : {elapsed}s",
+            "Status    : OK",
+            f"Output    : {output[:400]}",
+        ]
+    )
     return {
         "ok": True,
-        "provider": cfg["provider"],
-        "model": cfg["model_metadata"],
-        "base_url": effective_base_url(cfg),
-        "latency_ms": latency_ms,
-        "sample": answer[:120],
-        "finish_reason": finish,
-        "usage": usage_data,
+        "capability": name,
+        "endpoint": cap["url"],
+        "model": cap["model"],
+        "elapsed": elapsed,
+        "output": output[:600],
+        "log_text": log_text,
     }
-
-
 
 
 class PromptIn(BaseModel):

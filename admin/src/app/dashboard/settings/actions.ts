@@ -46,6 +46,7 @@ export type TestResult = {
 export type ModelsResult = {
   ok: boolean;
   error?: string;
+  warning?: string;
   provider?: string;
   base_url?: string;
   count?: number;
