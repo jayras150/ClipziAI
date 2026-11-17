@@ -37,6 +37,9 @@ WHITELIST: dict[str, list[str]] = {
     "clear_cache": ["/bin/sh", "-c", "sync; echo 3 > /proc/sys/vm/drop_caches"],
     "restart_caddy": ["docker", "restart", "clipzi-caddy"],
     "prune_docker": ["docker", "builder", "prune", "-af"],
+    # Info OS host + uji kecepatan internet (skrip terpasang oleh installer).
+    "os_info": ["/usr/local/sbin/clipzi-osinfo.sh"],
+    "speedtest": ["/usr/local/sbin/clipzi-speedtest.sh"],
 }
 
 

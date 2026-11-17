@@ -45,6 +45,31 @@ export async function saveYoutubeCookies(formData: FormData) {
   refresh();
 }
 
+export type CookieProbeResult = {
+  ok: boolean;
+  status?: string;
+  error?: string | null;
+  log_text?: string;
+};
+
+export async function probeCookieResult(id: string): Promise<CookieProbeResult> {
+  try {
+    return await adminFetch<CookieProbeResult>(
+      `/api/admin/ytdlp-cookies/${id}/probe`,
+      { method: 'POST' }
+    );
+  } catch (error) {
+    const detail = (error as { detail?: unknown })?.detail;
+    const message =
+      typeof detail === 'string'
+        ? detail
+        : error instanceof Error
+          ? error.message.replace(/^\d{3}\s+/, '')
+          : 'Probe gagal.';
+    return { ok: false, error: message, log_text: message };
+  }
+}
+
 export async function probeCookie(formData: FormData) {
   const id = String(formData.get('cid') || '');
   if (!id) return;

@@ -40,6 +40,16 @@ ACTIONS: Dict[str, Dict[str, str]] = {
         "command": "docker builder prune -af",
         "description": "Membersihkan build cache Docker yang menumpuk.",
     },
+    "os_info": {
+        "label": "Info OS host",
+        "command": "/usr/local/sbin/clipzi-osinfo.sh",
+        "description": "Baca distro, kernel, arsitektur, dan jumlah core host.",
+    },
+    "speedtest": {
+        "label": "Speedtest internet",
+        "command": "/usr/local/sbin/clipzi-speedtest.sh",
+        "description": "Ukur kecepatan unduh/unggah + latency host (Cloudflare).",
+    },
 }
 
 MAX_OUTPUT = 4000

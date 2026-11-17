@@ -108,3 +108,51 @@ export async function installRunnerWorkflow(
     return { error: _errorMessage(error) };
   }
 }
+
+
+export type ProvisionResult = {
+  ok: boolean;
+  message: string;
+  log_text?: string;
+};
+
+/** Buat repo GitHub + pasang workflow + simpan runner dalam satu langkah. */
+export async function provisionRunner(formData: FormData): Promise<ProvisionResult> {
+  const payload = {
+    github_token: String(formData.get('github_token') || '').trim(),
+    owner: String(formData.get('owner') || '').trim() || null,
+    repo: String(formData.get('repo') || '').trim(),
+    workflow_file: String(formData.get('workflow_file') || 'downloader_video.yml').trim(),
+    git_ref: String(formData.get('git_ref') || '').trim() || null,
+    weight: Number(formData.get('weight') || 100)
+  };
+  if (!payload.github_token || !payload.repo) {
+    return { ok: false, message: 'GitHub token dan nama repo wajib diisi.' };
+  }
+  try {
+    const result = await adminFetch<{
+      runner?: { name?: string };
+      repo_url?: string;
+      workflow_url?: string;
+      log_text?: string;
+    }>('/api/admin/settings/runners/provision', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    revalidatePath('/dashboard/settings/runners');
+    return {
+      ok: true,
+      message: `Runner ${result.runner?.name || payload.repo} siap dipakai.`,
+      log_text: result.log_text
+    };
+  } catch (error) {
+    const detail = (error as { detail?: unknown })?.detail;
+    const message =
+      typeof detail === 'string'
+        ? detail
+        : error instanceof Error
+          ? error.message.replace(/^\d{3}\s+/, '')
+          : 'Gagal membuat runner.';
+    return { ok: false, message, log_text: message };
+  }
+}

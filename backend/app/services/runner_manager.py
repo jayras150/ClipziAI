@@ -513,6 +513,157 @@ async def _dispatch_workflow(
 
 
 
+async def provision_repo(db: AsyncSession, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Buat repo GitHub (opsional) + pasang workflow + simpan runner.
+
+    Hanya butuh: github_token, username (owner), nama repo, workflow file name,
+    dan branch/ref. `name` runner dibuat otomatis dari owner/repo (tidak perlu
+    diisi admin).
+    """
+    import base64
+
+    token = str(payload.get("github_token") or payload.get("token") or "").strip()
+    if not token:
+        raise RuntimeError("GitHub token wajib diisi.")
+    repo_name = str(payload.get("repo") or "").strip()
+    if not repo_name:
+        raise RuntimeError("Nama repo wajib diisi.")
+    workflow_file = str(payload.get("workflow_file") or "downloader_video.yml").strip()
+    git_ref = str(payload.get("git_ref") or "").strip()
+    weight = max(1, int(payload.get("weight") or 100))
+
+    base = settings.GITHUB_API_URL.rstrip("/")
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "ClipziAI-Admin/1.0",
+    }
+
+    async with httpx.AsyncClient(timeout=45) as client:
+        me = await client.get(f"{base}/user", headers=headers)
+        if me.status_code == 401:
+            raise RuntimeError("Token GitHub ditolak (401). Pastikan PAT valid & belum kedaluwarsa.")
+        if not me.ok:
+            raise RuntimeError(f"Gagal membaca akun GitHub ({me.status_code}): {me.text[:200]}")
+        login = str((me.json() or {}).get("login") or "")
+        owner = str(payload.get("owner") or login).strip()
+        if not owner:
+            raise RuntimeError("Username/owner GitHub tidak diketahui.")
+
+        created_repo = False
+        repo_resp = await client.get(f"{base}/repos/{owner}/{repo_name}", headers=headers)
+        if repo_resp.status_code == 404:
+            if owner != login:
+                raise RuntimeError(
+                    f"Repo {owner}/{repo_name} tidak ada dan tidak bisa dibuat di organisasi lain "
+                    f"dengan token akun {login}."
+                )
+            make = await client.post(
+                f"{base}/user/repos",
+                headers=headers,
+                json={
+                    "name": repo_name,
+                    "private": bool(payload.get("private", True)),
+                    "auto_init": True,
+                    "description": "Clipzy AI downloader fallback runner",
+                },
+            )
+            if make.status_code not in (201, 200):
+                raise RuntimeError(
+                    f"Gagal membuat repo ({make.status_code}): {_github_message(make)}"
+                )
+            repo_resp = make
+            created_repo = True
+
+        if not repo_resp.ok:
+            raise RuntimeError(
+                f"Repo tidak bisa diakses ({repo_resp.status_code}): {_github_message(repo_resp)}"
+            )
+        repo_info = repo_resp.json() or {}
+        default_branch = str(repo_info.get("default_branch") or "main")
+        branch = git_ref or default_branch
+
+        path = _workflow_path(
+            DownloadRunner(
+                name="tmp",
+                owner=owner,
+                repo=repo_name,
+                workflow_file=workflow_file,
+            )
+        )
+        content_b64 = base64.b64encode(workflow_template().encode("utf-8")).decode("ascii")
+        body: Dict[str, Any] = {
+            "message": "chore: install Clipzy downloader workflow",
+            "content": content_b64,
+            "branch": branch,
+        }
+        existing = await client.get(
+            f"{base}/repos/{owner}/{repo_name}/contents/{path}",
+            headers=headers,
+            params={"ref": branch},
+        )
+        if existing.ok:
+            body["sha"] = str((existing.json() or {}).get("sha") or "") or None
+        put = await client.put(
+            f"{base}/repos/{owner}/{repo_name}/contents/{path}",
+            headers=headers,
+            json=body,
+        )
+        if put.status_code not in (200, 201):
+            raise RuntimeError(
+                f"Gagal memasang workflow ({put.status_code}): {_github_message(put)}"
+            )
+
+    # Simpan/refresh runner (nama otomatis owner/repo).
+    auto_name = f"{owner}/{repo_name}"[:80]
+    runner: Optional[DownloadRunner] = (
+        await db.execute(
+            select(DownloadRunner).where(
+                DownloadRunner.owner == owner, DownloadRunner.repo == repo_name
+            )
+        )
+    ).scalar_one_or_none()
+    if runner is None:
+        runner = DownloadRunner(
+            name=auto_name,
+            owner=owner,
+            repo=repo_name,
+            workflow_file=workflow_file,
+            git_ref=branch,
+            weight=weight,
+            auth_mode="pat",
+            token_encrypted=encrypt_field(token),
+        )
+        db.add(runner)
+    else:
+        runner.name = auto_name
+        runner.workflow_file = workflow_file
+        runner.git_ref = branch
+        runner.weight = weight
+        runner.auth_mode = "pat"
+        runner.token_encrypted = encrypt_field(token)
+        runner.enabled = True
+    await db.commit()
+    await db.refresh(runner)
+
+    check: Dict[str, Any] = {}
+    try:
+        check = await check_runner(db, runner)
+    except Exception as exc:  # noqa: BLE001 - hasil health opsional
+        check = {"ok": False, "error": str(exc)[:300]}
+
+    return {
+        "ok": True,
+        "runner": serialize_runner(runner),
+        "repo_url": f"https://github.com/{owner}/{repo_name}",
+        "workflow_url": f"https://github.com/{owner}/{repo_name}/blob/{branch}/{path}",
+        "branch": branch,
+        "created_repo": created_repo,
+        "check": check,
+    }
+
+
 async def request_fallback(db: AsyncSession, task: Task) -> Dict[str, Any]:
     """Pilih runner & dispatch workflow; failover bila dispatch gagal."""
     if not settings.RUNNER_FALLBACK_ENABLED or not _secret():

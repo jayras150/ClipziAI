@@ -68,3 +68,71 @@ export async function sendReport() {
     return { ok: false, error: _error(error) }
   }
 }
+
+
+// ---------------------------------------------------------------- templates
+export type EmailTemplate = { subject: string; html: string };
+
+export async function fetchEmailTemplates() {
+  try {
+    const data = await adminFetch<{
+      kinds: string[];
+      templates: Record<string, EmailTemplate>;
+      defaults: Record<string, EmailTemplate>;
+      variables: Record<string, string[]>;
+    }>("/api/admin/smtp/templates")
+    return { ok: true, data }
+  } catch (error) {
+    return { ok: false, error: _error(error) }
+  }
+}
+
+export async function saveEmailTemplate(kind: string, subject: string, html: string) {
+  try {
+    const data = await adminFetch<Record<string, unknown>>("/api/admin/smtp/templates", {
+      method: "PUT",
+      body: JSON.stringify({ kind, subject, html }),
+    })
+    revalidatePath("/dashboard/settings/smtp")
+    return { ok: true, data }
+  } catch (error) {
+    return { ok: false, error: _error(error) }
+  }
+}
+
+export async function resetEmailTemplate(kind: string) {
+  try {
+    const data = await adminFetch<Record<string, unknown>>(
+      `/api/admin/smtp/templates/${kind}/reset`,
+      { method: "POST" }
+    )
+    revalidatePath("/dashboard/settings/smtp")
+    return { ok: true, data }
+  } catch (error) {
+    return { ok: false, error: _error(error) }
+  }
+}
+
+export async function previewEmailTemplate(kind: string, subject: string, html: string) {
+  try {
+    const data = await adminFetch<{ subject: string; html: string }>(
+      `/api/admin/smtp/templates/${kind}/preview`,
+      { method: "POST", body: JSON.stringify({ kind, subject, html }) }
+    )
+    return { ok: true, data }
+  } catch (error) {
+    return { ok: false, error: _error(error) }
+  }
+}
+
+export async function testEmailKind(to: string, kind: string) {
+  try {
+    const data = await adminFetch<{ subject?: string; sent?: number; log_text?: string }>(
+      "/api/admin/smtp/test",
+      { method: "POST", body: JSON.stringify({ to, kind }) }
+    )
+    return { ok: true, data }
+  } catch (error) {
+    return { ok: false, error: _error(error) }
+  }
+}

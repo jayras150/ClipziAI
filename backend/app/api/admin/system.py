@@ -12,6 +12,7 @@ bukan menarik semua baris ke Python.
 """
 import time
 from datetime import datetime, timedelta, timezone
+from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select, text
@@ -337,3 +338,80 @@ async def read_system_action(job_id: str):
     if job is None:
         raise HTTPException(status_code=404, detail="Perintah tidak ditemukan")
     return job
+
+
+_HOST_INFO_CACHE: Dict[str, Any] = {"at": 0.0, "data": None}
+HOST_INFO_TTL = 600.0
+
+
+async def _run_host_command(action: str, wait_seconds: float = 60.0) -> Dict[str, Any]:
+    """Antrekan aksi host lalu tunggu hasil (agent polling 3 detik)."""
+    import asyncio
+
+    from app.services import host_commands as commands
+
+    job = commands.enqueue(action, requested_by="admin")
+    deadline = time.monotonic() + max(5.0, wait_seconds)
+    while time.monotonic() < deadline:
+        await asyncio.sleep(2)
+        current = commands.get(job["id"])
+        if current and current.get("status") in ("done", "error"):
+            return current
+    return commands.get(job["id"]) or job
+
+
+@router.get("/host-info")
+async def system_host_info():
+    """Info OS host (distro, kernel, arch, core) — diambil via agent host."""
+    import json
+
+    cached = _HOST_INFO_CACHE
+    if cached["data"] and time.monotonic() - float(cached["at"]) < HOST_INFO_TTL:
+        return {**cached["data"], "cached": True}
+
+    job = await _run_host_command("os_info", wait_seconds=20)
+    raw = str(job.get("output") or "").strip()
+    data: Dict[str, Any] = {}
+    if raw:
+        try:
+            data = json.loads(raw.splitlines()[-1])
+        except Exception:  # noqa: BLE001 - output bukan JSON
+            data = {}
+    if not data:
+        return {
+            "available": False,
+            "error": raw[:400] or "agent host belum melaporkan info OS",
+            "job": job.get("status"),
+        }
+    payload = {"available": True, "cached": False, **data}
+    _HOST_INFO_CACHE.update({"at": time.monotonic(), "data": payload})
+    return payload
+
+
+@router.post("/speedtest")
+async def system_speedtest():
+    """Uji kecepatan internet host (unduh/unggah + latency) via agent."""
+    import json
+
+    job = await _run_host_command("speedtest", wait_seconds=90)
+    raw = str(job.get("output") or "").strip()
+    data: Dict[str, Any] = {}
+    if raw:
+        try:
+            data = json.loads(raw.splitlines()[-1])
+        except Exception:  # noqa: BLE001
+            data = {}
+    if not data:
+        raise HTTPException(
+            status_code=502,
+            detail=(raw[:400] or "Speedtest gagal: agent host tidak merespons"),
+        )
+    down = float(data.get("down_bps") or 0) * 8 / 1_000_000
+    up = float(data.get("up_bps") or 0) * 8 / 1_000_000
+    return {
+        "ok": True,
+        **data,
+        "down_mbps": round(down, 2),
+        "up_mbps": round(up, 2),
+        "taken_at": datetime.now(timezone.utc).isoformat(),
+    }

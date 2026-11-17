@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ProxyManager } from '@/features/settings/components/proxy-manager';
 import CookieImporter from '@/features/settings/components/cookie-importer';
 import CookieBase64Actions from '@/features/settings/components/cookie-base64-actions';
+import CookieProbeButton from '@/features/settings/components/cookie-probe-button';
 import type { ProxyPoolView } from '../proxy-actions';
 import { adminFetch } from '@/lib/clipzi';
 import {
@@ -125,12 +126,7 @@ export default async function YoutubeCookiesPage() {
                       <TableCell className='text-right'>
                         <div className='flex flex-wrap justify-end gap-1'>
                           <CookieBase64Actions id={row.id} />
-                          <form action={probeCookie}>
-                            <input type='hidden' name='cid' value={row.id} />
-                            <SubmitButton size='sm' variant='outline'>
-                              Uji
-                            </SubmitButton>
-                          </form>
+                          <CookieProbeButton id={row.id} />
                           <form action={setCookieStatus}>
                             <input type='hidden' name='cid' value={row.id} />
                             <input

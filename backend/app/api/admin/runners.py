@@ -112,6 +112,53 @@ async def create_runner(
     return runner_manager.serialize_runner(runner)
 
 
+class ProvisionIn(BaseModel):
+    github_token: str
+    owner: Optional[str] = None
+    repo: str
+    workflow_file: str = "downloader_video.yml"
+    git_ref: Optional[str] = None
+    weight: int = 100
+    private: bool = True
+
+
+@router.post("/provision")
+async def provision_runner(
+    payload: ProvisionIn,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Buat repo GitHub + pasang workflow + simpan runner (satu langkah).
+
+    Nama runner dibuat otomatis `owner/repo`; admin hanya perlu token, username,
+    nama repo, workflow file, dan branch/ref (weight opsional).
+    """
+    try:
+        result = await runner_manager.provision_repo(db, payload.model_dump())
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _audit(
+        db,
+        request,
+        current_admin,
+        "runner_provisioned",
+        str(result.get("runner", {}).get("id") or ""),
+        {k: v for k, v in result.items() if k in ("repo_url", "branch", "created_repo")},
+    )
+    await db.commit()
+    log_text = "\n".join(
+        [
+            f"Repo        : {result.get('repo_url')}",
+            f"Workflow    : {result.get('workflow_url')}",
+            f"Branch/ref  : {result.get('branch')}",
+            f"Repo dibuat : {'ya' if result.get('created_repo') else 'sudah ada'}",
+            f"Health check: {result.get('check')}",
+        ]
+    )
+    return {**result, "log_text": log_text}
+
+
 @router.patch("/{runner_id}")
 async def update_runner(
     runner_id: UUID,

@@ -1,5 +1,6 @@
 import PageContainer from '@/components/layout/page-container';
 import RunnerManager, { type RunnerRow } from '@/features/settings/components/runner-manager';
+import RunnerProvision from '@/features/settings/components/runner-provision';
 import { adminFetch } from '@/lib/clipzi';
 
 export const metadata = { title: 'Admin: Download Runner' };
@@ -30,7 +31,10 @@ export default async function RunnersPage() {
           </div>
         ))}
       </div>
-      <RunnerManager runners={data.items} />
+      <div className='space-y-4'>
+        <RunnerProvision />
+        <RunnerManager runners={data.items} />
+      </div>
     </PageContainer>
   );
 }

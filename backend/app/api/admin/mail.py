@@ -33,6 +33,8 @@ class SmtpIn(BaseModel):
 
 class TestIn(BaseModel):
     to: str
+    # Jenis email yang diuji (memakai template-nya). Default: notify.
+    kind: Optional[str] = None
 
 
 class NotifyIn(BaseModel):
@@ -86,12 +88,30 @@ async def test_smtp(
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db_session),
 ):
-    result = await mailer.send_test(db, payload.to)
-    _audit(db, request, current_admin, "smtp_test_sent", {"to": payload.to, "result": result})
+    kind = str(payload.kind or "notify")
+    result = await mailer.send_test(db, payload.to, kind)
+    _audit(
+        db,
+        request,
+        current_admin,
+        "smtp_test_sent",
+        {"to": payload.to, "kind": kind, "result": result},
+    )
     await db.commit()
+    log_text = "\n".join(
+        [
+            f"SMTP test  : {'OK' if not result.get('error') else 'GAGAL'}",
+            f"Ke         : {payload.to}",
+            f"Jenis email: {kind}",
+            f"Subjek     : {result.get('subject') or '-'}",
+            f"Terkirim   : {result.get('sent', 0)}",
+            f"Skip       : {result.get('skipped') or '-'}",
+            f"Error      : {result.get('error') or '-'}",
+        ]
+    )
     if result.get("error"):
-        raise HTTPException(status_code=502, detail=result["error"])
-    return result
+        raise HTTPException(status_code=502, detail={"message": result["error"], "log_text": log_text})
+    return {**result, "log_text": log_text}
 
 
 @router.post("/notify")
@@ -140,3 +160,98 @@ async def send_report(
     if result.get("error"):
         raise HTTPException(status_code=502, detail=result["error"])
     return result
+
+
+# ---------------------------------------------------------------------------
+# Email templates (tab "Email Template" di halaman SMTP)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/templates")
+async def read_templates(db: AsyncSession = Depends(get_db_session)):
+    """Daftar template efektif per jenis email + variabel yang didukung."""
+    config = await mailer.get_config(db)
+    return {
+        "kinds": list(mailer.KINDS),
+        "templates": config.get("templates") or {},
+        "defaults": mailer.DEFAULT_TEMPLATES,
+        "variables": mailer.TEMPLATE_VARIABLES,
+    }
+
+
+class TemplateIn(BaseModel):
+    kind: str
+    subject: Optional[str] = None
+    html: Optional[str] = None
+    templates: Optional[dict] = None
+    ctx: Optional[dict] = None
+
+
+@router.put("/templates")
+async def save_templates(
+    payload: TemplateIn,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Simpan subject/HTML kustom untuk satu atau beberapa jenis email."""
+    if payload.templates is not None:
+        config = await mailer.save_config(db, {"templates": payload.templates})
+        kinds = list(payload.templates.keys())
+    else:
+        kind = str(payload.kind or "").strip()
+        if kind not in mailer.KINDS:
+            raise HTTPException(status_code=400, detail=f"Jenis email tidak dikenal: {kind}")
+        config = await mailer.save_config(
+            db, {"templates": {kind: {"subject": payload.subject, "html": payload.html}}}
+        )
+        kinds = [kind]
+    _audit(db, request, current_admin, "smtp_template_updated", {"kinds": kinds})
+    await db.commit()
+    return {"ok": True, "kinds": kinds, "templates": config.get("templates")}
+
+
+@router.post("/templates/{kind}/reset")
+async def reset_template(
+    kind: str,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Kembalikan satu template ke default bawaan."""
+    if kind not in mailer.KINDS:
+        raise HTTPException(status_code=400, detail=f"Jenis email tidak dikenal: {kind}")
+    current = await mailer.get_config(db)
+    stored = dict(current.get("templates") or {})
+    stored.pop(kind, None)
+    # Simpan ulang seluruh template efektif agar override benar-benar hilang.
+    config = await mailer.save_config(
+        db,
+        {
+            "templates": {
+                k: {"subject": v.get("subject", ""), "html": v.get("html", "")}
+                for k, v in stored.items()
+                if k != kind
+            }
+        },
+    )
+    _audit(db, request, current_admin, "smtp_template_reset", {"kind": kind})
+    await db.commit()
+    return {"ok": True, "kind": kind, "templates": config.get("templates")}
+
+
+@router.post("/templates/{kind}/preview")
+async def preview_template(
+    kind: str,
+    payload: TemplateIn,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Render pratinjau (tanpa mengirim) memakai template tersimpan."""
+    config = await mailer.get_config(db)
+    templates = dict(config.get("templates") or {})
+    if payload.subject is not None or payload.html is not None:
+        templates[kind] = {
+            "subject": payload.subject or templates.get(kind, {}).get("subject", ""),
+            "html": payload.html or templates.get(kind, {}).get("html", ""),
+        }
+    return mailer.preview(kind, payload.ctx or None, templates)

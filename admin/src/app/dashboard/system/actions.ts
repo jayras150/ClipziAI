@@ -12,6 +12,14 @@ export type HostSnapshot = {
     memory?: { total?: number; used?: number; percent?: number };
     disk?: { total?: number; used?: number; percent?: number };
     load?: { '1'?: number; '5'?: number; '15'?: number };
+    /** Byte/detik dari agent host (rx/tx rate). */
+    network?: {
+      rx_bytes?: number;
+      tx_bytes?: number;
+      rx_rate?: number;
+      tx_rate?: number;
+      interfaces?: unknown;
+    };
     uptime_seconds?: number | null;
   } | null;
   services?: {
@@ -67,4 +75,50 @@ export async function runSystemAction(action: string): Promise<CommandJob> {
     }
   }
   return job;
+}
+
+
+export type HostInfo = {
+  available: boolean;
+  name?: string;
+  version?: string;
+  id?: string;
+  kernel?: string;
+  arch?: string;
+  cores?: number;
+  memory_bytes?: number;
+  error?: string;
+  cached?: boolean;
+};
+
+export type SpeedtestResult = {
+  ok: boolean;
+  down_mbps?: number;
+  up_mbps?: number;
+  latency_ms?: number;
+  taken_at?: string;
+  error?: string;
+};
+
+export async function fetchHostInfo(): Promise<HostInfo> {
+  try {
+    return await adminFetch<HostInfo>('/api/admin/system/host-info');
+  } catch (error) {
+    return {
+      available: false,
+      error: error instanceof Error ? error.message.replace(/^\d{3}\s+/, '') : 'Gagal memuat info host'
+    };
+  }
+}
+
+export async function runSpeedtest(): Promise<SpeedtestResult> {
+  try {
+    return await adminFetch<SpeedtestResult>('/api/admin/system/speedtest', { method: 'POST' });
+  } catch (error) {
+    const detail = (error as { detail?: string })?.detail;
+    return {
+      ok: false,
+      error: detail || (error instanceof Error ? error.message : 'Speedtest gagal')
+    };
+  }
 }

@@ -4,11 +4,16 @@ import { useCallback, useEffect, useState, useTransition } from 'react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
+import { LogDialog, type LogDialogData } from '@/components/ui/log-dialog';
 import {
+  fetchHostInfo,
   fetchHostSnapshot,
+  runSpeedtest,
   runSystemAction,
   type CommandJob,
-  type HostSnapshot
+  type HostInfo,
+  type HostSnapshot,
+  type SpeedtestResult
 } from '@/app/dashboard/system/actions';
 
 const POLL_MS = 5000;
@@ -33,7 +38,10 @@ function uptime(seconds?: number | null): string {
 export function NeonSystem({ initial }: { initial: HostSnapshot | null }) {
   const [data, setData] = useState<HostSnapshot | null>(initial);
   const [busy, setBusy] = useState<string>('');
-  const [result, setResult] = useState<CommandJob | null>(null);
+  const [hostInfo, setHostInfo] = useState<HostInfo | null>(null);
+  const [speed, setSpeed] = useState<SpeedtestResult | null>(null);
+  const [logOpen, setLogOpen] = useState(false);
+  const [logData, setLogData] = useState<LogDialogData | null>(null);
   const [, startTransition] = useTransition();
 
   const load = useCallback(async () => {
@@ -47,12 +55,21 @@ export function NeonSystem({ initial }: { initial: HostSnapshot | null }) {
     return () => window.clearInterval(timer);
   }, [load]);
 
+  useEffect(() => {
+    void fetchHostInfo().then(setHostInfo);
+  }, []);
+
   const run = (action: string) => {
     setBusy(action);
     startTransition(async () => {
       try {
         const job = await runSystemAction(action);
-        setResult(job);
+        setLogData({
+          title: `Hasil: ${job.label || job.action}`,
+          subtitle: `${job.status} · ${job.finished_at || ''}`,
+          detail: job.ok === false ? 'Perintah gagal dijalankan agent host.' : 'Perintah selesai.',
+          log: job.output || ''
+        });
         if (job.status === 'done' && job.ok) {
           toast.success(job.output || 'Perintah selesai.');
         } else if (job.status === 'pending' || job.status === 'running') {
@@ -189,18 +206,75 @@ export function NeonSystem({ initial }: { initial: HostSnapshot | null }) {
           </Button>
         </div>
 
-        {result ? (
-          <div className='rounded-md border p-3 text-xs sm:col-span-2 xl:col-span-3'>
-            <p className='font-medium'>
-              {result.label || result.action}: {result.status}
-              {result.ok === false ? ' (gagal)' : ''}
-            </p>
-            <pre className='bg-muted mt-2 max-h-40 overflow-auto rounded p-2 whitespace-pre-wrap'>
-              {result.output || 'Tidak ada output.'}
-            </pre>
+        <section className='ns-card ns-server'>
+          <header className='ns-head'>
+            <h3>Sistem Operasi</h3>
+            <span className='ns-dot' />
+          </header>
+          <p className='ns-value'>{hostInfo?.name || '—'}</p>
+          <p className='ns-sub'>
+            Kernel {hostInfo?.kernel || '—'} · {hostInfo?.arch || '—'} · {hostInfo?.cores ?? '—'} core
+          </p>
+          <p className='ns-sub'>
+            RAM {gb(hostInfo?.memory_bytes)} · versi {hostInfo?.version || '—'}
+            {hostInfo?.available === false ? ` · ${hostInfo?.error || 'agent belum melapor'}` : ''}
+          </p>
+        </section>
+
+        <section className='ns-card ns-caddy'>
+          <header className='ns-head'>
+            <h3>Jaringan</h3>
+            <span className='ns-dot' />
+          </header>
+          <p className='ns-value'>
+            ↓ {(((latest?.network as { rx_rate?: number } | undefined)?.rx_rate || 0) * 8 / 1_000_000).toFixed(2)}{' '}
+            <span className='ns-muted'>Mbps</span>
+          </p>
+          <p className='ns-sub'>
+            ↑ {(((latest?.network as { tx_rate?: number } | undefined)?.tx_rate || 0) * 8 / 1_000_000).toFixed(2)} Mbps
+          </p>
+          <p className='ns-sub'>
+            {speed?.ok
+              ? `Speedtest: ↓ ${speed.down_mbps} Mbps · ↑ ${speed.up_mbps} Mbps · ${speed.latency_ms ?? '-'} ms`
+              : speed?.error || 'Belum ada hasil speedtest'}
+          </p>
+          <div className='mt-2 flex flex-wrap gap-2'>
+            <Button
+              size='sm'
+              variant='outline'
+              disabled={busy === 'speedtest'}
+              onClick={() => {
+                setBusy('speedtest');
+                startTransition(async () => {
+                  const result = await runSpeedtest();
+                  setSpeed(result);
+                  setBusy('');
+                  if (result.ok) toast.success(`Speedtest: ↓ ${result.down_mbps} Mbps · ↑ ${result.up_mbps} Mbps`);
+                  else toast.error(result.error || 'Speedtest gagal');
+                });
+              }}
+            >
+              {busy === 'speedtest' ? 'Mengukur…' : 'Speedtest'}
+            </Button>
+            <Button
+              size='sm'
+              variant='ghost'
+              onClick={() => {
+                setLogData({
+                  title: 'Detail host',
+                  subtitle: 'Info OS + metrik jaringan terakhir',
+                  detail: JSON.stringify({ hostInfo, network: latest?.network }, null, 2)
+                });
+                setLogOpen(true);
+              }}
+            >
+              Lihat log
+            </Button>
           </div>
-        ) : null}
+        </section>
       </div>
+
+      <LogDialog open={logOpen} data={logData} onClose={() => setLogOpen(false)} />
     </div>
   );
 }

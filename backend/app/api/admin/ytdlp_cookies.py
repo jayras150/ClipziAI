@@ -413,17 +413,80 @@ async def store_base64_for_env(cookie_id: UUID, db: AsyncSession = Depends(get_d
     }
 
 
+def _probe_log(label: str, status: str, ok: bool, error: Optional[str], summary: dict) -> str:
+    """Log ringkas yang bisa di-copy dari dialog admin."""
+    auth = ", ".join(summary.get("auth_cookies") or []) or "-"
+    return "\n".join(
+        [
+            f"Cookie       : {label}",
+            f"Status       : {status}",
+            f"Hasil uji    : {'OK (format video ditemukan)' if ok else 'GAGAL'}",
+            f"Sesi login   : {'terdeteksi' if summary.get('logged_in') else 'tidak lengkap'}",
+            f"Auth cookies : {auth}",
+            f"Domain       : {', '.join(summary.get('domains') or []) or '-'}",
+            f"Baris youtube: {summary.get('youtube_lines', 0)}",
+            f"Expiry cepat : {summary.get('earliest_expiry') or '-'}",
+            f"Error        : {error or '-'}",
+        ]
+    )
+
+
 @router.post("/probe-all")
 async def probe_all(db: AsyncSession = Depends(get_db_session)):
     """Uji semua cookies aktif, rotasi otomatis bila ada yang expired."""
-    return {"results": await cookie_store.probe_all(db)}
+    results = await cookie_store.probe_all(db)
+    # Lengkapi ringkasan per cookie (dipakai UI + log yang bisa di-copy).
+    for item in results:
+        try:
+            row = await _get_or_404(db, UUID(str(item["id"])))
+            item["summary"] = summarize_cookies(decrypt_field(row.encrypted_cookies))
+        except Exception:  # noqa: BLE001 - ringkasan opsional
+            item["summary"] = {}
+    for item in results:
+        summary = item.get("summary") or {}
+        item["log_text"] = _probe_log(
+            str(item.get("label") or "-"),
+            str(item.get("status") or "-"),
+            bool(item.get("ok")),
+            item.get("error"),
+            summary,
+        )
+    ok_count = sum(1 for item in results if item.get("ok"))
+    summary_text = "\n".join(
+        [
+            f"Probe {len(results)} cookies aktif: {ok_count} OK, {len(results) - ok_count} gagal.",
+            *[
+                f"- {item.get('label')}: {'OK' if item.get('ok') else 'GAGAL'} {str(item.get('error') or '')[:160]}"
+                for item in results
+            ],
+        ]
+    )
+    return {
+        "ok": ok_count > 0,
+        "checked": len(results),
+        "ok_count": ok_count,
+        "results": results,
+        "log_text": summary_text,
+    }
 
 
 @router.post("/{cookie_id}/probe")
 async def probe_one(cookie_id: UUID, db: AsyncSession = Depends(get_db_session)):
     cookie = await _get_or_404(db, cookie_id)
     ok, error = await cookie_store.probe(db, cookie)
-    return {"ok": ok, "status": cookie.status, "error": error}
+    await db.refresh(cookie)
+    try:
+        plain = decrypt_field(cookie.encrypted_cookies)
+    except Exception:  # noqa: BLE001 - log tetap tampil walau dekripsi gagal
+        plain = ""
+    summary = summarize_cookies(plain) if plain else {}
+    return {
+        "ok": ok,
+        "status": cookie.status,
+        "error": error,
+        "summary": summary,
+        "log_text": _probe_log(cookie.label, cookie.status, ok, error, summary),
+    }
 
 
 @router.post("/{cookie_id}/reactivate", response_model=CookieItem)

@@ -1,6 +1,7 @@
 import PageContainer from '@/components/layout/page-container';
 import { adminFetch } from '@/lib/clipzi';
 import SmtpForm, { type SmtpData } from '@/features/settings/components/smtp-form';
+import EmailTemplateEditor from '@/features/settings/components/email-template-editor';
 
 export const metadata = { title: 'Admin: SMTP' };
 export const dynamic = 'force-dynamic';
@@ -22,7 +23,10 @@ export default async function SmtpSettingsPage() {
       {error || !data ? (
         <p className='text-destructive text-sm'>{error || 'SMTP settings unavailable.'}</p>
       ) : (
-        <SmtpForm data={data} />
+        <div className='space-y-6'>
+          <SmtpForm data={data} />
+          <EmailTemplateEditor />
+        </div>
       )}
     </PageContainer>
   );

@@ -20,6 +20,57 @@ logger = logging.getLogger(__name__)
 
 KEY = "smtp_config"
 KINDS = ("welcome", "verify", "otp", "reset", "notify", "report")
+
+# Template default per jenis email. Admin bisa mengubah subject + HTML di
+# Settings > SMTP > Email Template; placeholder ditulis {{nama_variabel}}.
+DEFAULT_TEMPLATES: Dict[str, Dict[str, str]] = {
+    "welcome": {
+        "subject": "Welcome to {{app_name}}",
+        "html": (
+            "<p>Hi {{name}}, your {{app_name}} account is ready. "
+            "Turn long videos into viral clips in minutes.</p>"
+            '<p><a href="{{verify_url}}" style="background:#f4c76b;color:#1b1405;'
+            'padding:10px 16px;border-radius:10px;text-decoration:none;'
+            'font-weight:700">Verify email</a></p>'
+        ),
+    },
+    "verify": {
+        "subject": "Verify your {{app_name}} email",
+        "html": (
+            "<p>Hi {{name}}, confirm your email to activate all features.</p>"
+            '<p><a href="{{verify_url}}">Verify email</a></p>'
+        ),
+    },
+    "otp": {
+        "subject": "Your {{app_name}} verification code",
+        "html": (
+            "<p>Hi {{name}}, your one-time code is:</p>"
+            '<p style="font-size:28px;font-weight:800;letter-spacing:6px;color:#f4c76b">'
+            "{{code}}</p><p>This code expires in {{minutes}} minutes.</p>"
+        ),
+    },
+    "reset": {
+        "subject": "Reset your {{app_name}} password",
+        "html": (
+            "<p>Hi {{name}}, reset your password using the link below "
+            "(valid 30 minutes).</p>"
+            '<p><a href="{{reset_url}}">Reset password</a></p>'
+            "<p>If you did not request this, ignore this email.</p>"
+        ),
+    },
+    "notify": {"subject": "{{subject}}", "html": "{{html}}"},
+    "report": {"subject": "{{subject}}", "html": "{{html}}"},
+}
+
+TEMPLATE_VARIABLES: Dict[str, List[str]] = {
+    "welcome": ["name", "app_name", "verify_url"],
+    "verify": ["name", "app_name", "verify_url"],
+    "otp": ["name", "app_name", "code", "minutes"],
+    "reset": ["name", "app_name", "reset_url"],
+    "notify": ["name", "subject", "html"],
+    "report": ["subject", "html", "users", "tasks", "clips"],
+}
+
 DEFAULT_CONFIG: Dict[str, Any] = {
     "enabled": False,
     "host": "",
@@ -32,6 +83,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "use_ssl": False,
     "reply_to": "",
     "types": {kind: True for kind in KINDS},
+    "templates": {},
 }
 
 
@@ -42,6 +94,18 @@ async def get_config(db: AsyncSession) -> Dict[str, Any]:
         config.update({k: v for k, v in raw.items() if k in DEFAULT_CONFIG})
         if isinstance(raw.get("types"), dict):
             config["types"] = {**DEFAULT_CONFIG["types"], **raw["types"]}
+    stored = config.get("templates") if isinstance(config.get("templates"), dict) else {}
+    merged: Dict[str, Dict[str, str]] = {}
+    for kind in KINDS:
+        base = dict(DEFAULT_TEMPLATES.get(kind) or {})
+        override = stored.get(kind) if isinstance(stored, dict) else None
+        if isinstance(override, dict):
+            if str(override.get("subject") or "").strip():
+                base["subject"] = str(override["subject"])
+            if str(override.get("html") or "").strip():
+                base["html"] = str(override["html"])
+        merged[kind] = base
+    config["templates"] = merged
     return config
 
 
@@ -72,6 +136,18 @@ async def save_config(db: AsyncSession, payload: Dict[str, Any]) -> Dict[str, An
         updated["password_enc"] = encrypt_field(password)
     if isinstance(payload.get("types"), dict):
         updated["types"] = {**current["types"], **{k: bool(v) for k, v in payload["types"].items() if k in KINDS}}
+    if isinstance(payload.get("templates"), dict):
+        stored = dict(updated.get("templates") or {})
+        for kind, tpl in payload["templates"].items():
+            if kind not in KINDS or not isinstance(tpl, dict):
+                continue
+            entry = dict(stored.get(kind) or {})
+            if "subject" in tpl:
+                entry["subject"] = str(tpl.get("subject") or "")[:200]
+            if "html" in tpl:
+                entry["html"] = str(tpl.get("html") or "")[:200_000]
+            stored[kind] = entry
+        updated["templates"] = stored
     await ps.set_setting(db, KEY, updated)
     await db.commit()
     return await get_config(db)
@@ -91,7 +167,30 @@ def _wrap(title: str, body: str, footer: str = "") -> str:
 </div></body></html>"""
 
 
-def render(kind: str, ctx: Dict[str, Any]) -> tuple[str, str]:
+def _apply(template: str, ctx: Dict[str, Any]) -> str:
+    """Ganti placeholder {{var}} dengan nilai ctx (aman, tanpa eval)."""
+    import re
+
+    values = {str(k): "" if v is None else str(v) for k, v in (ctx or {}).items()}
+    values.setdefault("app_name", "Clipzy AI")
+    values.setdefault("name", "there")
+    return re.sub(
+        r"{{\s*([a-zA-Z0-9_]+)\s*}}",
+        lambda m: values.get(m.group(1), m.group(0)),
+        template or "",
+    )
+
+
+def render(
+    kind: str,
+    ctx: Dict[str, Any],
+    templates: Optional[Dict[str, Dict[str, str]]] = None,
+) -> tuple[str, str]:
+    custom = (templates or {}).get(kind) if isinstance(templates, dict) else None
+    if isinstance(custom, dict) and str(custom.get("html") or "").strip():
+        subject = _apply(str(custom.get("subject") or ""), ctx) or "Clipzy AI"
+        body = _apply(str(custom.get("html") or ""), ctx)
+        return subject, _wrap(subject, body, str(ctx.get("footer") or ""))
     name = str(ctx.get("name") or "there")
     if kind == "welcome":
         subject = "Welcome to Clipzy AI"
@@ -177,7 +276,8 @@ async def send(
     recipients = [email.strip() for email in to if email and "@" in email]
     if not recipients:
         return {"sent": 0, "skipped": "no_recipients"}
-    subject, html = render(kind, ctx)
+    ctx = {"app_name": str(config.get("from_name") or "Clipzy AI"), **ctx}
+    subject, html = render(kind, ctx, config.get("templates"))
     try:
         sent = await asyncio.to_thread(_send_sync, config, recipients, subject, html)
     except Exception as exc:  # noqa: BLE001
@@ -186,8 +286,40 @@ async def send(
     return {"sent": sent, "subject": subject}
 
 
-async def send_test(db: AsyncSession, to: str) -> Dict[str, Any]:
-    return await send(db, [to], "notify", {"subject": "Clipzy AI SMTP test", "html": "<p>SMTP configuration works.</p>"}, force=True)
+SAMPLE_CTX: Dict[str, Dict[str, Any]] = {
+    "welcome": {"name": "Ada", "verify_url": "https://example.com/verify?token=sample"},
+    "verify": {"name": "Ada", "verify_url": "https://example.com/verify?token=sample"},
+    "otp": {"name": "Ada", "code": "123456", "minutes": 10},
+    "reset": {"name": "Ada", "reset_url": "https://example.com/reset?token=sample"},
+    "notify": {"subject": "Clipzy AI SMTP test", "html": "<p>SMTP configuration works.</p>"},
+    "report": {"subject": "Clipzy AI report", "html": "<p>Sample report.</p>"},
+}
 
 
-__all__ = ["KINDS", "get_config", "public_config", "render", "save_config", "send", "send_test"]
+async def send_test(db: AsyncSession, to: str, kind: str = "notify") -> Dict[str, Any]:
+    """Kirim email uji; `kind` memilih template yang sedang diuji."""
+    target = kind if kind in KINDS else "notify"
+    ctx = dict(SAMPLE_CTX.get(target) or SAMPLE_CTX["notify"])
+    return await send(db, [to], target, ctx, force=True)
+
+
+def preview(kind: str, ctx: Optional[Dict[str, Any]] = None, templates: Optional[Dict[str, Dict[str, str]]] = None) -> Dict[str, str]:
+    """Render contoh email untuk pratinjau admin (tanpa mengirim)."""
+    target = kind if kind in KINDS else "notify"
+    data = {**SAMPLE_CTX.get(target, {}), **(ctx or {})}
+    subject, html = render(target, data, templates)
+    return {"kind": target, "subject": subject, "html": html}
+
+
+__all__ = [
+    "DEFAULT_TEMPLATES",
+    "KINDS",
+    "TEMPLATE_VARIABLES",
+    "get_config",
+    "preview",
+    "public_config",
+    "render",
+    "save_config",
+    "send",
+    "send_test",
+]
