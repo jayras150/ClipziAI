@@ -235,28 +235,38 @@ async def create_cookie(
 
 
 @router.post("/validate")
-async def validate_input(payload: CookieCreate):
+async def validate_input(payload: dict):
+    """Cek isi cookies sebelum disimpan (tanpa menyimpan apa pun).
+
+    `label` tidak wajib di sini — endpoint ini murni untuk pratinjau/validasi
+    sehingga form admin bisa memanggilnya sebelum user memberi nama akun.
     """
-    Cek isi cookies sebelum disimpan: deteksi format, jumlah cookie, domain,
-    dan kedaluwarsa tercepat. Tidak menyimpan apa pun.
-    """
-    raw = (payload.cookies or "").strip()
+    raw = str(payload.get("cookies") or "").strip()
     source = "netscape"
-    if not raw and payload.cookies_base64:
+    base64_text = str(payload.get("cookies_base64") or "").strip()
+    if not raw and base64_text:
         try:
-            raw = decode_cookies_base64(payload.cookies_base64)
+            raw = decode_cookies_base64(base64_text)
         except ValueError as exc:
             return {"valid": False, "error": str(exc)}
         source = "base64"
     if not raw:
         return {"valid": False, "error": "Isi cookies kosong."}
 
+    from app.services.cookie_store import normalize_cookie_text
+
+    normalized, dropped = normalize_cookie_text(raw)
     try:
-        cookie_store.validate_cookies_text(raw)
+        cookie_store.validate_cookies_text(normalized or raw)
     except ValueError as exc:
         return {"valid": False, "error": str(exc), "source": source}
 
-    return {"valid": True, "source": source, "summary": summarize_cookies(raw)}
+    return {
+        "valid": True,
+        "source": source,
+        "dropped_lines": dropped,
+        "summary": summarize_cookies(raw),
+    }
 
 
 @router.post("/import-base64", response_model=CookieItem, status_code=201)
