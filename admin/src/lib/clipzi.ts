@@ -139,6 +139,21 @@ export type AiConfig = {
   /** Alasan AI belum siap dipakai (null = siap). */
   status_hint?: string | null;
   ready?: boolean;
+  /** Multi-endpoint AI (endpoint tambahan + rute per fitur). */
+  endpoints?: Array<{
+    id: string;
+    label?: string;
+    provider?: string;
+    base_url?: string;
+    model_metadata?: string;
+    model_rerank?: string;
+    model_regenerate?: string;
+    weight?: number;
+    enabled?: boolean;
+    api_key_set?: boolean;
+    api_key_masked?: string;
+  }>;
+  active_endpoints?: Record<string, string>;
 };
 
 export type BrandingConfig = {

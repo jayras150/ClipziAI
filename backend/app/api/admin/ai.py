@@ -9,6 +9,7 @@ from app.api.admin.deps import get_current_admin
 from app.api.deps import get_db_session
 from app.models.audit_log import ActorType, AuditLog
 from app.models.user import User
+from app.services import ai_prompts
 from app.services.ai_client import PROVIDER_DEFAULTS, provider_metadata
 from app.services.ai_config import (
     ai_is_configured,
@@ -25,6 +26,9 @@ router = APIRouter()
 
 
 class AIConfigIn(BaseModel):
+    # Multi-endpoint: daftar endpoint (api_key plain hanya saat menyimpan) + rute fitur.
+    endpoints: Optional[List[Dict[str, Any]]] = None
+    endpoint_routes: Optional[Dict[str, str]] = None
     # None = "jangan ubah": mengirim API key baru otomatis mengaktifkan AI.
     enabled: Optional[bool] = None
     provider: str = "openrouter"
@@ -279,3 +283,183 @@ async def test_ai(
         "finish_reason": finish,
         "usage": usage_data,
     }
+
+
+
+
+class PromptIn(BaseModel):
+    key: str
+    text: str = ""
+    ctx: dict = {}
+
+
+@router.get("/ai/prompts")
+async def read_prompts(
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Daftar prompt efektif + default + meta + riwayat perubahan."""
+    data = await ai_prompts.get_prompts(db)
+    data["history"] = await ai_prompts.get_history(db)
+    return data
+
+
+@router.put("/ai/prompts")
+async def save_prompt(
+    payload: PromptIn,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    try:
+        data = await ai_prompts.save_prompt(
+            db, payload.key, payload.text, updated_by=current_admin.email
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.add(
+        AuditLog(
+            actor_type=ActorType.ADMIN,
+            actor_id=current_admin.id,
+            actor_email=current_admin.email,
+            action="ai_prompt_updated",
+            resource_type="platform_setting",
+            resource_id=f"ai_prompt:{payload.key}",
+            new_values={"chars": len(payload.text or "")},
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+    )
+    await db.commit()
+    data["history"] = await ai_prompts.get_history(db)
+    return data
+
+
+@router.post("/ai/prompts/{key}/reset")
+async def reset_prompt(
+    key: str,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    try:
+        data = await ai_prompts.reset_prompt(db, key, updated_by=current_admin.email)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.add(
+        AuditLog(
+            actor_type=ActorType.ADMIN,
+            actor_id=current_admin.id,
+            actor_email=current_admin.email,
+            action="ai_prompt_reset",
+            resource_type="platform_setting",
+            resource_id=f"ai_prompt:{key}",
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+    )
+    await db.commit()
+    data["history"] = await ai_prompts.get_history(db)
+    return data
+
+
+@router.post("/ai/prompts/{key}/preview")
+async def preview_prompt(
+    key: str,
+    payload: PromptIn,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Render prompt dengan sample context (tanpa memanggil model)."""
+    data = await ai_prompts.get_prompts(db)
+    try:
+        return ai_prompts.preview(
+            key,
+            payload.text if payload.text is not None else None,
+            payload.ctx or None,
+            data["prompts"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/ai/prompts/{key}/test")
+async def test_prompt(
+    key: str,
+    payload: PromptIn,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Kirim prompt (hasil render) ke model aktif, kembalikan output + log."""
+    import time as _time
+
+    data = await ai_prompts.get_prompts(db)
+    try:
+        rendered = ai_prompts.preview(
+            key,
+            payload.text if payload.text is not None else None,
+            payload.ctx or None,
+            data["prompts"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    cfg = await get_ai_config(db)
+    if not ai_is_configured(cfg):
+        raise HTTPException(status_code=400, detail="AI belum aktif / API key kosong.")
+
+    text = str(rendered.get("rendered") or "").strip()
+    if not text:
+        raise HTTPException(
+            status_code=400,
+            detail="Prompt kosong. Isi dulu atau pilih default.",
+        )
+    if key.endswith("_system"):
+        messages = [
+            {"role": "system", "content": text},
+            {"role": "user", "content": "Balas JSON singkat sesuai instruksi di sistem."},
+        ]
+    else:
+        messages = [
+            {"role": "system", "content": ai_prompts.get_sync("metadata_system")},
+            {"role": "user", "content": text},
+        ]
+
+    started = _time.time()
+    try:
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI(
+            api_key=decrypt_api_key(cfg.get("api_key_enc")) or "sk-no-key",
+            base_url=effective_base_url(cfg),
+            timeout=float(cfg.get("timeout_seconds") or 90),
+            max_retries=0,
+        )
+        response = await client.chat.completions.create(
+            model=str(cfg.get("model_metadata") or ""),
+            messages=messages,
+            temperature=float(cfg.get("temperature") or 0.7),
+            max_tokens=min(800, int(cfg.get("max_tokens") or 800)),
+        )
+        output = (response.choices[0].message.content or "").strip()
+        error = ""
+    except Exception as exc:  # noqa: BLE001
+        output = ""
+        error = str(exc)[:400]
+
+    elapsed = round(_time.time() - started, 1)
+    log_text = "\n".join(
+        [
+            f"Prompt     : {key}",
+            f"Model      : {cfg.get('provider')} / {cfg.get('model_metadata')}",
+            f"Durasi     : {elapsed}s",
+            f"Status     : {'OK' if output else 'GAGAL'}",
+            "",
+            "--- prompt terkirim ---",
+            text[:4000],
+            "",
+            "--- output ---",
+            output[:4000] or f"(kosong) {error}",
+        ]
+    )
+    if not output:
+        raise HTTPException(status_code=502, detail={"message": error, "log_text": log_text})
+    return {"ok": True, "output": output, "elapsed": elapsed, "log_text": log_text}

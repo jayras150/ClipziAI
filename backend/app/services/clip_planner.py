@@ -26,6 +26,7 @@ import time
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from app.core.config import get_settings
+from app.services import ai_prompts
 from app.services.speech_boundaries import (
     FILLERS,
     PAYOFF_WORDS,
@@ -404,7 +405,16 @@ def rerank_with_llm(
             f"[{index}] duration={candidate['duration']:.0f}s "
             f"heuristic={candidate['score']:.0f}\n    text: {snippet or '(empty transcript)'}"
         )
-    user_prompt = (
+    # Prompt registry: template user prompt bisa diubah admin.
+    override = ai_prompts.get_sync(
+        "rerank_user",
+        {
+            "target_min": f"{target_min:.0f}",
+            "target_max": f"{target_max:.0f}",
+            "candidates": "\n".join(lines),
+        },
+    )
+    user_prompt = override or (
         f"Target clip length: {target_min:.0f}-{target_max:.0f} seconds.\n"
         "Grade every candidate below. Judge the hook, whether the clip stands alone "
         "and ends on a payoff, and how specific/viral the idea is.\n\n"
@@ -414,7 +424,7 @@ def rerank_with_llm(
     try:
         payload = _llm_json(
             llm,
-            RERANK_SYSTEM_PROMPT,
+            ai_prompts.get_sync("rerank_system") or RERANK_SYSTEM_PROMPT,
             user_prompt,
             max_tokens=min(1600, 220 + 140 * len(shortlist)),
             deadline=deadline,

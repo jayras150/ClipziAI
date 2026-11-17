@@ -87,6 +87,12 @@ async def lifespan(app: FastAPI):
         await load_and_apply_ai_config()
     except Exception as exc:
         logger.warning("Gagal memuat setelan AI dari database: %s", exc)
+    try:
+        from app.services import ai_prompts as _ai_prompts
+
+        await _ai_prompts.load_prompts()
+    except Exception as exc:  # noqa: BLE001 - jangan gagalkan startup
+        logger.warning("Gagal memuat prompt AI dari database: %s", exc)
     # Setelan ekosistem (domain publik/admin, support email, maintenance) juga
     # disimpan di DB supaya ganti domain tidak perlu rebuild/restart.
     try:

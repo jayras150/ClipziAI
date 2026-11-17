@@ -21,10 +21,18 @@ logger = logging.getLogger(__name__)
 class ProviderJSONClient:
     """Klien JSON sinkron untuk provider AI (dipakai di thread executor)."""
 
-    def __init__(self, cfg: Dict[str, Any], model: str) -> None:
-        self.model = model
-        self.base_url = effective_base_url(cfg)
-        self.api_key = decrypt_api_key(cfg.get("api_key_enc")) or "sk-no-key-provided"
+    def __init__(
+        self,
+        cfg: Dict[str, Any],
+        model: str,
+        endpoint: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        endpoint = endpoint or {}
+        self.model = str(endpoint.get("model_rerank") or model)
+        self.base_url = str(endpoint.get("base_url") or effective_base_url(cfg)) or None
+        self.api_key = str(
+            endpoint.get("api_key") or decrypt_api_key(cfg.get("api_key_enc"))
+        ) or "sk-no-key-provided"
         self.temperature = float(cfg.get("temperature") or 0.2)
         self.timeout = float(cfg.get("timeout_seconds") or 90)
         self.max_retries = int(cfg.get("max_retries") or 1)

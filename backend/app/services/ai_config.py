@@ -8,7 +8,7 @@ import hashlib
 import logging
 import os
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import select
@@ -39,6 +39,10 @@ DEFAULT_AI: Dict[str, Any] = {
     "metadata_enabled": True,
     "rerank_budget_seconds": 120,
     "metadata_budget_seconds": 180,
+    # Multi-endpoint: admin bisa mendaftar beberapa endpoint (provider + key +
+    # model) dan memilih mana yang dipakai untuk metadata / rerank / regenerate.
+    "endpoints": [],
+    "endpoint_routes": {"metadata": "", "rerank": "", "regenerate": ""},
 }
 
 _INT_FIELDS = {
@@ -134,7 +138,82 @@ def normalize_ai(value: Optional[dict]) -> Dict[str, Any]:
         merged[field] = text[:120] or default
 
     merged["api_key_enc"] = str(merged.get("api_key_enc") or "")
+    _normalize_endpoints(merged)
     return merged
+
+
+def _normalize_endpoints(cfg: Dict[str, Any]) -> None:
+    """Rapikan daftar endpoint AI (maks 6) + rute per fitur."""
+    raw_items = cfg.get("endpoints")
+    items: List[Dict[str, Any]] = []
+    if isinstance(raw_items, list):
+        for item in raw_items[:6]:
+            if not isinstance(item, dict):
+                continue
+            provider = str(item.get("provider") or "openrouter").strip().lower()
+            if provider not in PROVIDER_DEFAULTS:
+                provider = "custom"
+            base_url = str(item.get("base_url") or "").strip()
+            endpoint_id = str(item.get("id") or "").strip()[:40] or (
+                f"{provider}-{len(items) + 1}"
+            )
+            items.append(
+                {
+                    "id": endpoint_id,
+                    "label": str(item.get("label") or endpoint_id)[:60],
+                    "provider": provider,
+                    "base_url": base_url if base_url.startswith("http") else "",
+                    "api_key_enc": str(item.get("api_key_enc") or ""),
+                    "model_metadata": str(item.get("model_metadata") or "").strip()[:120],
+                    "model_rerank": str(item.get("model_rerank") or "").strip()[:120],
+                    "model_regenerate": str(item.get("model_regenerate") or "").strip()[:120],
+                    "weight": max(1, min(1000, int(item.get("weight") or 100))),
+                    "enabled": bool(item.get("enabled", True)),
+                }
+            )
+    cfg["endpoints"] = items
+    ids = {item["id"] for item in items}
+    routes = cfg.get("endpoint_routes")
+    routes = routes if isinstance(routes, dict) else {}
+    cfg["endpoint_routes"] = {
+        feature: (str(routes.get(feature) or "") if str(routes.get(feature) or "") in ids else "")
+        for feature in ("metadata", "rerank", "regenerate")
+    }
+
+
+def resolve_endpoint(cfg: Dict[str, Any], feature: str) -> Optional[Dict[str, Any]]:
+    """Endpoint pilihan untuk `feature` (metadata/rerank/regenerate).
+
+    Urutan: rute eksplisit -> endpoint aktif dengan bobot tertinggi -> None
+    (pakai konfigurasi global seperti sebelumnya).
+    """
+    items = [i for i in (cfg.get("endpoints") or []) if i.get("enabled")]
+    if not items:
+        return None
+    route_id = str((cfg.get("endpoint_routes") or {}).get(feature) or "")
+    chosen = next((item for item in items if item["id"] == route_id), None)
+    if chosen is None:
+        chosen = max(items, key=lambda item: int(item.get("weight") or 0))
+    defaults = PROVIDER_DEFAULTS.get(chosen["provider"], PROVIDER_DEFAULTS["custom"])
+    key = decrypt_api_key(chosen.get("api_key_enc"))
+    base_url = chosen.get("base_url") or defaults.get("base_url") or ""
+    return {
+        "id": chosen["id"],
+        "label": chosen.get("label") or chosen["id"],
+        "provider": chosen["provider"],
+        "base_url": base_url,
+        "api_key": key,
+        "has_key": bool(key),
+        "model_metadata": chosen.get("model_metadata")
+        or cfg.get("model_metadata")
+        or defaults.get("model"),
+        "model_rerank": chosen.get("model_rerank")
+        or cfg.get("model_rerank")
+        or defaults.get("model"),
+        "model_regenerate": chosen.get("model_regenerate")
+        or cfg.get("model_regenerate")
+        or defaults.get("model"),
+    }
 
 
 def effective_base_url(cfg: Dict[str, Any]) -> Optional[str]:
@@ -219,6 +298,21 @@ def public_ai_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     payload["api_key_masked"] = mask_api_key(key)
     payload["effective_base_url"] = effective_base_url(cfg)
     payload["providers"] = sorted(PROVIDER_DEFAULTS.keys())
+    endpoints = []
+    for item in cfg.get("endpoints") or []:
+        endpoint_key = decrypt_api_key(item.get("api_key_enc"))
+        endpoints.append(
+            {
+                **{k: v for k, v in item.items() if k != "api_key_enc"},
+                "api_key_set": bool(endpoint_key),
+                "api_key_masked": mask_api_key(endpoint_key),
+            }
+        )
+    payload["endpoints"] = endpoints
+    payload["active_endpoints"] = {
+        feature: (resolve_endpoint(cfg, feature) or {}).get("id", "")
+        for feature in ("metadata", "rerank", "regenerate")
+    }
     # Alasan siap/tidaknya AI (None = siap). Ditampilkan sebagai banner di UI.
     payload["status_hint"] = ai_status_hint(cfg)
     payload["ready"] = ai_is_configured(cfg)
@@ -267,6 +361,27 @@ async def set_ai_config(db: AsyncSession, payload: dict) -> Dict[str, Any]:
             merged[field] = payload[field]
     if payload.get("clear_api_key"):
         merged["api_key_enc"] = ""
+    if isinstance(payload.get("endpoints"), list):
+        current_map = {item["id"]: item for item in current.get("endpoints") or []}
+        stored_endpoints: List[Dict[str, Any]] = []
+        for index, item in enumerate(payload["endpoints"][:6], 1):
+            if not isinstance(item, dict):
+                continue
+            endpoint_id = str(item.get("id") or "").strip()[:40] or f"ep-{index}"
+            previous = current_map.get(endpoint_id) or {}
+            endpoint_key = str(item.get("api_key") or "").strip()
+            if endpoint_key:
+                validate_api_key(endpoint_key, str(item.get("provider") or ""))
+            encrypted = (
+                encrypt_api_key(endpoint_key)
+                if endpoint_key
+                else str(previous.get("api_key_enc") or item.get("api_key_enc") or "")
+            )
+            stored_endpoints.append(
+                {**{k: v for k, v in item.items() if k != "api_key"}, "id": endpoint_id, "api_key_enc": encrypted}
+            )
+        merged["endpoints"] = stored_endpoints
+
     new_key = str(payload.get("api_key") or "").strip()
     if new_key:
         validate_api_key(new_key, str(merged.get("provider") or ""))

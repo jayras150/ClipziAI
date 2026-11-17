@@ -23,6 +23,7 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
+from app.services import ai_prompts
 from app.services.ai_client import get_ai_client, get_ai_model, is_ai_configured
 
 logger = logging.getLogger(__name__)
@@ -246,6 +247,7 @@ class MetadataGenerator:
         *,
         client: Optional[Any] = None,
         model: Optional[str] = None,
+        endpoint: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Generator metadata.
 
@@ -257,6 +259,16 @@ class MetadataGenerator:
             self.client = client
             self.model = model or "local-llm"
             self.available = True
+        elif endpoint and endpoint.get("base_url"):
+            # Endpoint khusus fitur metadata (multi-endpoint AI).
+            from app.services.ai_client import make_ai_client
+
+            self.client = make_ai_client(
+                str(endpoint["base_url"]),
+                str(endpoint.get("api_key") or "sk-no-key-provided"),
+            )
+            self.model = str(endpoint.get("model_metadata") or model or "gpt-4o-mini")
+            self.available = bool(endpoint.get("has_key") or endpoint.get("api_key"))
         else:
             self.available = is_ai_configured()
             self.client = get_ai_client() if self.available else None
@@ -303,7 +315,29 @@ class MetadataGenerator:
 
         keywords = _top_keywords(text, limit=10)
         opening = " ".join(text.split()[:30])
-        user_prompt = (
+        variation_note = (
+            f"\n\nAttempt #{variation + 1}: use a different angle and different "
+            "wording from the previous version, still grounded in the transcript.\n"
+            if variation
+            else ""
+        )
+        # Prompt registry: admin bisa override template user prompt dari dashboard.
+        override = ai_prompts.get_sync(
+            "metadata_user",
+            {
+                "words": len(words),
+                "duration": f"{duration:.1f}",
+                "start_time": start_time,
+                "end_time": end_time,
+                "transcript": text,
+                "source_title": source_title or "(unknown)",
+                "opening": opening,
+                "keywords": ", ".join(keywords) or "(none)",
+                "language": language or "match the transcript language",
+                "variation_note": variation_note,
+            },
+        )
+        user_prompt = override or (
             f"Clip transcript (Whisper, {len(words)} words, duration "
             f"{duration:.1f}s, range {start_time}-{end_time}):\n"
             f'"""\n{text}\n"""\n\n'
@@ -316,11 +350,8 @@ class MetadataGenerator:
             "on-screen hook, a description with 3-5 hashtags, 8-12 specific tags, and "
             "one sentence explaining why the moment can stop the scroll.\n"
         )
-        if variation:
-            user_prompt += (
-                f"\nAttempt #{variation + 1}: use a different angle and different "
-                "wording from the previous version, still grounded in the transcript.\n"
-            )
+        if not override and variation:
+            user_prompt += variation_note
 
         last_error: Optional[Exception] = None
         # 3 percobaan: model kadang membalas kosong (GLM/OpenRouter) dan sebagian
@@ -329,7 +360,7 @@ class MetadataGenerator:
             request_kwargs: Dict[str, Any] = {
                 "model": self.model,
                 "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "system", "content": ai_prompts.get_sync("metadata_system") or SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},
                 ],
                 "temperature": (0.35, 0.6, 0.45)[attempt],

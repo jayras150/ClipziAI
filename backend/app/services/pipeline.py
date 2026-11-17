@@ -623,10 +623,23 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
             )
             from app.services.provider_llm import ProviderJSONClient
 
+            from app.services.ai_config import resolve_endpoint as _resolve_ai_endpoint
+
             ai_cfg = await load_and_apply_ai_config()
+            # Prompt registry: ambil versi terbaru dari DB untuk task ini.
+            try:
+                from app.services import ai_prompts as _prompts
+
+                await _prompts.load_prompts()
+            except Exception:  # noqa: BLE001 - prompt default tetap dipakai
+                pass
             ai_ready = bool(ai_is_configured(ai_cfg))
             rerank_client = (
-                ProviderJSONClient(ai_cfg, ai_cfg["model_rerank"])
+                ProviderJSONClient(
+                    ai_cfg,
+                    ai_cfg["model_rerank"],
+                    endpoint=_resolve_ai_endpoint(ai_cfg, "rerank"),
+                )
                 if ai_ready and ai_cfg.get("rerank_enabled")
                 else None
             )
@@ -809,7 +822,10 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
                 try:
                     from app.services.metadata_generator import MetadataGenerator
 
-                    generator = MetadataGenerator(model=ai_cfg["model_metadata"])
+                    generator = MetadataGenerator(
+                        model=ai_cfg["model_metadata"],
+                        endpoint=_resolve_ai_endpoint(ai_cfg, "metadata"),
+                    )
                     meta_deadline = time.monotonic() + float(
                         ai_cfg["metadata_budget_seconds"]
                     )

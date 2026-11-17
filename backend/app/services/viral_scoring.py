@@ -3,6 +3,7 @@ Viral Scoring Service - AI-powered viral potential scoring
 """
 from typing import Dict, Any, List
 
+from app.services import ai_prompts
 from app.services.ai_client import (
     get_ai_client,
     get_ai_model,
@@ -36,11 +37,23 @@ class ViralScorer:
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a viral video expert. Score this clip's viral potential (0-100) based on transcript, duration, scene changes, and audio energy. Return JSON with score, factors, title, tags, and reasoning.",
+                        "content": ai_prompts.get_sync("viral_system")
+                        or "You are a viral video expert. Score this clip's viral potential "
+                        "(0-100) based on transcript, duration, scene changes, and audio "
+                        "energy. Return JSON with score, factors, title, tags, and reasoning.",
                     },
                     {
                         "role": "user",
-                        "content": f"""
+                        "content": ai_prompts.get_sync(
+                            "viral_user",
+                            {
+                                "transcript": transcript[:500],
+                                "duration": duration,
+                                "scene_changes": scene_changes,
+                                "audio_energy": audio_energy,
+                            },
+                        )
+                        or f"""
                         Transcript: {transcript[:500]}
                         Duration: {duration}s
                         Scene changes: {scene_changes}
