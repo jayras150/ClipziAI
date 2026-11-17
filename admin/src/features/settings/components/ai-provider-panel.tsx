@@ -22,7 +22,8 @@ const CAPS = [
   { id: 'metadata', label: 'Metadata', capability: 'chat', model: 'model_metadata', endpoint: 'endpoint_chat', prompts: ['metadata_system', 'metadata_user'] },
   { id: 'rerank', label: 'Rerank', capability: 'rerank', model: 'model_rerank', endpoint: 'endpoint_rerank', prompts: ['rerank_system', 'rerank_user'] },
   { id: 'regenerate', label: 'Regenerate', capability: 'regenerate', model: 'model_regenerate', endpoint: 'endpoint_chat', prompts: [] },
-  { id: 'transcribe', label: 'Transkripsi', capability: 'transcribe', model: 'model_transcribe', endpoint: 'endpoint_transcribe', prompts: [] }
+  { id: 'transcribe', label: 'Transkripsi', capability: 'transcribe', model: 'model_transcribe', endpoint: 'endpoint_transcribe', prompts: [] },
+  { id: 'viral', label: 'Viral Score', capability: 'chat', model: 'model_metadata', endpoint: 'endpoint_chat', prompts: ['viral_system', 'viral_user'] }
 ] as const;
 
 type CapId = (typeof CAPS)[number]['id'] | 'umum';
