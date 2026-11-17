@@ -98,6 +98,12 @@ export default function CookieImporter() {
         <label className='text-muted-foreground mb-1 block text-xs'>
           {source === 'netscape' ? 'Isi cookies.txt (Netscape)' : 'Base64 cookies.txt'}
         </label>
+        <p className='text-muted-foreground mb-2 text-xs'>
+          Ekspor dari <strong>youtube.com</strong> saat sudah login (ekstensi “Get cookies.txt
+          LOCALLY”). Domain <code>.google.com</code> tidak diperlukan — yt-dlp hanya mengirim
+          cookie untuk host youtube.com. Cookie SID / __Secure-1PSID / LOGIN_INFO di scope{' '}
+          <code>.youtube.com</code> itulah sesi akun Google Anda.
+        </p>
         <textarea
           rows={5}
           value={text}
@@ -144,10 +150,26 @@ export default function CookieImporter() {
       ) : null}
 
       {summary ? (
-        <p className='text-muted-foreground text-xs'>
-          {summary.cookie_count ?? 0} cookie · domain{' '}
-          {(summary.domains || []).join(', ') || '-'} · kedaluwarsa tercepat{' '}
-          {summary.earliest_expiry || '-'} · {summary.bytes ?? 0} byte
+        <p className='text-muted-foreground flex flex-wrap items-center gap-1 text-xs'>
+          {summary.logged_in ? (
+            <span className='rounded bg-emerald-500/15 px-2 py-0.5 font-semibold text-emerald-600'>
+              Sesi login terdeteksi
+            </span>
+          ) : (
+            <span className='rounded bg-red-500/15 px-2 py-0.5 font-semibold text-red-600'>
+              Belum login / sesi tidak lengkap
+            </span>
+          )}
+          <span>
+            {summary.cookie_count ?? 0} cookie · domain{' '}
+            {(summary.domains || []).join(', ') || '-'} · tersimpan{' '}
+            {summary.youtube_lines ?? 0} baris youtube
+            {summary.dropped_lines ? ` (${summary.dropped_lines} non-youtube dibuang)` : ''} ·
+            kedaluwarsa tercepat {summary.earliest_expiry || '-'} · {summary.bytes ?? 0} byte
+            {(summary.auth_cookies || []).length
+              ? ` · auth: ${(summary.auth_cookies || []).join(', ')}`
+              : ''}
+          </span>
         </p>
       ) : null}
 

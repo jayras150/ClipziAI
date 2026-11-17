@@ -81,15 +81,25 @@ def encode_cookies_base64(value: str) -> str:
 
 
 def summarize_cookies(text: str) -> dict:
-    """Ringkasan aman (tanpa membocorkan value) untuk ditampilkan di UI."""
+    """Ringkasan aman (tanpa membocorkan value) untuk ditampilkan di UI.
+
+    `logged_in` dihitung dari cookie sesi akun Google yang ditanam di scope
+    youtube.com (SID/__Secure-1PSID/__Secure-3PSID/LOGIN_INFO). Domain
+    `.google.com` TIDAK wajib — yt-dlp hanya mengirim cookie host youtube.com.
+    """
+    from app.services.cookie_store import AUTH_COOKIES, normalize_cookie_text
+
     lines = [line for line in text.splitlines() if line.strip() and not line.startswith("#")]
     domains = set()
     expires = []
+    names: set[str] = set()
     for line in lines:
         parts = line.split("\t")
         if len(parts) < 7:
             continue
         domains.add(parts[0].lstrip("."))
+        if "youtube.com" in parts[0].lower():
+            names.add(parts[5])
         try:
             stamp = int(parts[4])
             if stamp > 0:
@@ -101,11 +111,18 @@ def summarize_cookies(text: str) -> dict:
         from datetime import datetime, timezone
 
         fastest = datetime.fromtimestamp(min(expires), tz=timezone.utc).isoformat()
+
+    auth = sorted(names & AUTH_COOKIES)
+    normalized, dropped = normalize_cookie_text(text)
     return {
         "cookie_count": len(lines),
         "domains": sorted(domains)[:10],
         "earliest_expiry": fastest,
         "bytes": len(text.encode("utf-8")),
+        "youtube_lines": len([line for line in normalized.splitlines() if line.strip() and not line.startswith("#")]),
+        "dropped_lines": dropped,
+        "auth_cookies": auth,
+        "logged_in": bool(names & {"SID", "__Secure-1PSID", "__Secure-3PSID", "LOGIN_INFO"}),
     }
 
 
@@ -123,7 +140,12 @@ async def _save_global_base64(
 
     from app.core.config import get_settings
     from app.services import platform_settings as ps
+    from app.services.cookie_store import normalize_cookie_text
 
+    # Normalisasi: hanya baris youtube.com (mengurangi ukuran env worker).
+    plain, dropped = normalize_cookie_text(plain)
+    if dropped:
+        plain = plain or ""
     encoded = encode_cookies_base64(plain)
     stored = await ps.get_setting(db, "youtube", {}) or {}
     value = dict(stored) if isinstance(stored, dict) else {}

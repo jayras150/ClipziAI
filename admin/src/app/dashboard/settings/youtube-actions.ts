@@ -81,6 +81,14 @@ export type CookieSummary = {
   domains?: string[];
   earliest_expiry?: string | null;
   bytes?: number;
+  /** Jumlah baris youtube.com yang disimpan setelah normalisasi. */
+  youtube_lines?: number;
+  /** Baris domain lain (mis. .google.com) yang dibuang saat normalisasi. */
+  dropped_lines?: number;
+  /** Nama cookie sesi yang terdeteksi (SID, __Secure-1PSID, LOGIN_INFO, ...). */
+  auth_cookies?: string[];
+  /** true bila sesi login YouTube terdeteksi di file cookies. */
+  logged_in?: boolean;
 };
 
 export type EncodeResult = {

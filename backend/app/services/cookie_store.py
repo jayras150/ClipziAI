@@ -83,13 +83,77 @@ def looks_like_bot_check(error_text: Optional[str]) -> bool:
     return any(marker in lowered for marker in BOT_CHECK_MARKERS)
 
 
-def validate_cookies_text(text: str) -> None:
-    """Pastikan isi benar-benar cookies.txt Netscape + lengkap untuk login.
+YOUTUBE_DOMAIN_HINT = "youtube.com"
+# Cookie sesi akun Google yang DITANAM di scope .youtube.com saat login YouTube.
+# Salah satu saja cukup untuk menandai sesi login (yt-dlp memakai cookie ini).
+AUTH_COOKIES = {
+    "SID",
+    "__Secure-1PSID",
+    "__Secure-3PSID",
+    "SAPISID",
+    "__Secure-1PAPISID",
+    "__Secure-3PAPISID",
+    "LOGIN_INFO",
+    "HSID",
+    "SSID",
+}
+# Cookie sesi utama (salah satu wajib ada). HSID/SSID/APISID/SAPISID hanya
+# pendukung — ekspor dengan cookie pendukung saja tidak cukup untuk login.
+PRIMARY_AUTH_COOKIES = {"SID", "__Secure-1PSID", "__Secure-3PSID", "LOGIN_INFO"}
+# Cookie yang tetap muncul walau browser BELUM login ke YouTube.
+GUEST_COOKIES = {
+    "YSC",
+    "VISITOR_INFO1_LIVE",
+    "VISITOR_PRIVACY_METADATA",
+    "PREF",
+    "GPS",
+    "__Secure-ROLLOUT_TOKEN",
+}
 
-    Banyak ekspor "hanya cookie yang terlihat" menyertakan __Secure-3PSID saja.
-    Cookie seperti itu membuat yt-dlp mengira sudah login (bot-check hilang)
-    tetapi YouTube hanya memberi storyboard (tanpa format video). Validasi ini
-    menolak ekspor tidak lengkap lebih awal dengan pesan yang jelas.
+
+def _cookie_lines(text: str) -> list[tuple[str, str]]:
+    """(domain, name) dari format Netscape; baris komentar/kosong dilewati."""
+    rows: list[tuple[str, str]] = []
+    for line in (text or "").splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) >= 7:
+            rows.append((parts[0].strip().lower(), parts[5].strip()))
+    return rows
+
+
+def normalize_cookie_text(text: str) -> tuple[str, int]:
+    """Simpan hanya baris domain YouTube; kembalikan (teks, jumlah dibuang).
+
+    yt-dlp mengirim cookie berdasarkan host request, jadi entri `.google.com`
+    (kalau ada di ekspor browser) tidak pernah dipakai untuk youtube.com.
+    Membuangnya membuat file lebih kecil — penting karena env worker dibatasi
+    ±4 KB oleh Vast.
+    """
+    kept: list[str] = []
+    dropped = 0
+    for line in (text or "").splitlines():
+        if not line.strip() or line.startswith("#"):
+            kept.append(line)
+            continue
+        parts = line.split("\t")
+        if len(parts) >= 7 and YOUTUBE_DOMAIN_HINT in parts[0].lower():
+            kept.append(line)
+        else:
+            dropped += 1
+    normalized = "\n".join(kept).strip()
+    return (normalized + "\n" if normalized else "", dropped)
+
+
+def validate_cookies_text(text: str) -> None:
+    """Pastikan cookies.txt Netscape DAN benar-benar sesi login YouTube.
+
+    Catatan penting (koreksi): cookie `SID`, `HSID`, `SSID`, `APISID`,
+    `SAPISID`, `__Secure-1/3PSID`, `LOGIN_INFO` adalah cookie akun Google yang
+    Google tanam langsung pada domain `.youtube.com`. Ekspor dari youtube.com
+    yang valid TIDAK wajib memuat baris `.google.com` — yt-dlp hanya mengirim
+    cookie yang cocok dengan host request (youtube.com).
     """
     if not text.strip():
         raise ValueError("Isi cookies kosong.")
@@ -98,47 +162,44 @@ def validate_cookies_text(text: str) -> None:
             "Isi cookies tidak terlihat seperti cookies.txt format Netscape. "
             "Ekspor ulang dengan ekstensi 'Get cookies.txt LOCALLY'."
         )
-    if "youtube.com" not in text:
-        raise ValueError("Cookies tidak berisi domain youtube.com.")
 
-    names: set[str] = set()
-    for line in text.splitlines():
-        if not line.strip() or line.startswith("#"):
-            continue
-        parts = line.split("\t")
-        if len(parts) >= 6 and "youtube" in parts[0].lower():
-            names.add(parts[5])
-
-    # Ekspor yang benar memuat .google.com (SID/HSID/SSID). Kalau hanya
-    # .youtube.com, sesi dianggap tidak lengkap: bot-check hilang tapi YouTube
-    # hanya memberi storyboard (tanpa format video).
-    domains = set()
-    for line in text.splitlines():
-        if not line.strip() or line.startswith("#"):
-            continue
-        parts = line.split("\t")
-        if len(parts) >= 6:
-            domains.add(parts[0].lstrip(".").lower())
-    if not any(domain.endswith("google.com") for domain in domains):
+    rows = _cookie_lines(text)
+    youtube_rows = [row for row in rows if YOUTUBE_DOMAIN_HINT in row[0]]
+    if not youtube_rows:
         raise ValueError(
-            "Cookies hanya memuat domain youtube.com. Ekspor ulang dari halaman youtube.com "
-            "saat benar-benar login dan pastikan domain .google.com (SID/HSID/SSID) ikut "
-            "tersimpan; tanpa itu YouTube hanya memberi storyboard (tanpa format video)."
+            "Cookies tidak berisi baris domain youtube.com. Ekspor dari halaman "
+            "youtube.com (bukan google.com) saat sudah login."
         )
 
-    # Minimal satu cookie auth utama harus ada. Tanpa ini, sesi tidak lengkap.
-    required_any = {"SID", "__Secure-1PSID", "SAPISID", "__Secure-1PAPISID"}
-    if names and not (names & required_any):
+    names = {name for _domain, name in youtube_rows}
+    if not (names & PRIMARY_AUTH_COOKIES):
+        if names and names <= GUEST_COOKIES:
+            raise ValueError(
+                "Browser belum login ke YouTube: cookies hanya berisi "
+                "YSC/VISITOR_*/PREF. Login dulu ke youtube.com, lalu ekspor ulang."
+            )
         raise ValueError(
-            "Cookie YouTube tidak lengkap (hanya cookie __Secure-3PSID*). "
-            "Ekspor ulang cookies youtube.com dari browser yang benar-benar login "
-            "dan pastikan SID/HSID/SSID/APISID/SAPISID ikut tersimpan."
+            "Cookie sesi YouTube tidak lengkap: tidak ada SID / __Secure-1PSID / "
+            "LOGIN_INFO. Ekspor ulang sambil benar-benar login ke youtube.com."
         )
 
 
 async def add_cookie(db: AsyncSession, label: str, cookies_text: str) -> YtdlpCookie:
-    """Simpan cookies baru (terenkripsi). Menimpa label yang sama."""
-    validate_cookies_text(cookies_text)
+    """Simpan cookies baru (terenkripsi). Menimpa label yang sama.
+
+    Teks dinormalisasi dulu: hanya baris domain youtube.com yang disimpan
+    (entri `.google.com` tidak pernah dipakai yt-dlp untuk request YouTube dan
+    hanya memperbesar file/env worker).
+    """
+    normalized, dropped = normalize_cookie_text(cookies_text)
+    validate_cookies_text(normalized)
+    if dropped:
+        logger.info(
+            "Cookies '%s': %s baris domain non-YouTube dibuang saat normalisasi",
+            label,
+            dropped,
+        )
+    cookies_text = normalized
 
     existing = (
         await db.execute(select(YtdlpCookie).where(YtdlpCookie.label == label))
