@@ -5,8 +5,20 @@ import { revalidatePath } from 'next/cache';
 import { adminFetch } from '@/lib/clipzi';
 
 function _error(error: unknown): string {
+  const detail = (error as { detail?: unknown })?.detail;
+  if (typeof detail === 'string' && detail.trim()) {
+    return detail.replace(/^\d{3}\s+/, '').slice(0, 600);
+  }
+  if (detail && typeof detail === 'object') {
+    const message = (detail as { message?: string }).message;
+    if (message) return message;
+  }
   if (error instanceof Error && error.message.trim()) {
-    return error.message.replace(/^\d{3}\s+/, '');
+    const text = error.message.replace(/^\d{3}\s+/, '');
+    if (/internal server error/i.test(text)) {
+      return 'Server gagal memproses permintaan. Cek log API (System > Worker/Log) untuk detailnya.';
+    }
+    return text;
   }
   return 'Permintaan ke server gagal. Coba lagi.';
 }
