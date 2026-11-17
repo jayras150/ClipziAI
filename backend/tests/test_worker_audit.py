@@ -36,13 +36,14 @@ def test_host_command_menolak_aksi_asing():
 
 
 def test_host_command_output_dipotong():
+    # Backup/restore menghasilkan log panjang, jadi batas output 12000 karakter.
     job = host_commands.enqueue("restart_caddy")
-    done = host_commands.finish(job["id"], False, "x" * 10_000)
+    done = host_commands.finish(job["id"], False, "x" * 30_000)
     assert done is not None
-    assert len(done["output"]) <= 4000
+    assert len(done["output"]) <= host_commands.MAX_OUTPUT == 12_000
     assert done["ok"] is False
 
 
 def test_daftar_aksi_tersedia():
     ids = {item["id"] for item in host_commands.actions()}
-    assert {"clear_cache", "restart_caddy", "prune_docker"} <= ids
+    assert {"clear_cache", "restart_caddy", "prune_docker", "backup_now", "restore_backup"} <= ids
