@@ -188,7 +188,11 @@ except Exception:
 PYHF
 }
 
-if [ -n "${CLIPZI_RESTORE_TIMEOUT:-}" ]; then
+if [ -f "/app/whisper_model/model.bin" ]; then
+    log "model baked di image: /app/whisper_model (skip unduh & tunggu model)"
+fi
+
+if [ -n "${CLIPZI_RESTORE_TIMEOUT:-}" ] && [ ! -f "/app/whisper_model/model.bin" ]; then
     RESTORE_PATH="${CLIPZI_RESTORE_MODEL_PATH:-/workspace/whisper_model}"
     FAST_FAIL="${CLIPZI_RESTORE_FAST_FAIL:-150}"
     MODEL_SOURCE="${CLIPZI_MODEL_SOURCE:-gdrive}"

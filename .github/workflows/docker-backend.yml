@@ -12,6 +12,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -41,6 +42,10 @@ jobs:
           target: worker
           push: true
           platforms: linux/amd64
+          # Model Whisper dibekukan di image (turbo ±1.6 GB) -> worker tidak
+          # mengunduh model saat start; build lebih lama, runtime lebih andal.
+          build-args: |
+            WHISPER_MODEL_REPO=deepdml/faster-whisper-large-v3-turbo-ct2
           tags: |
             sujinwo555/clipzi-backend:worker
             sujinwo555/clipzi-backend:1.5.0

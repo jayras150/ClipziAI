@@ -398,6 +398,11 @@ def build_worker_env(task_id: Optional[UUID] = None) -> Dict[str, str]:
         value = getattr(settings, name, None)
         if value:
             env[name] = str(value)
+    if getattr(settings, "VAST_MODEL_BAKED", False):
+        # Model sudah ada di image: jangan kirim URL/restore env apa pun.
+        env["CLIPZI_MODEL_SOURCE"] = "baked"
+        env["GPU_WHISPER_MODEL"] = "/app/whisper_model"
+        return _pack_worker_env(env)
     if getattr(settings, "VAST_RESTORE_ENABLED", False):
         env["CLIPZI_RESTORE_TIMEOUT"] = str(settings.VAST_RESTORE_TIMEOUT)
         env["CLIPZI_RESTORE_MODEL_PATH"] = settings.VAST_RESTORE_MODEL_PATH

@@ -166,6 +166,20 @@ ENTRYPOINT ["/usr/local/bin/clipzi-entrypoint.sh"]
 # tanpa kredit provider. Tanpa lib CUDA dan tanpa model yang dibaking, jadi
 # tambahan image ±250 MB dan model diunduh ke volume cache saat pertama dipakai.
 # Render video berat tetap hanya di worker Vast.ai.
+# -----------------------------------------------------------------------------
+# Stage 2d: model Whisper TURBO (CTranslate2) yang di-bake ke image worker.
+# Model ikut image supaya worker tidak mengunduh apa pun saat start
+# (menghilangkan error 410 / presigned URL expired / cloud copy).
+# -----------------------------------------------------------------------------
+FROM python:3.11-slim AS model-fetcher
+
+ARG WHISPER_MODEL_REPO=deepdml/faster-whisper-large-v3-turbo-ct2
+
+RUN pip install --no-cache-dir "huggingface_hub>=0.24.0" \
+ && python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='${WHISPER_MODEL_REPO}', local_dir='/models/whisper')" \
+ && ls -l /models/whisper/model.bin
+
+
 # =============================================================================
 FROM runtime AS api
 
@@ -176,6 +190,8 @@ COPY --from=builder-api-whisper /opt/venv /opt/venv
 FROM brainicism/bgutil-ytdlp-pot-provider:2.0.2-node AS potprovider
 
 FROM runtime AS worker
+
+ARG WHISPER_MODEL_REPO=deepdml/faster-whisper-large-v3-turbo-ct2
 
 # Vast.ai menaruh launcher-nya sendiri di `/.launch` di dalam instance. Pada
 # sebagian tipe instance launcher itu memanggil `ssh` / `ssh-keygen` / `sshd`
@@ -217,6 +233,9 @@ COPY --from=potprovider /app/package.json /opt/bgutil/server/package.json
 
 COPY --from=builder-worker /opt/venv /opt/venv
 
+# Model Whisper ikut image (baked) -> tidak ada unduh model per instance.
+COPY --from=model-fetcher --chown=clipzi:clipzi /models/whisper /app/whisper_model
+
 # Plugin yt-dlp dari PyPI, versi sama dengan server (2.0.2). --no-deps agar
 # versi yt-dlp di venv tidak diubah.
 USER root
@@ -230,7 +249,9 @@ USER clipzi
 # dan timestamp per kata lebih akurat untuk pemotongan klip.
 # `large-v3` = model openai/whisper-large-v3 (CTranslate2).
 ENV TRANSCRIPTION_PROVIDER="gpu" \
-    GPU_WHISPER_MODEL="large-v3" \
+    GPU_WHISPER_MODEL="/app/whisper_model" \
+    WHISPER_MODEL_REPO="${WHISPER_MODEL_REPO}" \
+    CLIPZI_MODEL_SOURCE="baked" \
     TRANSCRIPTION_ALLOW_REMOTE="false"
 
 ENV LD_LIBRARY_PATH="/opt/venv/lib/python3.11/site-packages/nvidia/cublas/lib:/opt/venv/lib/python3.11/site-packages/nvidia/cudnn/lib:${LD_LIBRARY_PATH}"

@@ -232,6 +232,8 @@ class Settings(BaseSettings):
     # search_offers supaya tidak bergantung sintaks query Vast.
     VAST_GPU_ALLOWLIST: str = ""
     # Restore cache model dari Google Drive (Vast Cloud Sync) sebelum pipeline.
+    # Model Whisper sudah dibekukan di image worker (tidak perlu unduh/restore).
+    VAST_MODEL_BAKED: bool = False
     VAST_RESTORE_ENABLED: bool = False
     VAST_RESTORE_CONNECTION: str = "47129"  # id koneksi gdrive-sujinwo555 (auto-detect saat restore)
     VAST_RESTORE_SRC: str = "/vast-backup/Clipzy/whisper_model"
