@@ -118,6 +118,14 @@ class InstanceSupervisor:
         except Exception as exc:  # observability tidak boleh menghentikan task
             logger.warning("Gagal memperbarui worker_instances: %s", exc)
 
+    async def _task_progress(self) -> Optional[int]:
+        from app.db.session import AsyncSessionLocal
+        from app.models.task import Task
+
+        async with AsyncSessionLocal() as db:
+            task = await db.get(Task, self.task_id)
+            return int(task.progress or 0) if task else None
+
     async def _task_status(self) -> Optional[str]:
         from app.db.session import AsyncSessionLocal
         from app.models.task import Task
@@ -201,13 +209,19 @@ class InstanceSupervisor:
                     if status_now in {"completed", "error", "cancelled"}:
                         return "done", status_now or "terminal"
                     if status_now == "processing":
-                        # Task jelas sedang dikerjakan worker: jangan bunuh.
-                        logger.warning(
-                            "Instance %s 404 tapi task %s masih processing; "
-                            "instance dipertahankan.",
-                            instance_id,
-                            self.task_id,
-                        )
+                        # Jangan bunuh selama worker masih hidup, TAPI batasi:
+                        # dulu loop ini tak berujung (instance hilang, task
+                        # "processing" selamanya, biaya & log menumpuk).
+                        self._missing_processing = getattr(self, "_missing_processing", 0) + 1
+                        if self._missing_processing == 1:
+                            logger.warning(
+                                "Instance %s 404 tapi task %s masih processing; "
+                                "ditahan maksimal 10x poll.",
+                                instance_id,
+                                self.task_id,
+                            )
+                        if self._missing_processing >= 10:
+                            return "failed", "instance hilang (404 x5) saat task processing"
                         missing = 0
                         await asyncio.sleep(settings.VAST_SUPERVISOR_INTERVAL)
                         continue
@@ -215,6 +229,14 @@ class InstanceSupervisor:
                 await asyncio.sleep(settings.VAST_SUPERVISOR_INTERVAL)
                 continue
             missing = 0
+
+            progress_now = await self._task_progress()
+            if progress_now is not None:
+                if progress_now != getattr(self, "_last_progress", None):
+                    self._last_progress = progress_now
+                    self._last_progress_at = time.monotonic()
+                elif time.monotonic() - getattr(self, "_last_progress_at", time.monotonic()) > 900:
+                    return "failed", f"worker tidak mengirim progress >15 menit (progress {progress_now})"
 
             actual = str(info.get("actual_status") or "").lower()
             cur_state = str(info.get("cur_state") or "").lower()
