@@ -518,6 +518,79 @@ class VideoProcessor:
     def __init__(self, work_dir: str = "./work"):
         self.work_dir = Path(work_dir)
         self.work_dir.mkdir(parents=True, exist_ok=True)
+        # Sekali per proses: catat encoder yang benar-benar dipakai supaya
+        # fallback ke CPU kelihatan jelas di log worker (bukan diam-diam).
+        self.nvenc_available()
+
+    # ------------------------------------------------------------------
+    # Encoder: NVENC (GPU) bila tersedia, kalau tidak libx264 (CPU).
+    # ------------------------------------------------------------------
+    _nvenc_ok: Optional[bool] = None
+
+    @classmethod
+    def nvenc_available(cls) -> bool:
+        """True bila ffmpeg bisa memakai h264_nvenc di mesin ini.
+
+        Hasil di-cache per proses: probe hanya sekali supaya tidak menambah
+        latensi di setiap render. Probe gagal (tanpa GPU, driver tidak ada,
+        atau ffmpeg tanpa dukungan NVENC) berarti tetap di CPU.
+        """
+        if cls._nvenc_ok is not None:
+            return cls._nvenc_ok
+
+        if (os.getenv("FFMPEG_ENCODER") or "").strip().lower() in {"cpu", "libx264"}:
+            cls._nvenc_ok = False
+            logger.info("Encoder video: libx264 (dipaksa lewat FFMPEG_ENCODER)")
+            return False
+
+        ok = False
+        try:
+            probe = subprocess.run(
+                [
+                    "ffmpeg", "-hide_banner", "-loglevel", "error",
+                    "-nostdin", "-y",
+                    "-f", "lavfi", "-i", "color=c=black:s=256x256:d=0.1",
+                    "-frames:v", "1",
+                    "-c:v", "h264_nvenc",
+                    "-f", "null", "-",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            ok = probe.returncode == 0
+            if not ok:
+                logger.info(
+                    "Encoder video: libx264 (NVENC tidak bisa dipakai: %s)",
+                    (probe.stderr or "").strip().splitlines()[-1:] or "unknown",
+                )
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.info("Encoder video: libx264 (probe NVENC gagal: %s)", exc)
+
+        if ok:
+            logger.info("Encoder video: h264_nvenc (GPU)")
+        cls._nvenc_ok = ok
+        return ok
+
+    @classmethod
+    def video_encode_args(cls, crf: int = 21, preset: str = "veryfast") -> List[str]:
+        """Argumen `-c:v ...` untuk ffmpeg: NVENC bila ada, selain itu libx264.
+
+        Kualitas disetarakan: `-cq` NVENC kira-kira setara `-crf` x264, dan
+        `-preset p4` setara `veryfast`. `-rc vbr` + `-b:v 0` membuat NVENC
+        benar-benar mode kualitas konstan, bukan bitrate tetap.
+        """
+        if cls.nvenc_available():
+            return [
+                "-c:v", "h264_nvenc",
+                "-preset", "p4",
+                "-tune", "hq",
+                "-rc", "vbr",
+                "-cq", str(crf),
+                "-b:v", "0",
+                "-pix_fmt", "yuv420p",
+            ]
+        return ["-c:v", "libx264", "-preset", preset, "-crf", str(crf)]
     
     async def detect_scenes(self, video_path: str) -> List[Dict[str, Any]]:
         """Detect scene changes using PySceneDetect (API 0.6+/0.7+)."""
@@ -622,7 +695,7 @@ class VideoProcessor:
             "-i", input_path,
             "-t", str(duration),
             "-vf", filter_chain,
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            *self.video_encode_args(21),
             "-r", str(settings.OUTPUT_FPS),
             "-c:a", "aac", "-b:a", "128k",
             "-movflags", "+faststart",
@@ -723,7 +796,7 @@ class VideoProcessor:
             "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
             "-i", input_path,
             "-vf", drawtext,
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            *self.video_encode_args(21),
             "-c:a", "copy",
             "-movflags", "+faststart",
             output_path,
@@ -782,7 +855,7 @@ class VideoProcessor:
             "-i", input_path,
             "-vf", vf,
             "-af", af,
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            *self.video_encode_args(21),
             "-c:a", "aac", "-b:a", "128k",
             "-movflags", "+faststart",
             output_path,
@@ -838,7 +911,7 @@ class VideoProcessor:
             "-t", str(duration),
         ]
         tail = [
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            *self.video_encode_args(21),
             "-r", str(settings.OUTPUT_FPS),
             "-c:a", "aac", "-b:a", "128k",
             "-movflags", "+faststart",
@@ -1581,7 +1654,7 @@ class VideoProcessor:
             "-i", input_path,
             "-t", str(duration),
             "-vf", chain,
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            *self.video_encode_args(21),
             "-r", str(output_fps),
             "-c:a", "aac", "-b:a", "128k",
             "-movflags", "+faststart",
@@ -1647,7 +1720,7 @@ class VideoProcessor:
             "-t", str(duration),
             "-filter_complex", graph,
             "-map", "[v]", "-map", "0:a?",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            *self.video_encode_args(21),
             "-r", str(output_fps),
             "-c:a", "aac", "-b:a", "128k",
             "-movflags", "+faststart",
@@ -1851,7 +1924,7 @@ class VideoProcessor:
         cmd += [
             "-filter_complex", ";".join(parts),
             "-map", f"[{last_v}]", "-map", f"[{last_a}]",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            *self.video_encode_args(21),
             "-c:a", "aac", "-b:a", "160k",
             "-movflags", "+faststart",
             output_path,
@@ -1982,7 +2055,7 @@ class VideoProcessor:
             "-i", image_path,
             "-filter_complex", filter_complex,
             "-map", "[v]", "-map", "0:a?",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            *self.video_encode_args(21),
             "-c:a", "copy",
             "-movflags", "+faststart",
             output_path,
@@ -2067,7 +2140,7 @@ class VideoProcessor:
             "-t", str(duration),
             "-vf", chain,
             "-r", str(output_fps),
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            *self.video_encode_args(21),
             "-c:a", "aac", "-b:a", "128k",
             "-movflags", "+faststart",
             output_path,
@@ -2137,7 +2210,7 @@ class VideoProcessor:
             "-filter_complex", filter_complex,
             "-map", "[v]", "-map", "0:a?",
             "-t", f"{duration:.3f}",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            *self.video_encode_args(21),
             "-c:a", "aac", "-b:a", "160k",
             "-movflags", "+faststart",
             output_path,
@@ -2226,7 +2299,7 @@ class VideoProcessor:
         if audio_filters:
             cmd += ["-af", ",".join(audio_filters)]
         cmd += [
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            *self.video_encode_args(21),
             "-c:a", "aac", "-b:a", "160k",
             "-movflags", "+faststart",
             output_path,
@@ -2305,7 +2378,7 @@ class VideoProcessor:
         cmd += [
             "-filter_complex", filter_complex,
             "-map", "[v]", "-map", "[a]",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            *self.video_encode_args(21),
             "-c:a", "aac", "-b:a", "160k",
             "-movflags", "+faststart",
             output_path,
@@ -2345,7 +2418,7 @@ class VideoProcessor:
             "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
             "-i", input_path,
             "-vf", vf_filter,
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            *self.video_encode_args(21),
             "-c:a", "copy",
             "-movflags", "+faststart",
             output_path,
@@ -2364,7 +2437,7 @@ class VideoProcessor:
         cmd = [
             "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
             "-i", input_path,
-            "-c:v", "libx264", "-preset", "medium", "-crf", str(crf),
+            *self.video_encode_args(crf, "medium"),
             "-c:a", "aac", "-b:a", "128k",
             "-movflags", "+faststart",
             output_path,
@@ -2449,7 +2522,7 @@ class VideoProcessor:
             "-i", input_path,
             "-filter_complex", filter_complex,
             "-map", "[v]", "-map", "[a]",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            *self.video_encode_args(21),
             "-c:a", "aac", "-b:a", "128k",
             "-movflags", "+faststart",
             output_path,
