@@ -1013,8 +1013,17 @@ async def sync_active_template(
             "activated": bool(activate),
         }
 
+    base_name = str(name or settings.VAST_TEMPLATE_NAME or "clipzy-worker").strip()
+    previous_name = str(meta.get("name") or "").strip()
+    previous_hash = str(meta.get("template_hash") or "").strip()
+    if previous_name and previous_hash:
+        resolved_name = previous_name  # update template yang sama, nama tidak berubah
+    else:
+        seq = int(meta.get("seq") or 0) + 1
+        resolved_name = f"{base_name}-{seq}"
+        await save_template_meta(db, seq=seq, name=resolved_name)
     result = await upsert_worker_template(
-        name or settings.VAST_TEMPLATE_NAME or "clipzi-worker",
+        resolved_name,
         {},
         image=image,
         disk_space=disk_space,

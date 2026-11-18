@@ -18,7 +18,7 @@ import urllib.request
 TOKEN = (os.environ.get("CLIPZI_WORKER_TOKEN") or "").strip()
 TASK_ID = (os.environ.get("CLIPZI_TASK_ID") or "").strip()
 CALLBACK = (os.environ.get("CLIPZI_CALLBACK_URL") or "").strip()
-API = CALLBACK.split("/api/internal/")[0] if CALLBACK else ""
+API = (os.environ.get("CLIPZI_API_BASE") or (CALLBACK.split("/api/internal/")[0] if CALLBACK else "")).rstrip("/")
 INSTANCE = (os.environ.get("VAST_CONTAINERLABEL") or os.environ.get("CONTAINER_ID") or "").strip()
 try:
     INSTANCE_ID = int("" .join(ch for ch in INSTANCE if ch.isdigit()) or 0) or None

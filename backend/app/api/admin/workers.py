@@ -248,3 +248,41 @@ async def clear_worker_lines(
 
     removed = await worker_log_lines.clear(db, task_id)
     return {"ok": True, "removed": removed}
+
+
+@router.get("/tasks")
+async def list_worker_tasks(
+    limit: int = 30,
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+) -> Dict[str, Any]:
+    """Daftar task terakhir + status + jumlah baris log worker (untuk tabel UI)."""
+    from sqlalchemy import func as _func, select as _select
+
+    from app.models.task import Task
+    from app.models.worker_log_line import WorkerLogLine
+
+    try:
+        statement = (
+            _select(Task, _func.count(WorkerLogLine.id))
+            .outerjoin(WorkerLogLine, WorkerLogLine.task_id == Task.id)
+            .group_by(Task.id)
+            .order_by(Task.created_at.desc())
+            .limit(max(1, min(100, limit)))
+        )
+        rows = (await db.execute(statement)).all()
+        items = [
+            {
+                "id": str(task.id),
+                "status": task.status.value if task.status else None,
+                "progress": task.progress,
+                "download_status": task.download_status,
+                "error_message": (task.error_message or "")[:200] or None,
+                "created_at": task.created_at.isoformat() if task.created_at else None,
+                "log_count": int(count or 0),
+            }
+            for task, count in rows
+        ]
+        return {"items": items, "error": None}
+    except Exception as exc:  # noqa: BLE001
+        return {"items": [], "error": str(exc)[:300]}

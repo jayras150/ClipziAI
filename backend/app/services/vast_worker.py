@@ -398,6 +398,9 @@ def build_worker_env(task_id: Optional[UUID] = None) -> Dict[str, str]:
         value = getattr(settings, name, None)
         if value:
             env[name] = str(value)
+    callback = str(getattr(settings, "CLIPZI_CALLBACK_URL", "") or "")
+    if callback:
+        env["CLIPZI_API_BASE"] = callback.split("/api/internal/")[0].rstrip("/")
     if getattr(settings, "VAST_MODEL_BAKED", False):
         # Model sudah ada di image: jangan kirim URL/restore env apa pun.
         env["CLIPZI_MODEL_SOURCE"] = "baked"
