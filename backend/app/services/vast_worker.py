@@ -512,6 +512,63 @@ def _post_create_instance(
         raise RuntimeError(f"Respons Vast tidak valid: {(response.text or '')[:200]}") from exc
 
 
+async def _mirror_instance_logs(client: Any, instance_id: int, task_id: UUID) -> None:
+    """Salin log container Vast ke worker_log_lines tiap 10 detik.
+
+    Jaring pengaman: kalau image belum memuat shipper (tag lama/cache node),
+    admin tetap melihat log pipeline. Shipper (bila aktif) menulis lebih detail.
+    """
+    from app.db.session import AsyncSessionLocal
+    from app.services import worker_log_lines
+
+    seen = 0
+    seq = 0
+    for _ in range(180):
+        await asyncio.sleep(10)
+        text = ""
+        for call in (
+            lambda: client.logs(str(instance_id), "150"),
+            lambda: client.logs(str(instance_id)),
+            lambda: client.logs(instance_id, 150),
+        ):
+            try:
+                text = str(await asyncio.to_thread(call) or "")
+                break
+            except Exception:
+                continue
+        lines = [line for line in text.splitlines() if line.strip()]
+        if len(lines) <= seen:
+            continue
+        fresh = lines[seen:]
+        seen = len(lines)
+        payload = []
+        for line in fresh:
+            seq += 1
+            lowered = line.lower()
+            stage = None
+            for token, name in (("download", "download"), ("whisper", "transcribe"),
+                                ("transcrib", "transcribe"), ("ffmpeg", "render"),
+                                ("render", "render"), ("upload", "upload")):
+                if token in lowered:
+                    stage = name
+                    break
+            payload.append(
+                {
+                    "seq": seq,
+                    "level": "ERROR" if "error" in lowered or "traceback" in lowered else "INFO",
+                    "stage": stage,
+                    "message": line,
+                }
+            )
+        try:
+            async with AsyncSessionLocal() as db:
+                await worker_log_lines.append_lines(
+                    db, task_id=str(task_id), instance_id=int(instance_id), lines=payload
+                )
+        except Exception as exc:  # noqa: BLE001 - jangan gagalkan task
+            logger.warning("Gagal menyimpan log instance %s: %s", instance_id, exc)
+
+
 async def _existing_instance_for(client: Any, task_id: UUID) -> Optional[int]:
     """Cegah biaya dobel: satu task hanya boleh punya satu instance aktif."""
     label = f"clipzi-{str(task_id)[:8]}"
@@ -648,6 +705,7 @@ def _make_create_instance(task_id: UUID, client: Any):
             if not instance_id:
                 raise RuntimeError(f"create_instance tidak mengembalikan instance id: {created}")
             instance_id = int(instance_id)
+            asyncio.create_task(_mirror_instance_logs(client, instance_id, task_id))
             return instance_id
 
         raise RuntimeError(
