@@ -1284,14 +1284,19 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
 
                 thumbnail_url: Optional[str] = None
                 # Ambil frame dari momen paling menarik, bukan selalu detik 1.
-                factors_hint = dict((clip.get("viral") or {}).get("factors") or {})
+                # PENTING: di loop ini tidak ada variabel `clip` (loop-nya
+                # `for index, (start, duration) in enumerate(ranges, 1)`).
+                # Dulu `clip.get(...)` di sini memicu
+                # "cannot access local variable 'clip'" dan menggagalkan task.
+                _plan_hint = planned_by_start.get(round(start, 2)) or {}
+                factors_hint = dict((_plan_hint.get("factors") or {}))
                 hook_at = factors_hint.get("hook_at")
                 try:
                     thumb_at = float(hook_at) if hook_at is not None else 0.0
                 except (TypeError, ValueError):
                     thumb_at = 0.0
                 if thumb_at <= 0:
-                    thumb_at = max(0.5, float(clip.get("duration") or 1.0) * 0.45)
+                    thumb_at = max(0.5, float(duration or 1.0) * 0.45)
                 thumb_path = await processor.extract_thumbnail(
                     final_clip,
                     str(work_dir / f"clip_{index:02d}.jpg"),
