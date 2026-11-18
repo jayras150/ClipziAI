@@ -72,6 +72,21 @@ fi
 
 cd /app || exit 1
 
+# --- Log onstart SEBELUM pipeline/download apa pun ---------------------------
+# Admin harus bisa melihat kondisi instance (env, GPU, model, disk) sejak detik
+# pertama, bukan menunggu pipeline berjalan. `onstart_log.py --probe` mengirim
+# ringkasan ke POST /api/internal/worker/logs dan mencetaknya ke stdout.
+# Jumlah baris probe dipakai sebagai offset seq shipper supaya tidak bentrok.
+ONSTART_LOG_LINES=0
+if [ -f /app/deployments/onstart_log.py ]; then
+    ONSTART_LOG_LINES=$("$PYTHON_BIN" -u /app/deployments/onstart_log.py --probe 2>/dev/null | grep -c '^\[onstart\]' || true)
+    [ -n "$ONSTART_LOG_LINES" ] || ONSTART_LOG_LINES=0
+    export CLIPZI_LOG_SEQ_OFFSET="$ONSTART_LOG_LINES"
+    log "log onstart terkirim (${ONSTART_LOG_LINES} baris); pipeline belum dijalankan"
+else
+    log "onstart_log.py tidak ada di image; log awal dilewati"
+fi
+
 # --- Callback "boot" ke API (webhook milik kita; Vast tidak punya webhook) -----
 # Supervisor instance memakai sinyal ini untuk membedakan "container hidup" dari
 # "instance running tapi onstart tidak pernah jalan". Kegagalan diabaikan.
@@ -141,6 +156,13 @@ fi
 # Backend mengirim CLIPZI_MODEL_URL (tautan unduh model.bin) atau CLIPZI_HF_REPO
 # sehingga worker tidak perlu menunggu cloud_copy Vast yang khusus Google Drive.
 log "menjalankan pipeline untuk task ${CLIPZI_TASK_ID} (python: ${PYTHON_BIN})"
+
+# Catat titik mulai pipeline ke dashboard (setelah bgutil & model siap).
+if [ -f /app/deployments/onstart_log.py ]; then
+    "$PYTHON_BIN" -u /app/deployments/onstart_log.py \
+        "pipeline dimulai (bgutil & model siap); download/render berikutnya" \
+        --stage boot --level INFO >/dev/null 2>&1 || true
+fi
 
 exec "$PYTHON_BIN" -u /app/deployments/worker_log_shipper.py -- "$PYTHON_BIN" -u -c '
 import asyncio

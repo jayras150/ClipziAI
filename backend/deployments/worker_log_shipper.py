@@ -26,7 +26,14 @@ except Exception:
     INSTANCE_ID = None
 QUEUE_FILE = "/tmp/log_queue.jsonl"
 SEQ_LOCK = threading.Lock()
-SEQ = {"value": 0}
+# Pre-log onstart (deployments/onstart_log.py) memakai seq 1..N SEBELUM pipeline
+# jalan. Shipper harus melanjutkan dari offset itu, kalau tidak barisnya
+# bertabrakan di unique index (task_id, seq) dan log onstart hilang.
+try:
+    _SEQ_START = int(os.environ.get("CLIPZI_LOG_SEQ_OFFSET") or 0)
+except (TypeError, ValueError):
+    _SEQ_START = 0
+SEQ = {"value": _SEQ_START}
 BUFFER = queue.Queue(maxsize=4000)
 
 
