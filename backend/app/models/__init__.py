@@ -48,6 +48,7 @@ from app.models.webhook_subscription import WebhookSubscription
 from app.models.worker_instance import WorkerInstance
 from app.models.worker_log import WorkerLog
 from app.models.migration_job import MigrationJob
+from app.models.worker_log_line import WorkerLogLine
 from app.models.whisper_model import WhisperModel
 from app.models.youtube_credential import YouTubeCredential
 from app.models.ytdlp_cookie import (
@@ -73,6 +74,7 @@ __all__ = [
     "WorkerInstance",
     "WorkerLog",
     "MigrationJob",
+    "WorkerLogLine",
     "WhisperModel",
     "YtdlpCookie", "COOKIE_STATUS_ACTIVE", "COOKIE_STATUS_EXPIRED", "COOKIE_STATUS_DISABLED",
     "DownloadAttempt", "TaskLog", "DownloadRunner", "RunnerJob", "TaskAsset",

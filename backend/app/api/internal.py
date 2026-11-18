@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import secrets
 import logging
 from datetime import datetime, timezone
 from uuid import UUID
@@ -358,3 +359,32 @@ async def downloader_callback(
         return await runner_manager.handle_callback(db, token, payload)
     except ValueError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+
+class WorkerLogBatch(BaseModel):
+    task_id: Optional[str] = None
+    instance_id: Optional[int] = None
+    lines: List[dict] = []
+
+
+@router.post("/worker/logs")
+async def worker_logs_ingest(
+    payload: WorkerLogBatch,
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Terima baris log dari dalam instance (bukan log Vast)."""
+    from app.core.config import get_settings
+    from app.services import worker_log_lines
+
+    token = (get_settings().CLIPZI_WORKER_TOKEN or "").strip()
+    provided = (request.headers.get("x-clipzi-token") or "").strip()
+    if not token or not provided or not secrets.compare_digest(token, provided):
+        raise HTTPException(status_code=401, detail="Token worker tidak valid.")
+    result = await worker_log_lines.append_lines(
+        db,
+        task_id=payload.task_id,
+        instance_id=payload.instance_id,
+        lines=payload.lines,
+    )
+    return {"ok": True, **result}

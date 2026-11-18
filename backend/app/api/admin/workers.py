@@ -215,3 +215,36 @@ async def destroy_worker_instance(
         "Admin %s menghapus instance %s secara manual", current_user.email, instance_id
     )
     return {"ok": True, "instance_id": instance_id, "already_gone": already_gone}
+
+
+@router.get("/lines")
+async def list_worker_lines(
+    task_id: Optional[str] = None,
+    after_seq: int = 0,
+    level: Optional[str] = None,
+    limit: int = 200,
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+) -> Dict[str, Any]:
+    """Baris log realtime dari dalam instance worker."""
+    from app.services import worker_log_lines
+
+    try:
+        items = await worker_log_lines.list_lines(
+            db, task_id=task_id, after_seq=after_seq, level=level, limit=limit
+        )
+        return {"items": items, "error": None}
+    except Exception as exc:  # noqa: BLE001 - jangan 500-kan halaman admin
+        return {"items": [], "error": str(exc)[:300]}
+
+
+@router.post("/lines/clear")
+async def clear_worker_lines(
+    task_id: Optional[str] = None,
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+) -> Dict[str, Any]:
+    from app.services import worker_log_lines
+
+    removed = await worker_log_lines.clear(db, task_id)
+    return {"ok": True, "removed": removed}
