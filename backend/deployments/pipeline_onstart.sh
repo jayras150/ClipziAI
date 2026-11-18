@@ -142,7 +142,7 @@ fi
 # sehingga worker tidak perlu menunggu cloud_copy Vast yang khusus Google Drive.
 log "menjalankan pipeline untuk task ${CLIPZI_TASK_ID} (python: ${PYTHON_BIN})"
 
-exec "$PYTHON_BIN" -u -c '
+exec "$PYTHON_BIN" -u /app/deployments/worker_log_shipper.py -- "$PYTHON_BIN" -u -c '
 import asyncio
 import os
 from uuid import UUID
