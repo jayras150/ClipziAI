@@ -509,6 +509,25 @@ def _post_create_instance(
         raise RuntimeError(f"Respons Vast tidak valid: {(response.text or '')[:200]}") from exc
 
 
+async def _existing_instance_for(client: Any, task_id: UUID) -> Optional[int]:
+    """Cegah biaya dobel: satu task hanya boleh punya satu instance aktif."""
+    label = f"clipzi-{str(task_id)[:8]}"
+    try:
+        rows = await asyncio.to_thread(client.show_instances)
+    except Exception as exc:  # noqa: BLE001 - jangan blok dispatch karena cek gagal
+        logger.warning("Gagal cek instance duplikat: %s", exc)
+        return None
+    for item in rows or []:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("label") or "") != label:
+            continue
+        status = str(item.get("actual_status") or item.get("status") or "").lower()
+        if status in ("running", "loading", "created", "starting", "scheduling"):
+            return int(item.get("id"))
+    return None
+
+
 def _make_create_instance(task_id: UUID, client: Any):
     """Factory pembuat instance (dipakai dispatch DAN resume setelah restart).
 
@@ -528,6 +547,14 @@ def _make_create_instance(task_id: UUID, client: Any):
         offer_id = selected.get("id")
         if not offer_id:
             raise RuntimeError(f"offer tidak punya id: {selected}")
+        existing_id = await _existing_instance_for(client, task_id)
+        if existing_id:
+            logger.warning(
+                "Task %s sudah punya instance aktif %s; pembuatan instance baru dilewati",
+                task_id,
+                existing_id,
+            )
+            return existing_id
         worker_env = build_worker_env(task_id)
 
         # Ask Vast cepat hilang (diambil mesin lain). Kalau itu terjadi, ambil
