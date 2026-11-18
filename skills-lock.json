@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "skills": {
+    "vastai": {
+      "source": "vast-ai/vast-cli",
+      "commit": "6eb4ed8f6d1a17944af5b5287c01e8a1311e115a",
+      "sourceType": "github",
+      "skillPath": "vastai/SKILL.md",
+      "computedHash": "5463a06f5cae29b67d44ffd514fbf74f5f8695591f42da108a1221c84a02895e"
+    },
+    "vastai-sdk": {
+      "source": "vast-ai/vast-cli",
+      "commit": "6eb4ed8f6d1a17944af5b5287c01e8a1311e115a",
+      "sourceType": "github",
+      "skillPath": "vastai_sdk/SKILL.md",
+      "computedHash": "2096df37a09914552a764733dbc29d80d98a9f32e7c20b616514a51c9d6f2651"
+    }
+  }
+}
