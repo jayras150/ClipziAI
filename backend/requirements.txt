@@ -27,7 +27,7 @@ yt-dlp-ejs>=0.3.0
 # lagi dipasang default, karena transkripsi memakai API provider (lihat
 # TRANSCRIPTION_PROVIDER di .env). Kalau ingin transkripsi lokal, install paket
 # tambahan:  pip install -r requirements-whisper-local.txt
-opencv-python>=4.8.0
+opencv-python-headless>=4.8.0
 scenedetect>=0.6.0
 moviepy>=1.0.3
 boto3>=1.28.0

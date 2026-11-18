@@ -78,7 +78,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 #   libfontconfig1      -> render teks/caption
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    libgl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
@@ -242,6 +241,14 @@ USER root
 RUN /opt/venv/bin/pip install --no-cache-dir --no-deps bgutil-ytdlp-pot-provider==2.0.2 \
     && /opt/venv/bin/python -c "import yt_dlp; print('yt-dlp', yt_dlp.version.__version__)" \
     && ls /opt/venv/lib/python3.11/site-packages/yt_dlp_plugins >/dev/null
+
+# Perampingan: static lib CUDA (.a), __pycache__, dan folder tests tidak dipakai runtime.
+RUN set -eux; \
+    find /opt/venv -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/null || true; \
+    find /opt/venv -name '*.pyc' -delete 2>/dev/null || true; \
+    find /opt/venv/lib/python3.11/site-packages/nvidia -name '*.a' -delete 2>/dev/null || true; \
+    find /opt/venv/lib/python3.11/site-packages -maxdepth 2 -type d -name 'tests' -prune -exec rm -rf {} + 2>/dev/null || true; \
+    du -sh /opt/venv
 USER clipzi
 
 # Worker = GPU. Transkripsi dijalankan di GPU (faster-whisper CUDA float16)
