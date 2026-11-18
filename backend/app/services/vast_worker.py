@@ -512,6 +512,10 @@ def _post_create_instance(
         raise RuntimeError(f"Respons Vast tidak valid: {(response.text or '')[:200]}") from exc
 
 
+_PROGRESS_RE = re.compile(r"\[download\]\s+(\d+(?:\.\d+)?)%")
+_mirror_pct: Dict[str, int] = {}
+
+
 async def _mirror_instance_logs(client: Any, instance_id: int, task_id: UUID) -> None:
     """Salin log container Vast ke worker_log_lines tiap 10 detik.
 
@@ -543,8 +547,18 @@ async def _mirror_instance_logs(client: Any, instance_id: int, task_id: UUID) ->
         seen = len(lines)
         payload = []
         for line in fresh:
+            # Buang spam progress yt-dlp: simpan hanya tiap kelipatan 10%.
+            match = _PROGRESS_RE.search(line)
+            if match:
+                percent = int(float(match.group(1)) // 10) * 10
+                if percent <= _mirror_pct.get(str(task_id), -1):
+                    continue
+                _mirror_pct[str(task_id)] = percent
+                payload_line = f"[download] {percent}%"
+            else:
+                payload_line = line
             seq += 1
-            lowered = line.lower()
+            lowered = payload_line.lower()
             stage = None
             for token, name in (("download", "download"), ("whisper", "transcribe"),
                                 ("transcrib", "transcribe"), ("ffmpeg", "render"),
@@ -557,7 +571,7 @@ async def _mirror_instance_logs(client: Any, instance_id: int, task_id: UUID) ->
                     "seq": seq,
                     "level": "ERROR" if "error" in lowered or "traceback" in lowered else "INFO",
                     "stage": stage,
-                    "message": line,
+                    "message": payload_line,
                 }
             )
         try:
