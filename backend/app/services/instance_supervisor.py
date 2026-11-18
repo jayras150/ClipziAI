@@ -230,7 +230,10 @@ class InstanceSupervisor:
                 continue
             missing = 0
 
-            progress_now = await self._task_progress()
+            try:
+                progress_now = await self._task_progress()
+            except Exception:  # noqa: BLE001 - fake/DB error: watchdog dilewati
+                progress_now = None
             if progress_now is not None:
                 if progress_now != getattr(self, "_last_progress", None):
                     self._last_progress = progress_now
