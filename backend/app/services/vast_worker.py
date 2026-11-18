@@ -643,15 +643,21 @@ def _make_create_instance(task_id: UUID, client: Any):
             logger.warning("Gagal klaim dispatch task %s: %s", task_id, exc)
             claimed_ok = True
         if not claimed_ok:
-            existing_claim = await _existing_instance_for(client, task_id)
-            if existing_claim:
-                logger.warning(
-                    "Dispatch task %s sudah berjalan (%s); instance baru tidak dibuat",
-                    task_id,
-                    existing_claim,
-                )
-                return existing_claim
-            raise RuntimeError("Dispatch untuk task ini sedang berjalan")
+            # Dispatch lain sudah mengklaim: tunggu instance-nya muncul (maks 15s).
+            for _ in range(3):
+                await asyncio.sleep(5)
+                existing_claim = await _existing_instance_for(client, task_id)
+                if existing_claim:
+                    logger.warning(
+                        "Dispatch task %s sudah berjalan (%s); instance baru tidak dibuat",
+                        task_id,
+                        existing_claim,
+                    )
+                    return existing_claim
+            logger.warning(
+                "Klaim dispatch task %s gagal tapi belum ada instance; lanjut membuat instance",
+                task_id,
+            )
 
         existing_id = await _existing_instance_for(client, task_id)
         if existing_id:
