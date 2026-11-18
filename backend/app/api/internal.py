@@ -17,6 +17,7 @@ import json
 import secrets
 import logging
 from datetime import datetime, timezone
+from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -361,10 +362,24 @@ async def downloader_callback(
         raise HTTPException(status_code=401, detail=str(exc)) from exc
 
 
+class WorkerLogLineIn(BaseModel):
+    """Satu baris log dari dalam instance.
+
+    Tipe field ditulis eksplisit (bukan `dict` polos): Pydantic 2.13 gagal
+    me-resolve `List[dict]` di dalam model yang di-import lewat `from __future__
+    import annotations`, sehingga endpoint ini membalas 500 dan SEMUA log worker
+    hilang tanpa jejak.
+    """
+
+    seq: int = 0
+    level: str = "INFO"
+    stage: Optional[str] = None
+    message: str = ""
+
 class WorkerLogBatch(BaseModel):
     task_id: Optional[str] = None
     instance_id: Optional[int] = None
-    lines: List[dict] = []
+    lines: List[WorkerLogLineIn] = []
 
 
 @router.post("/worker/logs")
@@ -385,6 +400,6 @@ async def worker_logs_ingest(
         db,
         task_id=payload.task_id,
         instance_id=payload.instance_id,
-        lines=payload.lines,
+        lines=[line.model_dump() for line in payload.lines],
     )
     return {"ok": True, **result}
