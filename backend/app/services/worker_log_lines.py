@@ -70,7 +70,11 @@ async def list_lines(
     limit: int = 200,
     level: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    query = select(WorkerLogLine).order_by(WorkerLogLine.seq.asc())
+    # Tanpa after_seq: ambil N TERBARU (desc) lalu dibalik agar UI melihat
+    # baris terakhir tanpa kehilangan log baru di luar limit.
+    query = select(WorkerLogLine).order_by(
+        WorkerLogLine.seq.asc() if after_seq else WorkerLogLine.seq.desc()
+    )
     if task_id:
         query = query.where(WorkerLogLine.task_id == task_id)
     if after_seq:
@@ -78,6 +82,8 @@ async def list_lines(
     if level:
         query = query.where(WorkerLogLine.level == level.upper())
     rows = (await db.execute(query.limit(min(1000, max(1, limit))))).scalars().all()
+    if not after_seq:
+        rows = list(reversed(rows))
     return [
         {
             "id": str(row.id),

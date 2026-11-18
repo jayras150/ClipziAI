@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
+import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { fetchWorkerLines, fetchWorkerTasks, type WorkerTaskRow } from '@/app/dashboard/workers/actions';
 
@@ -22,12 +23,12 @@ function stateOf(status: string | null): string {
   return 'running';
 }
 
-/** Tabel task + popup realtime log (klik baris). */
 export default function WorkersTable() {
   const [rows, setRows] = useState<WorkerTaskRow[]>([]);
   const [selected, setSelected] = useState<WorkerTaskRow | null>(null);
   const [lines, setLines] = useState<Line[]>([]);
   const [error, setError] = useState('');
+  const [updatedAt, setUpdatedAt] = useState('');
 
   useEffect(() => {
     void fetchWorkerTasks().then((result) => {
@@ -39,23 +40,56 @@ export default function WorkersTable() {
   useEffect(() => {
     if (!selected) return;
     let active = true;
+    setLines([]);
     const tick = async () => {
-      const result = await fetchWorkerLines(selected.id, 0);
+      const lastSeq = lines.length ? lines[lines.length - 1].seq : 0;
+      const result = await fetchWorkerLines(selected.id, lastSeq);
       if (!active) return;
-      setLines(result.items);
+      setLines((prev) => {
+        const merged = lastSeq ? [...prev, ...result.items] : result.items;
+        return merged.slice(-3000);
+      });
+      setUpdatedAt(new Date().toLocaleTimeString('id-ID'));
       setError(result.error || '');
     };
     void tick();
-    const timer = window.setInterval(tick, 3000);
+    const timer = window.setInterval(tick, 2000);
     return () => {
       active = false;
       window.clearInterval(timer);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
 
-  const text = lines
-    .map((line) => `[${line.created_at || ''}] ${line.level}${line.stage ? ' ' + line.stage : ''} ${line.message}`)
-    .join('\n');
+  const text = useMemo(
+    () =>
+      lines
+        .map(
+          (line) =>
+            `[${line.created_at || ''}] ${line.level}${line.stage ? ' ' + line.stage : ''} ${line.message}`
+        )
+        .join('\n'),
+    [lines]
+  );
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setError('Log disalin ke clipboard.');
+    } catch {
+      setError('Gagal menyalin (browser menolak clipboard).');
+    }
+  };
+
+  const download = () => {
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `worker-${selected?.id.slice(0, 8) || 'log'}.log`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <>
@@ -72,54 +106,54 @@ export default function WorkersTable() {
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
-              <tr>
-                <td className='text-muted-foreground px-3 py-4 text-xs' colSpan={5}>
-                  Belum ada task.
+            {rows.map((row) => (
+              <tr
+                key={row.id}
+                onClick={() => setSelected(row)}
+                className='cursor-pointer border-t hover:bg-muted/40'
+              >
+                <td className='px-3 py-2 font-mono text-xs'>{row.id.slice(0, 8)}…</td>
+                <td className='px-3 py-2'>
+                  <span className={`rounded px-2 py-0.5 text-[11px] font-semibold ${STATE_CLASS[stateOf(row.status)]}`}>
+                    {stateOf(row.status)}
+                  </span>
+                </td>
+                <td className='px-3 py-2'>{row.progress ?? 0}%</td>
+                <td className='px-3 py-2'>{row.log_count}</td>
+                <td className='px-3 py-2 text-xs'>
+                  {row.created_at ? new Date(row.created_at).toLocaleString('id-ID') : '-'}
                 </td>
               </tr>
-            ) : (
-              rows.map((row) => {
-                const state = stateOf(row.status);
-                return (
-                  <tr
-                    key={row.id}
-                    onClick={() => setSelected(row)}
-                    className='cursor-pointer border-t hover:bg-muted/40'
-                  >
-                    <td className='px-3 py-2 font-mono text-xs'>{row.id.slice(0, 8)}…</td>
-                    <td className='px-3 py-2'>
-                      <span className={`rounded px-2 py-0.5 text-[11px] font-semibold ${STATE_CLASS[state]}`}>
-                        {state}
-                      </span>
-                    </td>
-                    <td className='px-3 py-2'>{row.progress ?? 0}%</td>
-                    <td className='px-3 py-2'>{row.log_count}</td>
-                    <td className='px-3 py-2 text-xs'>
-                      {row.created_at ? new Date(row.created_at).toLocaleString('id-ID') : '-'}
-                    </td>
-                  </tr>
-                );
-              })
-            )}
+            ))}
           </tbody>
         </table>
       </div>
 
       <Dialog open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
-        <DialogContent className='max-h-[85vh] w-full max-w-3xl overflow-y-auto'>
-          <DialogHeader>
-            <DialogTitle className='flex items-center gap-2 font-mono text-sm'>
+        <DialogContent className='flex h-[85vh] w-[96vw] max-w-6xl flex-col overflow-hidden'>
+          <DialogHeader className='shrink-0'>
+            <DialogTitle className='flex flex-wrap items-center gap-2 font-mono text-sm'>
               {selected?.id}
               {selected ? (
                 <span className={`rounded px-2 py-0.5 text-[11px] font-semibold ${STATE_CLASS[stateOf(selected.status)]}`}>
                   {stateOf(selected.status)}
                 </span>
               ) : null}
+              <span className='text-muted-foreground text-[11px] font-normal'>
+                auto-refresh 2s · update {updatedAt || '-'} · {lines.length} baris
+              </span>
+              <span className='ml-auto flex gap-2'>
+                <Button size='sm' variant='outline' onClick={copy} disabled={!lines.length}>
+                  Copy
+                </Button>
+                <Button size='sm' variant='secondary' onClick={download} disabled={!lines.length}>
+                  Download
+                </Button>
+              </span>
             </DialogTitle>
           </DialogHeader>
-          <pre className='max-h-[60vh] overflow-auto rounded-md bg-black p-3 font-mono text-[11px] leading-relaxed text-emerald-300'>
-            {lines.length ? text : 'Belum ada log untuk task ini (instance dibuat sebelum mirror aktif?).'}
+          <pre className='min-h-0 flex-1 overflow-auto rounded-md bg-black p-3 font-mono text-[12px] leading-relaxed text-emerald-300'>
+            {lines.length ? text : 'Belum ada log untuk task ini. Menunggu worker mengirim log…'}
           </pre>
         </DialogContent>
       </Dialog>
