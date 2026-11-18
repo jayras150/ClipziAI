@@ -18,6 +18,9 @@ router = APIRouter(dependencies=[Depends(get_current_admin)])
 
 
 class SmtpIn(BaseModel):
+    provider: str = "smtp"  # smtp | resend
+    resend_api_key: Optional[str] = None
+    clear_resend_api_key: bool = False
     enabled: bool = False
     host: str = ""
     port: int = 587

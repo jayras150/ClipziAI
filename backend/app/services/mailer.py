@@ -72,11 +72,13 @@ TEMPLATE_VARIABLES: Dict[str, List[str]] = {
 }
 
 DEFAULT_CONFIG: Dict[str, Any] = {
+    "provider": "smtp",  # smtp | resend
     "enabled": False,
     "host": "",
     "port": 587,
     "username": "",
     "password_enc": "",
+    "resend_api_key_enc": "",
     "from_email": "noreply@clipzy.ai",
     "from_name": "Clipzy AI",
     "use_tls": True,
@@ -118,6 +120,16 @@ def public_config(config: Dict[str, Any]) -> Dict[str, Any]:
         except Exception:  # noqa: BLE001
             password = ""
     data.pop("password_enc", None)
+    resend_key = ""
+    if config.get("resend_api_key_enc"):
+        try:
+            resend_key = decrypt_field(str(config["resend_api_key_enc"]))
+        except Exception:  # noqa: BLE001
+            resend_key = ""
+    data.pop("resend_api_key_enc", None)
+    data["provider"] = str(config.get("provider") or "smtp")
+    data["resend_key_set"] = bool(resend_key)
+    data["resend_key_preview"] = (resend_key[:4] + "•••" + resend_key[-3:]) if len(resend_key) > 8 else ""
     data["password_set"] = bool(password)
     data["password_preview"] = (password[:2] + "•••" + password[-2:]) if len(password) > 6 else ""
     return data
@@ -126,7 +138,7 @@ def public_config(config: Dict[str, Any]) -> Dict[str, Any]:
 async def save_config(db: AsyncSession, payload: Dict[str, Any]) -> Dict[str, Any]:
     current = await get_config(db)
     updated = dict(current)
-    for field in ("enabled", "host", "username", "from_email", "from_name", "use_tls", "use_ssl", "reply_to"):
+    for field in ("enabled", "provider", "host", "username", "from_email", "from_name", "use_tls", "use_ssl", "reply_to"):
         if field in payload:
             updated[field] = payload[field]
     if "port" in payload:
@@ -134,6 +146,11 @@ async def save_config(db: AsyncSession, payload: Dict[str, Any]) -> Dict[str, An
     password = str(payload.get("password") or "").strip()
     if password:
         updated["password_enc"] = encrypt_field(password)
+    resend_key = str(payload.get("resend_api_key") or "").strip()
+    if resend_key:
+        updated["resend_api_key_enc"] = encrypt_field(resend_key)
+    if payload.get("clear_resend_api_key"):
+        updated["resend_api_key_enc"] = ""
     if isinstance(payload.get("types"), dict):
         updated["types"] = {**current["types"], **{k: bool(v) for k, v in payload["types"].items() if k in KINDS}}
     if isinstance(payload.get("templates"), dict):
@@ -215,7 +232,28 @@ def render(
     return subject, _wrap(subject, body, str(ctx.get("footer") or ""))
 
 
+def _send_resend(config: Dict[str, Any], recipients: List[str], subject: str, html: str) -> int:
+    """Kirim via Resend.com API (https://api.resend.com/emails)."""
+    import httpx
+
+    key = decrypt_field(str(config.get("resend_api_key_enc") or ""))
+    if not key:
+        raise RuntimeError("Resend API key belum diisi")
+    sender = f"{config.get('from_name') or 'Clipzy AI'} <{config.get('from_email') or 'noreply@clipzy.ai'}>"
+    response = httpx.post(
+        "https://api.resend.com/emails",
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        json={"from": sender, "to": recipients, "subject": subject, "html": html},
+        timeout=30,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(f"Resend {response.status_code}: {response.text[:300]}")
+    return len(recipients)
+
+
 def _send_sync(config: Dict[str, Any], recipients: Iterable[str], subject: str, html: str) -> int:
+    if str(config.get("provider") or "smtp").lower() == "resend":
+        return _send_resend(config, list(recipients), subject, html)
     host = str(config.get("host") or "").strip()
     if not host:
         raise RuntimeError("SMTP host belum diisi")
