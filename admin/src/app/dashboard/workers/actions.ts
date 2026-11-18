@@ -32,3 +32,31 @@ export async function fetchWorkerLines(
     };
   }
 }
+
+
+export type WorkerTaskRow = {
+  id: string;
+  status: string | null;
+  progress: number | null;
+  download_status: string | null;
+  error_message: string | null;
+  created_at: string | null;
+  log_count: number;
+};
+
+export async function fetchWorkerTasks(limit = 30): Promise<{
+  items: WorkerTaskRow[];
+  error?: string;
+}> {
+  try {
+    const data = await adminFetch<{ items: WorkerTaskRow[]; error?: string | null }>(
+      `/api/admin/workers/tasks?limit=${limit}`
+    );
+    return { items: data.items || [], error: data.error || undefined };
+  } catch (error) {
+    return {
+      items: [],
+      error: error instanceof Error ? error.message.replace(/^\d{3}\s+/, '') : 'Gagal memuat task.'
+    };
+  }
+}
