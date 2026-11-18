@@ -550,6 +550,31 @@ def _make_create_instance(task_id: UUID, client: Any):
         offer_id = selected.get("id")
         if not offer_id:
             raise RuntimeError(f"offer tidak punya id: {selected}")
+        # Kunci dispatch di DB: cegah dua instance untuk task yang sama
+        # (race antara dispatch awal & retry supervisor).
+        from sqlalchemy import update as _sa_update
+
+        from app.db.session import AsyncSessionLocal
+        from app.models.task import Task as _Task
+
+        async with AsyncSessionLocal() as _db:
+            claimed = await _db.execute(
+                _sa_update(_Task)
+                .where(_Task.id == task_id, _Task.download_status != "dispatching")
+                .values(download_status="dispatching")
+            )
+            await _db.commit()
+        if not claimed.rowcount:
+            existing_claim = await _existing_instance_for(client, task_id)
+            if existing_claim:
+                logger.warning(
+                    "Dispatch task %s sudah berjalan (%s); instance baru tidak dibuat",
+                    task_id,
+                    existing_claim,
+                )
+                return existing_claim
+            raise RuntimeError("Dispatch untuk task ini sedang berjalan")
+
         existing_id = await _existing_instance_for(client, task_id)
         if existing_id:
             logger.warning(
