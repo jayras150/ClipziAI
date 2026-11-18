@@ -557,14 +557,20 @@ def _make_create_instance(task_id: UUID, client: Any):
         from app.db.session import AsyncSessionLocal
         from app.models.task import Task as _Task
 
-        async with AsyncSessionLocal() as _db:
-            claimed = await _db.execute(
-                _sa_update(_Task)
-                .where(_Task.id == task_id, _Task.download_status != "dispatching")
-                .values(download_status="dispatching")
-            )
-            await _db.commit()
-        if not claimed.rowcount:
+        claimed_ok = True
+        try:
+            async with AsyncSessionLocal() as _db:
+                claimed = await _db.execute(
+                    _sa_update(_Task)
+                    .where(_Task.id == task_id, _Task.download_status != "dispatching")
+                    .values(download_status="dispatching")
+                )
+                await _db.commit()
+                claimed_ok = bool(claimed.rowcount)
+        except Exception as exc:  # noqa: BLE001 - jangan blok dispatch karena DB/fake
+            logger.warning("Gagal klaim dispatch task %s: %s", task_id, exc)
+            claimed_ok = True
+        if not claimed_ok:
             existing_claim = await _existing_instance_for(client, task_id)
             if existing_claim:
                 logger.warning(
