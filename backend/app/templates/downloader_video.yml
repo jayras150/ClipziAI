@@ -44,11 +44,18 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install yt-dlp (pinned) & ffmpeg
+      - name: Install yt-dlp (pinned), ejs, Deno & ffmpeg
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg curl
-          python -m pip install --quiet --upgrade "yt-dlp==2026.10.26"
+          sudo apt-get install -y -qq ffmpeg curl unzip
+          # [default] + yt-dlp-ejs + Deno = solver JS challenge YouTube.
+          python -m pip install --quiet --upgrade "yt-dlp[default]==2026.10.26" yt-dlp-ejs
+          curl -fsSL -o /tmp/deno.zip https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip
+          sudo unzip -o /tmp/deno.zip -d /usr/local/bin
+          sudo chmod 0755 /usr/local/bin/deno
+          deno --version
+          mkdir -p "$HOME/.config/yt-dlp"
+          printf -- "--js-runtimes deno\n" > "$HOME/.config/yt-dlp/config"
 
       - name: Ambil konteks (cookies + presigned upload)
         id: ctx
@@ -113,8 +120,16 @@ jobs:
           PY
 
       - name: Validasi cookies
+        env:
+          YTDLP_COOKIES_B64: ${{ secrets.YTDLP_COOKIES_B64 }}
         run: |
           set -euo pipefail
+          # Cadangan: kalau backend tidak mengirim cookies, pakai secret repo.
+          if [ ! -s /tmp/cookies.txt ] && [ -n "${YTDLP_COOKIES_B64:-}" ]; then
+            echo "$YTDLP_COOKIES_B64" | base64 -d > /tmp/cookies.txt || true
+            chmod 600 /tmp/cookies.txt 2>/dev/null || true
+            echo "cookies_source=secret"
+          fi
           if [ -s /tmp/cookies.txt ]; then
             if ! grep -q "youtube.com" /tmp/cookies.txt; then
               echo "::error::cookies tidak berisi domain youtube.com"
@@ -136,13 +151,19 @@ jobs:
             COOKIE_ARGS=(--cookies /tmp/cookies.txt)
           fi
           max_mb=$(python -c "import json;print(json.load(open('/tmp/ctx.json')).get('max_file_mb') or 2048)")
+          echo "preflight formats (10 teratas):"
+          yt-dlp "${COOKIE_ARGS[@]}" --js-runtimes deno \
+            --extractor-args "youtube:player_client=web,android" \
+            --list-formats "$VIDEO_URL" 2>&1 | tail -n 15 || true
           yt-dlp \
             "${COOKIE_ARGS[@]}" \
             --no-warnings \
             --no-playlist \
-            --retries 3 \
-            --fragment-retries 3 \
-            --format "bv*+ba/b" \
+            --js-runtimes deno \
+            --extractor-args "youtube:player_client=web,android" \
+            --retries 5 \
+            --fragment-retries 5 \
+            --format "bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b/best" \
             --merge-output-format mp4 \
             --max-filesize "${max_mb}M" \
             --output "/tmp/source.%(ext)s" \

@@ -797,7 +797,16 @@ async def handle_callback(
         if runner:
             runner.failure_count = (runner.failure_count or 0) + 1
             runner.last_error = job.error[:400]
-            runner.cooldown_until = _now() + timedelta(minutes=10)
+            # Cooldown hanya kalau masih ada runner lain: bila ini satu-satunya,
+            # request_fallback butuh kandidat agar task tidak langsung mati.
+            siblings = [
+                item
+                for item in await list_runners(db)
+                if item.id != runner.id and item.enabled and item.status == "active"
+            ]
+            runner.cooldown_until = (
+                _now() + timedelta(minutes=10) if siblings else None
+            )
         await db.commit()
 
         fallback = await request_fallback(db, task)
