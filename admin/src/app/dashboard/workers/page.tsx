@@ -103,7 +103,17 @@ export default async function WorkersPage({
           </tbody>
         </table>
       </div>
-      <WorkerLogViewer initialTaskId={searchParams?.task || items[0]?.id || ''} />
+      {(() => {
+        const selected = searchParams?.task || items[0]?.id || '';
+        const row = items.find((item) => item.id === selected);
+        return (
+          <WorkerLogViewer
+            key={selected}
+            initialTaskId={selected}
+            status={row?.status || ''}
+          />
+        );
+      })()}
     </PageContainer>
   );
 }

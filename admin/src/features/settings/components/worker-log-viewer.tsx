@@ -8,7 +8,13 @@ import { Input } from '@/components/ui/input';
 import { fetchWorkerLines, type WorkerLogLine } from '@/app/dashboard/workers/actions';
 
 /** Terminal kecil: log pipeline dari DALAM instance worker (bukan Vast logs). */
-export default function WorkerLogViewer({ initialTaskId = '' }: { initialTaskId?: string }) {
+export default function WorkerLogViewer({
+  initialTaskId = '',
+  status = ''
+}: {
+  initialTaskId?: string;
+  status?: string | null;
+}) {
   const [taskId, setTaskId] = useState(initialTaskId);
   const [lines, setLines] = useState<WorkerLogLine[]>([]);
   const [level, setLevel] = useState('');
@@ -26,6 +32,11 @@ export default function WorkerLogViewer({ initialTaskId = '' }: { initialTaskId?
       setLines((prev) => (reset ? result.items : [...prev, ...result.items].slice(-2000)));
     });
   };
+
+  useEffect(() => {
+    if (taskId.trim()) load(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskId]);
 
   useEffect(() => {
     if (!auto || !taskId.trim()) return;
@@ -56,7 +67,23 @@ export default function WorkerLogViewer({ initialTaskId = '' }: { initialTaskId?
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Worker Logs (log pipeline asli)</CardTitle>
+        <CardTitle className='flex items-center gap-2'>
+          Worker Logs (log pipeline asli)
+          {status ? (
+            <span
+              className={
+                'rounded px-2 py-0.5 text-[11px] font-semibold ' +
+                (status === 'completed'
+                  ? 'bg-blue-600 text-white'
+                  : status === 'error'
+                    ? 'bg-red-600 text-white'
+                    : 'bg-emerald-600 text-white')
+              }
+            >
+              {status}
+            </span>
+          ) : null}
+        </CardTitle>
         <CardDescription>
           Dikirim langsung dari dalam instance (stdout/stderr, stage, exit code, dmesg, nvidia-smi).
           Bukan log Vast.
