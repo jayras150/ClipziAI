@@ -130,7 +130,7 @@ export default function WorkersTable() {
       </div>
 
       <Dialog open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
-        <DialogContent className='flex h-[85vh] w-[96vw] max-w-6xl flex-col overflow-hidden'>
+        <DialogContent className='flex h-[94vh] w-[99vw] max-w-[99vw] flex-col gap-2 overflow-hidden sm:max-w-[99vw]'>
           <DialogHeader className='shrink-0'>
             <DialogTitle className='flex flex-wrap items-center gap-2 font-mono text-sm'>
               {selected?.id}
@@ -152,7 +152,7 @@ export default function WorkersTable() {
               </span>
             </DialogTitle>
           </DialogHeader>
-          <pre className='min-h-0 flex-1 overflow-auto rounded-md bg-black p-3 font-mono text-[12px] leading-relaxed text-emerald-300'>
+          <pre className='min-h-0 flex-1 overflow-auto rounded-md bg-black p-4 font-mono text-[13.5px] leading-snug text-emerald-300 whitespace-pre-wrap break-words'>
             {lines.length ? text : 'Belum ada log untuk task ini. Menunggu worker mengirim log…'}
           </pre>
         </DialogContent>
