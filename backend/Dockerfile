@@ -163,6 +163,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
 COPY --chown=clipzi:clipzi --chmod=0755 docker-entrypoint.sh /usr/local/bin/clipzi-entrypoint.sh
 COPY --chown=clipzi:clipzi --chmod=0755 deployments/pipeline_onstart.sh deployments/pipeline_onstart.sh
 COPY --chown=clipzi:clipzi --chmod=0755 deployments/whisper_backup_onstart.sh deployments/whisper_backup_onstart.sh
+COPY --chown=clipzi:clipzi --chmod=0755 deployments/worker_log_shipper.py deployments/worker_log_shipper.py
 
 USER clipzi
 ENTRYPOINT ["/usr/local/bin/clipzi-entrypoint.sh"]
