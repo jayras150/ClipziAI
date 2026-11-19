@@ -323,8 +323,13 @@ async def run_system_action(payload: dict):
     from app.services import host_commands as commands
 
     action = str(payload.get("action") or "").strip()
+    raw_args = payload.get("args") or []
+    # `args` TIDAK boleh undefined: sebelumnya baris ini memakai variabel lokal
+    # yang tidak pernah dibuat -> NameError -> seluruh endpoint balas HTTP 500
+    # (inilah sebab tombol Clear Cache / Restart Caddy / Prune selalu gagal).
+    args = [str(item) for item in raw_args] if isinstance(raw_args, list) else []
     try:
-        job = commands.enqueue(action, requested_by="admin", args=args or [])
+        job = commands.enqueue(action, requested_by="admin", args=args)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "job": job}
