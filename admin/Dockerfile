@@ -20,11 +20,16 @@ FROM node:${NODE_VERSION} AS builder
 
 WORKDIR /app
 
+# ID build (commit sha) — dipakai next.config.ts `deploymentId` supaya klien
+# dengan bundle lama otomatis reload, bukan gagal "Failed to find Server Action".
+ARG NEXT_DEPLOYMENT_ID=dev
+
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_DEPLOYMENT_ID=$NEXT_DEPLOYMENT_ID
 
 # Build-time env vars — override these with --build-arg or in compose.yml
 
@@ -40,10 +45,14 @@ FROM node:${NODE_VERSION} AS runner
 
 WORKDIR /app
 
+# ID build juga harus tersedia saat runtime (dibaca /api/version).
+ARG NEXT_DEPLOYMENT_ID=dev
+
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_DEPLOYMENT_ID=$NEXT_DEPLOYMENT_ID
 
 # Copy public assets
 COPY --from=builder --chown=node:node /app/public ./public

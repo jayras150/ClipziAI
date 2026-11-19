@@ -1,22 +1,32 @@
 'use client';
 
-import { useCallback, useEffect, useState, useTransition } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { LogDialog, type LogDialogData } from '@/components/ui/log-dialog';
-import {
-  fetchHostInfo,
-  fetchHostSnapshot,
-  runSpeedtest,
-  runSystemAction,
-  type CommandJob,
-  type HostInfo,
-  type HostSnapshot,
-  type SpeedtestResult
+import type {
+  CommandJob,
+  HostInfo,
+  HostSnapshot,
+  SpeedtestResult
 } from '@/app/dashboard/system/actions';
 
 const POLL_MS = 5000;
+
+/**
+ * Ambil JSON dari Route Handler (bukan Server Action).
+ * URL stabil, jadi tab lama tetap berfungsi walau admin sudah di-deploy ulang.
+ */
+async function getJson<T>(url: string, init?: RequestInit): Promise<T | null> {
+  try {
+    const response = await fetch(url, { cache: 'no-store', ...init });
+    if (!response.ok) return null;
+    return (await response.json()) as T;
+  } catch {
+    return null;
+  }
+}
 
 function gb(bytes?: number | null): string {
   if (!bytes || bytes <= 0) return '0 GB';
@@ -42,10 +52,9 @@ export function NeonSystem({ initial }: { initial: HostSnapshot | null }) {
   const [speed, setSpeed] = useState<SpeedtestResult | null>(null);
   const [logOpen, setLogOpen] = useState(false);
   const [logData, setLogData] = useState<LogDialogData | null>(null);
-  const [, startTransition] = useTransition();
 
   const load = useCallback(async () => {
-    const next = await fetchHostSnapshot();
+    const next = await getJson<HostSnapshot>('/api/system/host');
     if (next) setData(next);
   }, []);
 
@@ -56,34 +65,54 @@ export function NeonSystem({ initial }: { initial: HostSnapshot | null }) {
   }, [load]);
 
   useEffect(() => {
-    void fetchHostInfo().then(setHostInfo);
+    void getJson<HostInfo>('/api/system/host-info').then((info) => {
+      if (info) setHostInfo(info);
+    });
   }, []);
 
-  const run = (action: string) => {
+  const run = async (action: string) => {
     setBusy(action);
-    startTransition(async () => {
-      try {
-        const job = await runSystemAction(action);
-        setLogData({
-          title: `Hasil: ${job.label || job.action}`,
-          subtitle: `${job.status} · ${job.finished_at || ''}`,
-          detail: job.ok === false ? 'Perintah gagal dijalankan agent host.' : 'Perintah selesai.',
-          log: job.output || ''
-        });
-        if (job.status === 'done' && job.ok) {
-          toast.success(job.output || 'Perintah selesai.');
-        } else if (job.status === 'pending' || job.status === 'running') {
-          toast.info('Perintah dikirim ke agent host. Cek hasil beberapa saat lagi.');
-        } else {
-          toast.error(job.output || 'Perintah gagal dijalankan agent host.');
+    try {
+      const created = await getJson<{ ok: boolean; job: CommandJob | null; error?: string }>(
+        '/api/system/actions',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action })
         }
-        void load();
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : 'Gagal menjalankan aksi.');
-      } finally {
-        setBusy('');
+      );
+      if (!created || created.ok === false || !created.job) {
+        throw new Error(created?.error || 'Agent host tidak menerima perintah.');
       }
-    });
+      let job = created.job;
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        if (job.status === 'done' || job.status === 'error') break;
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const next = await getJson<{ ok: boolean; job: CommandJob; error?: string }>(
+          `/api/system/actions/${encodeURIComponent(job.id)}`
+        );
+        if (!next?.job) break;
+        job = next.job;
+      }
+      setLogData({
+        title: `Hasil: ${job.label || job.action}`,
+        subtitle: `${job.status} · ${job.finished_at || ''}`,
+        detail: job.ok === false ? 'Perintah gagal dijalankan agent host.' : 'Perintah selesai.',
+        log: job.output || ''
+      });
+      if (job.status === 'done' && job.ok) {
+        toast.success(job.output || 'Perintah selesai.');
+      } else if (job.status === 'pending' || job.status === 'running') {
+        toast.info('Perintah dikirim ke agent host. Cek hasil beberapa saat lagi.');
+      } else {
+        toast.error(job.output || 'Perintah gagal dijalankan agent host.');
+      }
+      void load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Gagal menjalankan aksi.');
+    } finally {
+      setBusy('');
+    }
   };
 
   const latest = data?.latest || null;
@@ -243,15 +272,20 @@ export function NeonSystem({ initial }: { initial: HostSnapshot | null }) {
               size='sm'
               variant='outline'
               disabled={busy === 'speedtest'}
-              onClick={() => {
+              onClick={async () => {
                 setBusy('speedtest');
-                startTransition(async () => {
-                  const result = await runSpeedtest();
-                  setSpeed(result);
-                  setBusy('');
-                  if (result.ok) toast.success(`Speedtest: ↓ ${result.down_mbps} Mbps · ↑ ${result.up_mbps} Mbps`);
-                  else toast.error(result.error || 'Speedtest gagal');
+                const result = await getJson<SpeedtestResult>('/api/system/speedtest', {
+                  method: 'POST'
                 });
+                setBusy('');
+                if (!result) {
+                  setSpeed({ ok: false, error: 'Speedtest gagal dijalankan.' });
+                  toast.error('Speedtest gagal dijalankan.');
+                  return;
+                }
+                setSpeed(result);
+                if (result.ok) toast.success(`Speedtest: ↓ ${result.down_mbps} Mbps · ↑ ${result.up_mbps} Mbps`);
+                else toast.error(result.error || 'Speedtest gagal');
               }}
             >
               {busy === 'speedtest' ? 'Mengukur…' : 'Speedtest'}

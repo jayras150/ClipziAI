@@ -1,3 +1,4 @@
+import { VersionWatcher } from '@/components/version-watcher';
 import Providers from '@/components/layout/providers';
 import { Toaster } from '@/components/ui/sonner';
 import { fontVariables } from '@/components/themes/font.config';
@@ -61,6 +62,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         )}
       >
         <NextTopLoader color='var(--primary)' showSpinner={false} />
+        <VersionWatcher />
         <NuqsAdapter>
           <ThemeProvider
             attribute='class'
