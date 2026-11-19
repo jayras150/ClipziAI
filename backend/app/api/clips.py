@@ -54,6 +54,11 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
+# Batas waktu generate metadata (judul/deskripsi/tag) per request HTTP.
+# Cloudflare memutus koneksi origin setelah ~100 detik -> 520. Dengan 55 detik
+# UI selalu menerima JSON error yang bisa dibaca, bukan halaman Cloudflare.
+AI_METADATA_HTTP_TIMEOUT = 55
+
 router = APIRouter()
 
 
@@ -498,14 +503,27 @@ async def generate_clip_metadata(
         model=settings.AI_REGENERATE_MODEL if options.regenerate else None
     )
     try:
-        result = await generator.generate(
-            transcript=stored,
-            source_title=clip.title or "",
-            duration=float(clip.duration or 0),
-            start_time=clip.start_time or "",
-            end_time=clip.end_time or "",
-            language=options.language,
-            variation=1 if options.regenerate else 0,
+        # Cloudflare memutus request ke origin setelah ~100 detik (520/524).
+        # Batasi generate metadata supaya UI selalu menerima JSON error jelas.
+        result = await asyncio.wait_for(
+            generator.generate(
+                transcript=stored,
+                source_title=clip.title or "",
+                duration=float(clip.duration or 0),
+                start_time=clip.start_time or "",
+                end_time=clip.end_time or "",
+                language=options.language,
+                variation=1 if options.regenerate else 0,
+            ),
+            timeout=AI_METADATA_HTTP_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail=(
+                "AI tidak merespons dalam 55 detik. Periksa Settings → AI "
+                "(provider, base URL, dan API key) lalu coba lagi."
+            ),
         )
     except MetadataGenerationError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))

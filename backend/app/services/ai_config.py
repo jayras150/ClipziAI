@@ -194,10 +194,56 @@ def resolve_endpoint(cfg: Dict[str, Any], feature: str) -> Optional[Dict[str, An
     return None
 
 
+_ENDPOINT_SUFFIXES = (
+    "/chat/completions",
+    "/audio/transcriptions",
+    "/embeddings",
+    "/rerank",
+    "/completions",
+)
+
+
+def _strip_endpoint_path(url: str) -> str:
+    """`https://host/v1/chat/completions` -> `https://host/v1`."""
+    text = (url or "").strip().rstrip("/")
+    for suffix in _ENDPOINT_SUFFIXES:
+        if text.endswith(suffix):
+            return text[: -len(suffix)]
+    return text
+
+
 def effective_base_url(cfg: Dict[str, Any]) -> Optional[str]:
+    """Base URL efektif untuk SDK OpenAI-compatible.
+
+    Urutan: base_url eksplisit -> default provider -> turunan endpoint per
+    kemampuan -> deteksi dari prefix API key. Kasus nyata yang diperbaiki:
+    admin memakai provider `custom` dengan `base_url` kosong tapi
+    `endpoint_chat=https://openrouter.ai/api/v1/`; tanpa penurunan ini SDK jatuh
+    ke default OpenAI (api.openai.com) sehingga key OpenRouter ditolak 401 dan
+    request regenerate metadata menggantung sampai Cloudflare 520.
+    """
     provider = str(cfg.get("provider") or "openrouter")
     defaults = PROVIDER_DEFAULTS.get(provider, PROVIDER_DEFAULTS["custom"])
-    return cfg.get("base_url") or defaults.get("base_url") or None
+    configured = str(cfg.get("base_url") or "").strip().rstrip("/")
+    if configured:
+        return configured
+
+    default_base = str(defaults.get("base_url") or "").strip().rstrip("/")
+    try:
+        key = decrypt_api_key(cfg.get("api_key_enc"))
+    except Exception:  # noqa: BLE001
+        key = ""
+
+    # Key OpenRouter selalu ditolak bila dikirim ke api.openai.com.
+    if key.startswith("sk-or-v1") and (not default_base or provider in ("custom", "openai")):
+        return "https://openrouter.ai/api/v1"
+
+    if not default_base:
+        for field in ("endpoint_chat", "endpoint_transcribe", "endpoint_rerank"):
+            value = str(cfg.get(field) or "").strip()
+            if value.lower().startswith(("http://", "https://")):
+                return _strip_endpoint_path(value)
+    return default_base or None
 
 
 def ai_is_configured(cfg: Dict[str, Any]) -> bool:
@@ -362,7 +408,10 @@ def apply_ai_config_to_env(cfg: Dict[str, Any]) -> Dict[str, Any]:
     values: Dict[str, Any] = {
         "AI_PROVIDER": cfg["provider"],
         "AI_API_KEY": key,
-        "AI_BASE_URL": cfg.get("base_url") or "",
+        # Wajib base URL efektif (bukan cfg["base_url"] mentah): kalau admin
+        # memakai provider `custom` dengan base_url kosong, SDK akan jatuh ke
+        # api.openai.com dan key OpenRouter ditolak 401.
+        "AI_BASE_URL": effective_base_url(cfg) or "",
         "AI_MODEL": cfg["model_metadata"],
         "AI_TEMPERATURE": float(cfg["temperature"]),
         "AI_MAX_TOKENS": int(cfg["max_tokens"]),

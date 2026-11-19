@@ -28,6 +28,23 @@ from app.services.ai_client import get_ai_client, get_ai_model, is_ai_configured
 
 logger = logging.getLogger(__name__)
 
+# Error autentikasi provider: tidak ada gunanya retry 3×, dan pesannya harus
+# memberi tahu admin bahwa provider/base URL tidak cocok dengan key.
+_AUTH_ERROR_MARKERS = (
+    "error code: 401",
+    "error code: 403",
+    "incorrect api key",
+    "invalid api key",
+    "invalid_api_key",
+    "no auth credentials",
+    "unauthorized",
+)
+
+
+def _is_auth_error(text: str) -> bool:
+    lowered = (text or "").lower()
+    return any(marker in lowered for marker in _AUTH_ERROR_MARKERS)
+
 # Transkrip di bawah ini dianggap tidak cukup untuk membuat metadata yang jujur.
 MIN_TRANSCRIPT_WORDS = 6
 MAX_TITLE_LENGTH = 100          # batas keras YouTube
@@ -378,7 +395,17 @@ class MetadataGenerator:
                 logger.warning("Metadata AI ditolak (percobaan %s): %s", attempt + 1, exc)
             except Exception as exc:  # provider error, timeout, dsb.
                 last_error = exc
-                logger.warning("Metadata AI gagal (percobaan %s): %s", attempt + 1, str(exc)[:300])
+                text = str(exc)
+                logger.warning("Metadata AI gagal (percobaan %s): %s", attempt + 1, text[:300])
+                # 401/403 tidak akan berubah walau diulang: hentikan cepat dan
+                # beri pesan yang bisa ditindaklanjuti admin.
+                if _is_auth_error(text):
+                    raise MetadataGenerationError(
+                        "AI menolak API key (401/403). Periksa Settings → AI: provider "
+                        "dan base URL harus cocok dengan key (contoh OpenRouter: "
+                        "https://openrouter.ai/api/v1). "
+                        f"Detail: {text[:160]}"
+                    ) from exc
 
         raise MetadataGenerationError(
             "AI could not produce metadata from the transcript (empty or truncated response). "
