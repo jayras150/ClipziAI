@@ -68,7 +68,7 @@ function withVersion(url?: string | null, version?: string | null): string | und
 // hanya karena API sesaat lambat saat refresh halaman.
 let cachedBranding: Branding | null = null
 let cachedAt = 0
-const BRANDING_TTL = 60_000 // 60 detik
+const BRANDING_TTL = 60_000 // 60 seconds
 
 async function fetchBrandingWithRetry(): Promise<Branding | null> {
   const base = getApiBaseUrl()
@@ -97,7 +97,7 @@ async function fetchBrandingWithRetry(): Promise<Branding | null> {
   if (cachedBranding && Date.now() - cachedAt < BRANDING_TTL) {
     return cachedBranding
   }
-  console.warn('[Branding] Gagal memuat branding:', lastError)
+  console.warn('[Branding] failed to load branding:', lastError)
   return null
 }
 
