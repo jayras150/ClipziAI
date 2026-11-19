@@ -1,14 +1,15 @@
 import Link from 'next/link';
 
 import PageContainer from '@/components/layout/page-container';
+import { AdminErrorCard } from '@/components/admin-error-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { SubmitButton } from '@/components/ui/submit-button';
-import { adminFetch, type Paged } from '@/lib/clipzi';
-import { cancelTask, retryTask } from './actions';
+
+import { adminFetchSafe, type Paged } from '@/lib/clipzi';
+import { TaskActionButton } from '@/features/tasks/task-action-button';
 
 export const metadata = { title: 'Admin: Tasks' };
 export const dynamic = 'force-dynamic';
@@ -77,8 +78,18 @@ export default async function TasksPage({
   query.set('page', params.page || '1');
   query.set('page_size', '25');
 
-  const data = await adminFetch<Paged<TaskRow>>(`/api/admin/tasks/?${query.toString()}`);
-  const totalPages = Math.max(1, Math.ceil(data.total / data.page_size));
+  const dataResult = await adminFetchSafe<Paged<TaskRow>>(`/api/admin/tasks/?${query.toString()}`);
+  const data = dataResult.data;
+  const dataError = dataResult.error;
+  const totalPages = data ? Math.max(1, Math.ceil(data.total / data.page_size)) : 1;
+
+  if (dataError || !data) {
+    return (
+      <PageContainer pageTitle='Tasks'>
+        <AdminErrorCard title='Gagal memuat daftar task' message={dataError ?? 'Data tidak tersedia.'} />
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer pageTitle='Tasks' pageDescription={`${data.total} task tercatat`}>
@@ -133,21 +144,12 @@ export default async function TasksPage({
                           >
                             Detail
                           </Button>
-                          {['error', 'cancelled'].includes(task.status) ? (
-                            <form action={retryTask}>
-                              <input type='hidden' name='tid' value={task.id} />
-                              <SubmitButton size='sm' variant='secondary'>
-                                Ulangi
-                              </SubmitButton>
-                            </form>
-                          ) : (
-                            <form action={cancelTask}>
-                              <input type='hidden' name='tid' value={task.id} />
-                              <SubmitButton size='sm' variant='destructive'>
-                                Batalkan
-                              </SubmitButton>
-                            </form>
-                          )}
+                          <TaskActionButton
+                            action={['error', 'cancelled'].includes(task.status) ? 'retry' : 'cancel'}
+                            taskId={task.id}
+                            taskStatus={task.status}
+                            className='ml-1'
+                          />
                         </div>
                       </TableCell>
                     </TableRow>

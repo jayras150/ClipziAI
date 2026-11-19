@@ -3,11 +3,11 @@ import Link from 'next/link';
 import PageContainer from '@/components/layout/page-container';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { SubmitButton } from '@/components/ui/submit-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { adminFetch } from '@/lib/clipzi';
-import { cancelTask, retryTask } from '../actions';
+import { AdminErrorCard } from '@/components/admin-error-card';
+import { adminFetchSafe } from '@/lib/clipzi';
+import { TaskActionButton } from '@/features/tasks/task-action-button';
 import ErrorViewer, { type AttemptRow } from './error-viewer';
 
 export const dynamic = 'force-dynamic';
@@ -49,8 +49,21 @@ function fmt(value: string | null): string {
 
 export default async function TaskDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const task = await adminFetch<TaskDetail>(`/api/admin/tasks/${id}`);
-  const attempts = await adminFetch<AttemptRow[]>(`/api/admin/tasks/${id}/attempts`);
+  const taskResult = await adminFetchSafe<TaskDetail>(`/api/admin/tasks/${id}`);
+  const attemptsResult = await adminFetchSafe<AttemptRow[]>(`/api/admin/tasks/${id}/attempts`);
+  const task = taskResult.data;
+  const attempts = attemptsResult.data ?? [];
+  const taskError = taskResult.error;
+
+  if (taskError || !task) {
+    return (
+      <PageContainer pageTitle='Detail task'>
+        <AdminErrorCard title='Gagal memuat detail task' message={taskError ?? 'Task tidak ditemukan.'} />
+      </PageContainer>
+    );
+  }
+
+
 
   return (
     <PageContainer pageTitle='Detail task' pageDescription={task.source_url}>
@@ -62,21 +75,11 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
           <Button variant='ghost' size='sm' render={<Link href='/dashboard/tasks' />}>
             ← Kembali
           </Button>
-          {['error', 'cancelled'].includes(task.status) ? (
-            <form action={retryTask}>
-              <input type='hidden' name='tid' value={task.id} />
-              <SubmitButton size='sm' variant='secondary'>
-                Ulangi task
-              </SubmitButton>
-            </form>
-          ) : (
-            <form action={cancelTask}>
-              <input type='hidden' name='tid' value={task.id} />
-              <SubmitButton size='sm' variant='destructive'>
-                Batalkan task
-              </SubmitButton>
-            </form>
-          )}
+          <TaskActionButton
+            action={['error', 'cancelled'].includes(task.status) ? 'retry' : 'cancel'}
+            taskId={task.id}
+            taskStatus={task.status}
+          />
         </div>
 
         <div className='grid gap-4 lg:grid-cols-2'>

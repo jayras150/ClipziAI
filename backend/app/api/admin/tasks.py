@@ -254,19 +254,31 @@ async def cancel_task(
     task = (await db.execute(select(Task).where(Task.id == task_id))).scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="Task tidak ditemukan")
-    if task.status in (TaskStatus.COMPLETED, TaskStatus.ERROR, TaskStatus.CANCELLED):
-        raise HTTPException(
-            status_code=400, detail="Task sudah selesai/gagal; tidak bisa dibatalkan."
-        )
+    status_val = getattr(task.status, "value", str(task.status))
+    # Task yang sudah terminal tidak bisa dibatalkan lagi — kembalikan respons
+    # 200 dengan informasi status agar UI bisa tampilkan pesan jelas (bukan error 400
+    # yang membuat halaman jatuh ke error boundary / React #441).
+    if status_val in (TaskStatus.COMPLETED.value, TaskStatus.ERROR.value, TaskStatus.CANCELLED.value):
+        await _audit(db, request, current_admin, "task_cancel_rejected", str(task_id), {"from": status_val})
+        return {
+            "ok": False,
+            "cancellable": False,
+            "status": status_val,
+            "message": f"Task sudah {status_val}; tidak perlu dibatalkan.",
+            "instances_destroyed": 0,
+            "destroy_errors": [],
+        }
 
-    before = getattr(task.status, "value", str(task.status))
+    before = status_val
     task.status = TaskStatus.CANCELLED
     await db.commit()
     await _audit(db, request, current_admin, "task_cancelled", str(task_id), {"from": before})
     cleanup = await destroy_task_instances(task_id, "task dibatalkan admin")
     return {
-        "message": f"Task {task_id} dibatalkan",
+        "ok": True,
+        "cancellable": True,
         "status": "cancelled",
+        "message": f"Task {task_id} dibatalkan",
         "instances_destroyed": cleanup.get("destroyed", 0),
         "destroy_errors": cleanup.get("errors", []),
     }
@@ -287,10 +299,16 @@ async def retry_task(
     task = (await db.execute(select(Task).where(Task.id == task_id))).scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="Task tidak ditemukan")
-    if task.status not in (TaskStatus.ERROR, TaskStatus.CANCELLED):
-        raise HTTPException(
-            status_code=400, detail="Hanya task error/cancelled yang bisa diulang."
-        )
+    status_val = getattr(task.status, "value", str(task.status))
+    # Hanya task error/cancelled yang bisa diulang. Kembalikan 200 dengan info
+    # agar UI tidak crash saat task tidak layak diulang.
+    if status_val not in (TaskStatus.ERROR.value, TaskStatus.CANCELLED.value):
+        await _audit(db, request, current_admin, "task_retry_rejected", str(task_id), {"from": status_val})
+        return {
+            "ok": False,
+            "status": status_val,
+            "message": f"Task berstatus {status_val}; hanya task error atau cancelled yang bisa diulang.",
+        }
 
     before = getattr(task.status, "value", str(task.status))
     task.status = TaskStatus.QUEUED

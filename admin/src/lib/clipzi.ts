@@ -186,3 +186,31 @@ export type Paged<T> = {
   page: number;
   page_size: number;
 };
+
+/** Fetch aman untuk Server Component: tidak pernah throw.
+ *
+ * Kembalikan { data } bila sukses, atau { error } bila gagal (401/403/404/500,
+ * jaringan, JSON rusak, dll). Digunakan untuk halaman yang TIDAK boleh jatuh
+ * ke error boundary (React #441) saat backend/agent sedang mati.
+ */
+export async function adminFetchSafe<T>(
+  path: string,
+  init: RequestInit = {}
+): Promise<{ data: T | null; error: string | null }> {
+  try {
+    const data = await adminFetch<T>(path, init);
+    return { data, error: null };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      let message = error.detail || `HTTP ${error.status}`;
+      if (error.status === 401) message = 'Sesi kedaluwarsa. Masuk ulang.';
+      if (error.status === 403) message = 'Akses ditolak.';
+      if (error.status === 404) message = 'Data tidak ditemukan.';
+      return { data: null, error: message };
+    }
+    return {
+      data: null,
+      error: error instanceof Error ? error.message : 'Request gagal.'
+    };
+  }
+}

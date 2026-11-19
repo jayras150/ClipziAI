@@ -2,7 +2,8 @@ import PageContainer from '@/components/layout/page-container';
 import { StatCard } from '@/features/admin/table-shell';
 import BackupPanel from '@/features/system/backup-panel';
 import { NeonSystem } from '@/features/system/neon-system';
-import { adminFetch } from '@/lib/clipzi';
+import { AdminErrorCard } from '@/components/admin-error-card';
+import { adminFetchSafe } from '@/lib/clipzi';
 import type { HostSnapshot } from './actions';
 
 export const metadata = { title: 'Admin: System' };
@@ -12,16 +13,25 @@ type Health = { status: string; database: string; version: string };
 const PRUNE_CMD = `docker builder prune -af && docker image prune -af`;
 
 export default async function SystemPage() {
-  const health = await adminFetch<Health>('/api/admin/system/health');
-  const host = await adminFetch<HostSnapshot>('/api/admin/system/host').catch(() => null);
+  const healthResult = await adminFetchSafe<Health>('/api/admin/system/health');
+  const hostResult = await adminFetchSafe<HostSnapshot>('/api/admin/system/host');
+  const health = healthResult.data;
+  const host = hostResult.data;
+  const healthError = healthResult.error;
+  const hostError = hostResult.error;
+
   return (
     <PageContainer pageTitle='System' pageDescription='Status layanan, metrik VPS realtime & operasional'>
       <div className='space-y-6'>
-        <div className='grid gap-4 sm:grid-cols-3'>
-          <StatCard label='API' value={health.status} />
-          <StatCard label='Database' value={health.database} />
-          <StatCard label='Versi' value={health.version} />
-        </div>
+        {healthError ? (
+          <AdminErrorCard title='API tidak tersedia' message={healthError} />
+        ) : (
+          <div className='grid gap-4 sm:grid-cols-3'>
+            <StatCard label='API' value={health?.status ?? '-'} />
+            <StatCard label='Database' value={health?.database ?? '-'} />
+            <StatCard label='Versi' value={health?.version ?? '-'} />
+          </div>
+        )}
 
         <section className='space-y-3'>
           <div>
@@ -31,7 +41,11 @@ export default async function SystemPage() {
               Tombol Clear Cache &amp; Restart Caddy dieksekusi agent host, bukan container API.
             </p>
           </div>
-          <NeonSystem initial={host} />
+          {hostError ? (
+            <AdminErrorCard title='Data host tidak tersedia' message={hostError} />
+          ) : (
+            <NeonSystem initial={host ?? null} />
+          )}
         </section>
 
         <section className='space-y-3'>
