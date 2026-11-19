@@ -6,6 +6,8 @@ import { adminFetch } from '@/lib/clipzi';
 
 export type UploadedAsset = {
   kind: 'logo' | 'favicon' | 'og' | 'hero';
+  /** Slot favicon (icon32 | icon192 | icon512 | apple180 | maskable512 | ico | svg). */
+  slot?: string;
   url: string;
   size_bytes?: number;
   width?: number | null;
@@ -96,6 +98,8 @@ export async function saveBranding(payload: Record<string, unknown>): Promise<Sa
 
 export async function uploadBrandingAsset(formData: FormData): Promise<SaveResult> {
   const kind = String(formData.get('kind') || 'logo');
+  // Slot hanya dipakai untuk favicon multi-device (icon32, apple180, dst).
+  const slot = String(formData.get('slot') || 'icon32');
   const file = formData.get('file');
   if (!(file instanceof File) || file.size === 0) {
     return { ok: false, error: 'Pilih file terlebih dahulu.' };
@@ -105,8 +109,10 @@ export async function uploadBrandingAsset(formData: FormData): Promise<SaveResul
   try {
     const token = await (await import('@/lib/clipzi')).getToken();
     const { API_URL } = await import('@/lib/clipzi');
+    const query = new URLSearchParams({ kind });
+    if (kind === 'favicon') query.set('slot', slot);
     const response = await fetch(
-      `${API_URL}/api/admin/settings/branding/upload?kind=${encodeURIComponent(kind)}`,
+      `${API_URL}/api/admin/settings/branding/upload?${query.toString()}`,
       { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body }
     );
     if (!response.ok) {
@@ -114,6 +120,7 @@ export async function uploadBrandingAsset(formData: FormData): Promise<SaveResul
     }
     const data = (await response.json()) as {
       kind?: 'logo' | 'favicon' | 'og' | 'hero';
+      slot?: string | null;
       url?: string;
       size_bytes?: number;
       width?: number | null;
@@ -125,6 +132,7 @@ export async function uploadBrandingAsset(formData: FormData): Promise<SaveResul
       ok: true,
       asset: {
         kind: (data.kind || kind) as 'logo' | 'favicon' | 'og' | 'hero',
+        slot: data.slot || (kind === 'favicon' ? slot : undefined),
         url: data.url || '',
         size_bytes: data.size_bytes,
         width: data.width ?? null,

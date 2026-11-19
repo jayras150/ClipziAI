@@ -1,18 +1,32 @@
 import PageContainer from '@/components/layout/page-container';
+import { AdminErrorCard } from '@/components/admin-error-card';
 import RunnerManager, { type RunnerRow } from '@/features/settings/components/runner-manager';
 import RunnerProvision from '@/features/settings/components/runner-provision';
-import { adminFetch } from '@/lib/clipzi';
+import { adminFetchSafe } from '@/lib/clipzi';
 
 export const metadata = { title: 'Admin: Download Runner' };
 export const dynamic = 'force-dynamic';
 
 export default async function RunnersPage() {
-  const data = await adminFetch<{ items: RunnerRow[] }>('/api/admin/settings/runners/');
-  const stats = await adminFetch<{
+  const dataResult = await adminFetchSafe<{ items: RunnerRow[] }>(
+    '/api/admin/settings/runners/'
+  );
+  const statsResult = await adminFetchSafe<{
     downloads: Record<string, number>;
     runners: { total: number; active: number; disabled: number };
     attempts: number;
   }>('/api/admin/settings/runners/stats');
+  const data = dataResult.data;
+  const stats = statsResult.data;
+  const loadError = dataResult.error || statsResult.error;
+
+  if (!data || !stats || loadError) {
+    return (
+      <PageContainer pageTitle='Download Runner'>
+        <AdminErrorCard title='Gagal memuat runner' message={loadError ?? 'Data tidak tersedia.'} />
+      </PageContainer>
+    );
+  }
   return (
     <PageContainer
       pageTitle='Download Runner'

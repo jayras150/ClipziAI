@@ -45,8 +45,8 @@ export function AdminErrorCard({
               {retrying ? 'Memuat ulang…' : 'Coba lagi'}
             </Button>
           ) : null}
-          <Button size='sm' variant='outline' asChild>
-            <Link href={linkHref}>{linkLabel}</Link>
+          <Button size='sm' variant='outline' render={<Link href={linkHref} />}>
+            {linkLabel}
           </Button>
         </div>
       </CardContent>

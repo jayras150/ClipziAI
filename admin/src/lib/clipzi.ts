@@ -155,6 +155,8 @@ export type BrandingConfig = {
   tagline: string | null;
   logo_url: string | null;
   favicon_url: string | null;
+  /** Favicon per device: icon32 | icon192 | icon512 | apple180 | maskable512 | ico | svg */
+  favicons?: Record<string, string | null> | null;
   og_image_url: string | null;
   hero_video_url: string | null;
   accent_color: string;

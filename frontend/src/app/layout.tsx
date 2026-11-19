@@ -20,6 +20,7 @@ type BrandingData = Branding & {
   app_name?: string
   tagline?: string | null
   favicon_url?: string | null
+  favicons?: Record<string, string | null> | null
 }
 
 // Branding diambil dari API (diatur admin). Server-side fetch supaya favicon dan
@@ -51,22 +52,60 @@ export async function generateMetadata(): Promise<Metadata> {
   const description =
     branding?.tagline ||
     "Clipzy AI turns long videos into short, ready-to-publish clips with AI highlight detection, subtitles, and vertical reframing."
-  const rawIcon = branding?.favicon_url || undefined
   const version = branding?.version || undefined
+  const favicons = branding?.favicons || {}
+  const rawIcon = favicons.icon32 || branding?.favicon_url || undefined
+
   // ?v=<hash> memaksa browser memuat favicon baru setelah admin mengganti logo.
-  const icon =
-    rawIcon && version
-      ? rawIcon.includes("?")
-        ? `${rawIcon}&v=${version}`
-        : `${rawIcon}?v=${version}`
-      : rawIcon
+  const withV = (url?: string | null) => {
+    if (!url) return undefined
+    if (!version) return url
+    return url.includes("?") ? `${url}&v=${version}` : `${url}?v=${version}`
+  }
+  const icon32 = withV(rawIcon)
+  const icon192 = withV(favicons.icon192)
+  const icon512 = withV(favicons.icon512)
+  const apple180 = withV(favicons.apple180 || rawIcon)
+  const maskable = withV(favicons.maskable512)
+  const svg = withV(favicons.svg)
+  const ico = withV(favicons.ico)
+
+  const iconEntries: Array<{ url: string; sizes?: string; type?: string }> = []
+  if (ico) iconEntries.push({ url: ico, sizes: "any", type: "image/x-icon" })
+  if (svg) iconEntries.push({ url: svg, sizes: "any", type: "image/svg+xml" })
+  if (icon32) iconEntries.push({ url: icon32, sizes: "32x32", type: "image/png" })
+  if (icon192) iconEntries.push({ url: icon192, sizes: "192x192", type: "image/png" })
+  if (icon512) iconEntries.push({ url: icon512, sizes: "512x512", type: "image/png" })
+
   return {
     title: name + " - Create More. Edit Less.",
     description,
-    icons: icon ? { icon, shortcut: icon, apple: icon } : undefined,
+    manifest: "/manifest.webmanifest",
+    icons: iconEntries.length
+      ? {
+          icon: iconEntries.map((entry) => ({
+            url: entry.url,
+            sizes: entry.sizes,
+            type: entry.type
+          })),
+          shortcut: icon32,
+          apple: apple180
+            ? [{ url: apple180, sizes: "180x180", type: "image/png" }]
+            : undefined,
+          other: maskable
+            ? [{ rel: "masked-icon", url: maskable, sizes: "512x512", type: "image/png" }]
+            : undefined
+        }
+      : undefined,
     openGraph: branding?.og_image_url
       ? { title: name, description, images: [branding.og_image_url] }
       : { title: name, description },
+    applicationName: name,
+    appleWebApp: {
+      capable: true,
+      title: name,
+      statusBarStyle: "black-translucent"
+    }
   }
 }
 

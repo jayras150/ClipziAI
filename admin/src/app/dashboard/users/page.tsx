@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import PageContainer from '@/components/layout/page-container';
+import { AdminErrorCard } from '@/components/admin-error-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -13,7 +14,7 @@ import {
   TableHeader,
   TableRow
 } from '@/components/ui/table';
-import { adminFetch, type Paged } from '@/lib/clipzi';
+import { adminFetchSafe, type Paged } from '@/lib/clipzi';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { banUser, unbanUser, deleteUser, bulkDeleteUsers } from './actions';
 
@@ -79,8 +80,21 @@ export default async function UsersPage({
   query.set('page', params.page || '1');
   query.set('page_size', '25');
 
-  const data = await adminFetch<Paged<UserRow>>(`/api/admin/users/?${query.toString()}`);
-  const totalPages = Math.max(1, Math.ceil(data.total / data.page_size));
+  const dataResult = await adminFetchSafe<Paged<UserRow>>(`/api/admin/users/?${query.toString()}`);
+  const data = dataResult.data;
+  const dataError = dataResult.error;
+  const totalPages = data ? Math.max(1, Math.ceil(data.total / data.page_size)) : 1;
+
+  if (!data || dataError) {
+    return (
+      <PageContainer pageTitle='Users'>
+        <AdminErrorCard
+          title='Gagal memuat daftar user'
+          message={dataError ?? 'Data tidak tersedia.'}
+        />
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer

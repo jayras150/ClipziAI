@@ -1,12 +1,13 @@
 import Link from 'next/link';
 
 import PageContainer from '@/components/layout/page-container';
+import { AdminErrorCard } from '@/components/admin-error-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { adminFetch, type Paged } from '@/lib/clipzi';
+import { adminFetchSafe, type Paged } from '@/lib/clipzi';
 import { AuditDetailButton } from '@/features/notifications/components/audit-detail-button';
 
 export const metadata = { title: 'Admin: Audit Log' };
@@ -42,8 +43,18 @@ export default async function AuditPage({
   query.set('page', params.page || '1');
   query.set('page_size', '50');
 
-  const data = await adminFetch<Paged<LogRow>>(`/api/admin/audit/?${query.toString()}`);
-  const totalPages = Math.max(1, Math.ceil(data.total / data.page_size));
+  const dataResult = await adminFetchSafe<Paged<LogRow>>(`/api/admin/audit/?${query.toString()}`);
+  const data = dataResult.data;
+  const dataError = dataResult.error;
+  const totalPages = data ? Math.max(1, Math.ceil(data.total / data.page_size)) : 1;
+
+  if (!data || dataError) {
+    return (
+      <PageContainer pageTitle='Audit Log'>
+        <AdminErrorCard title='Gagal memuat audit log' message={dataError ?? 'Data tidak tersedia.'} />
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer pageTitle='Audit Log' pageDescription={`${data.total} kejadian tercatat`}>

@@ -11,11 +11,16 @@ from app.models.platform_setting import PlatformSetting
 BRANDING_KEY = "branding"
 CACHE_TTL_SECONDS = 60
 
+# Slot favicon per device (yang paling umum dipakai browser / OS).
+FAVICON_SLOTS = ("icon32", "icon192", "icon512", "apple180", "maskable512", "ico", "svg")
+DEFAULT_FAVICONS: Dict[str, Optional[str]] = {slot: None for slot in FAVICON_SLOTS}
+
 DEFAULT_BRANDING: Dict[str, Any] = {
     "app_name": "Clipzy AI",
     "tagline": "Turn long videos into viral shorts",
     "logo_url": None,
-    "favicon_url": None,
+    "favicon_url": None,        # alias ke favicons.icon32 (backward-compatible)
+    "favicons": dict(DEFAULT_FAVICONS),
     "og_image_url": None,
     "hero_video_url": None,
     "accent_color": "#f4c76b",
@@ -55,8 +60,19 @@ def normalize_branding(value: Optional[dict]) -> Dict[str, Any]:
     merged["tagline"] = _clean_text(merged.get("tagline"), 120)
     merged["footer_note"] = _clean_text(merged.get("footer_note"), 160)
     merged["support_email"] = _clean_text(merged.get("support_email"), 120)
-    for field in ("logo_url", "favicon_url", "og_image_url", "hero_video_url"):
+    for field in ("logo_url", "og_image_url", "hero_video_url"):
         merged[field] = _clean_url(merged.get(field))
+
+    # favicons: dict slot -> url (atau None). Pastikan semua slot ada.
+    raw_favicons = merged.get("favicons")
+    if not isinstance(raw_favicons, dict):
+        raw_favicons = {}
+    favicons: Dict[str, Optional[str]] = {}
+    for slot in FAVICON_SLOTS:
+        favicons[slot] = _clean_url(raw_favicons.get(slot))
+    merged["favicons"] = favicons
+    # favicon_url = alias ke favicons.icon32 (backward-compatible).
+    merged["favicon_url"] = favicons.get("icon32")
 
     color = str(merged.get("accent_color") or DEFAULT_BRANDING["accent_color"]).strip()
     merged["accent_color"] = (

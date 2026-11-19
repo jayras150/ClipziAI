@@ -261,6 +261,45 @@ button, input, select, textarea { font: inherit; color: inherit; }
   font-size: 13px;
   box-shadow: 0 8px 20px rgba(244, 199, 107, 0.28);
 }
+
+/* Branding di mobile: jangan sampai logo menyusut/hilang saat layar sempit. */
+.ui-brand {
+  min-width: 0;
+  overflow: hidden;
+}
+/* Placeholder tombol YouTube saat status masih dimuat (mencegah flicker). */
+.ui-yt-skeleton {
+  width: 132px;
+  height: 36px;
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+@media (max-width: 920px) {
+  .ui-yt-skeleton { display: none; }
+}
+.ui-brand-logo {
+  display: block;
+  max-height: 30px;
+}
+@media (max-width: 920px) {
+  .ui-nav > .ui-brand {
+    grid-column: 2;
+    justify-self: start;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .ui-brand-logo {
+    max-width: min(40vw, 140px);
+    height: auto;
+  }
+}
+@media (max-width: 520px) {
+  .ui-brand-logo {
+    max-width: min(36vw, 110px);
+    height: auto;
+  }
+}
 .ui-nav-links {
   display: flex;
   align-items: center;

@@ -31,6 +31,109 @@ const KIND_HINT: Record<AssetKind, string> = {
   hero: 'MP4/WEBM maksimal 30 MB. Animasi yang diputar di landing page (autoplay, tanpa ikon).'
 };
 
+/** Slot favicon yang dipakai browser & OS (Android, iOS, Windows, tab browser). */
+const FAVICON_SLOTS: Array<{ slot: string; label: string; spec: string }> = [
+  { slot: 'icon32', label: 'Favicon 32×32', spec: 'Tab browser & bookmark (PNG)' },
+  { slot: 'icon192', label: 'Android 192×192', spec: 'Home screen Android (PNG)' },
+  { slot: 'icon512', label: 'PWA 512×512', spec: 'Splash / install PWA (PNG)' },
+  { slot: 'apple180', label: 'Apple 180×180', spec: 'iOS home screen (PNG, tanpa transparansi)' },
+  { slot: 'maskable512', label: 'Maskable 512', spec: 'Android adaptive icon (PNG, safe zone 80%)' },
+  { slot: 'ico', label: 'Favicon .ico', spec: 'Browser lama & Windows shortcut' },
+  { slot: 'svg', label: 'Favicon SVG', spec: 'Tab modern (tajam di semua resolusi)' }
+];
+
+function FaviconSlotsCard({
+  favicons,
+  uploadingSlot,
+  onUpload,
+  onRemove
+}: {
+  favicons: Record<string, string>;
+  uploadingSlot: string;
+  onUpload: (slot: string, file: File | null) => void;
+  onRemove: (slot: string) => void;
+}) {
+  const [previews, setPreviews] = useState<Record<string, string>>({});
+  const pick = (slot: string, file: File | null) => {
+    if (!file) return;
+    setPreviews((prev) => ({ ...prev, [slot]: URL.createObjectURL(file) }));
+    onUpload(slot, file);
+  };
+  const filled = FAVICON_SLOTS.filter((item) => favicons[item.slot]).length;
+
+  return (
+    <Card className='md:col-span-3'>
+      <CardHeader className='pb-3'>
+        <div className='flex flex-wrap items-center justify-between gap-2'>
+          <CardTitle className='text-base'>Favicon multi-device</CardTitle>
+          <Badge variant={filled ? 'outline' : 'secondary'}>
+            {filled}/{FAVICON_SLOTS.length} slot terisi
+          </Badge>
+        </div>
+        <CardDescription className='text-xs'>
+          Unggah ikon untuk tiap perangkat. Browser/OS otomatis memilih ukuran yang paling
+          cocok; kalau slot tertentu kosong, dipakai favicon 32×32 sebagai cadangan.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className='space-y-2'>
+        {FAVICON_SLOTS.map(({ slot, label, spec }) => {
+          const url = favicons[slot] || '';
+          const preview = previews[slot] || url;
+          const uploading = uploadingSlot === slot;
+          return (
+            <div
+              key={slot}
+              className='flex flex-wrap items-center gap-3 rounded-lg border p-2 text-xs'
+            >
+              <div className='bg-muted/50 flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md border'>
+                {preview ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={preview} alt={label} className='max-h-10 max-w-10 object-contain' />
+                ) : (
+                  <span className='text-muted-foreground text-[10px]'>kosong</span>
+                )}
+              </div>
+              <div className='min-w-0 flex-1'>
+                <div className='font-medium'>{label}</div>
+                <div className='text-muted-foreground text-[11px]'>{spec}</div>
+                {url ? (
+                  <div className='text-muted-foreground/70 truncate text-[10px]'>{url}</div>
+                ) : null}
+              </div>
+              <div className='flex items-center gap-1'>
+                {uploading ? (
+                  <Badge variant='secondary' className='gap-1'>
+                    <ClipzySpinner size='xs' variant='ring' /> unggah
+                  </Badge>
+                ) : null}
+                <label className='hover:bg-muted cursor-pointer rounded-md border px-2 py-1'>
+                  {url ? 'Ganti' : 'Unggah'}
+                  <input
+                    type='file'
+                    className='hidden'
+                    accept='image/png,image/svg+xml,image/x-icon,image/vnd.microsoft.icon'
+                    onChange={(event) => pick(slot, event.target.files?.[0] || null)}
+                  />
+                </label>
+                {url ? (
+                  <button
+                    type='button'
+                    className='text-destructive rounded-md border px-2 py-1'
+                    onClick={() => onRemove(slot)}
+                    disabled={uploading}
+                  >
+                    Hapus
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
+
 function humanSize(bytes?: number): string {
   if (!bytes) return '-';
   if (bytes < 1024) return `${bytes} B`;
@@ -226,6 +329,15 @@ export default function BrandingForm({ config }: { config: BrandingConfig }) {
     og_image_url: config.og_image_url || '',
     hero_video_url: config.hero_video_url || ''
   });
+  const [favicons, setFavicons] = useState<Record<string, string>>(() => {
+    const raw = config.favicons || {};
+    const next: Record<string, string> = {};
+    for (const [key, value] of Object.entries(raw)) {
+      if (value) next[key] = value;
+    }
+    return next;
+  });
+  const [uploadingSlot, setUploadingSlot] = useState('');
   const [assets, setAssets] = useState<Partial<Record<AssetKind, UploadedAsset>>>({});
   const [uploading, setUploading] = useState<AssetKind | null>(null);
   const [message, setMessage] = useState('');
@@ -246,7 +358,11 @@ export default function BrandingForm({ config }: { config: BrandingConfig }) {
     setMessage('');
     setError('');
     startTransition(async () => {
-      const result = await saveBranding(form);
+      const result = await saveBranding({
+        ...form,
+        favicons,
+        favicon_url: favicons.icon32 || form.favicon_url
+      });
       if (result.ok) setMessage('Branding tersimpan dan langsung dipakai semua halaman.');
       else setError(result.error || 'Gagal menyimpan.');
     });
@@ -274,6 +390,38 @@ export default function BrandingForm({ config }: { config: BrandingConfig }) {
     });
   };
 
+  const onUploadFaviconSlot = (slot: string, file: File | null) => {
+    if (!file) return;
+    setMessage('');
+    setError('');
+    setUploadingSlot(slot);
+    startTransition(async () => {
+      const data = new FormData();
+      data.set('kind', 'favicon');
+      data.set('slot', slot);
+      data.set('file', file);
+      const result = await uploadBrandingAsset(data);
+      setUploadingSlot('');
+      if (result.ok && result.asset) {
+        setFavicons((prev) => ({ ...prev, [slot]: result.asset!.url }));
+        if (slot === 'icon32') set('favicon_url', result.asset.url);
+        setMessage(`Favicon ${slot} terunggah (${humanSize(result.asset.size_bytes)}).`);
+      } else {
+        setError(result.error || 'Gagal mengunggah favicon.');
+      }
+    });
+  };
+
+  const onRemoveFaviconSlot = (slot: string) => {
+    setFavicons((prev) => {
+      const next = { ...prev };
+      delete next[slot];
+      return next;
+    });
+    if (slot === 'icon32') set('favicon_url', '');
+    setMessage(`Favicon ${slot} akan dihapus setelah klik Simpan.`);
+  };
+
   const onRemove = (kind: AssetKind) => {
     set(urlKey[kind], '');
     setAssets((prev) => ({ ...prev, [kind]: undefined }));
@@ -293,7 +441,7 @@ export default function BrandingForm({ config }: { config: BrandingConfig }) {
         />
         <AssetCard
           kind='favicon'
-          url={form.favicon_url}
+          url={favicons.icon32 || form.favicon_url}
           asset={assets.favicon}
           uploading={uploading === 'favicon'}
           onFile={(file) => onUpload('favicon', file)}
@@ -306,6 +454,12 @@ export default function BrandingForm({ config }: { config: BrandingConfig }) {
           uploading={uploading === 'og'}
           onFile={(file) => onUpload('og', file)}
           onRemove={() => onRemove('og')}
+        />
+        <FaviconSlotsCard
+          favicons={favicons}
+          uploadingSlot={uploadingSlot}
+          onUpload={onUploadFaviconSlot}
+          onRemove={onRemoveFaviconSlot}
         />
         <div className='md:col-span-3'>
           <AssetCard

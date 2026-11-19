@@ -1,11 +1,12 @@
 import PageContainer from '@/components/layout/page-container';
+import { AdminErrorCard } from '@/components/admin-error-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { adminFetch } from '@/lib/clipzi';
+import { adminFetchSafe } from '@/lib/clipzi';
 import { createPlan, deletePlan, updatePlan, type PlanRow } from './actions';
 
 export const metadata = { title: 'Admin: Plans' };
@@ -99,7 +100,17 @@ function PlanFields({ plan }: { plan?: PlanRow }) {
 }
 
 export default async function PlansPage() {
-  const plans = await adminFetch<PlanRow[]>('/api/admin/plans/');
+  const plansResult = await adminFetchSafe<PlanRow[]>('/api/admin/plans/');
+  const plans = plansResult.data;
+  const plansError = plansResult.error;
+
+  if (!plans || plansError) {
+    return (
+      <PageContainer pageTitle='Plans'>
+        <AdminErrorCard title='Gagal memuat plans' message={plansError ?? 'Data tidak tersedia.'} />
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer pageTitle='Plans' pageDescription={`${plans.length} plan terdaftar`}>

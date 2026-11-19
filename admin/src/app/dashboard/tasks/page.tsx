@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
+import { SubmitButton } from '@/components/ui/submit-button';
 import { adminFetchSafe, type Paged } from '@/lib/clipzi';
 import { TaskActionButton } from '@/features/tasks/task-action-button';
 

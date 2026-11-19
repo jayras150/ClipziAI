@@ -19,10 +19,11 @@ async def public_branding(response: Response, db: AsyncSession = Depends(get_db_
     semua tab; `version` dipakai untuk cache-busting favicon/logo di metadata.
     """
     branding = await get_branding(db)
+    favicons = branding.get("favicons") if isinstance(branding.get("favicons"), dict) else {}
     fingerprint = "|".join(
         str(branding.get(key) or "")
         for key in ("app_name", "logo_url", "favicon_url", "og_image_url", "accent_color")
-    )
+    ) + "|" + "|".join(f"{slot}={favicons.get(slot) or ''}" for slot in sorted(favicons))
     version = hashlib.sha1(fingerprint.encode("utf-8")).hexdigest()[:10]
 
     response.headers["Cache-Control"] = "no-store, max-age=0"

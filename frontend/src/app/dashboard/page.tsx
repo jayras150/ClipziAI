@@ -204,7 +204,33 @@ export default function DashboardPage() {
       /* abaikan */
     }
   }, [])
-  const [youtube, setYoutube] = useState<{ connected: boolean; channel_name?: string }>({ connected: false })
+  // Status YouTube: null = belum diketahui (saat loading), true/false = hasil API.
+  // Nilai terakhir disimpan ke localStorage supaya refresh tidak menyebabkan
+  // tombol "Connect YouTube" berkedip (muncul lalu hilang).
+  const [youtube, setYoutube] = useState<{ connected: boolean; channel_name?: string } | null>(null)
+
+  const persistYouTube = (value: { connected: boolean; channel_name?: string } | null) => {
+    try {
+      if (value) localStorage.setItem('clipzi_youtube', JSON.stringify(value))
+      else localStorage.removeItem('clipzi_youtube')
+    } catch {
+      /* abaikan */
+    }
+  }
+
+  // Baca status YouTube terakhir dari localStorage saat mounting (hanya sekali).
+  useEffect(() => {
+    if (youtube !== null) return
+    try {
+      const raw = localStorage.getItem('clipzi_youtube')
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (parsed && typeof parsed.connected === 'boolean') setYoutube(parsed)
+      }
+    } catch {
+      /* abaikan */
+    }
+  }, [])
   const [youtubeLoading, setYoutubeLoading] = useState(false)
   const [youtubeMessage, setYoutubeMessage] = useState("")
   // Plan user aktif — dipakai untuk chip "Watermark Clipzy aktif" (plan free).
@@ -373,7 +399,10 @@ export default function DashboardPage() {
 
       api
         .getYouTubeStatus(stored)
-        .then(setYoutube)
+        .then((status) => {
+          setYoutube(status)
+          persistYouTube(status)
+        })
         .catch(() => setYoutubeMessage("Could not load your YouTube status."))
 
       api
@@ -453,6 +482,7 @@ export default function DashboardPage() {
         )
         const connected = await api.setYouTubeAccessToken(stored, accessToken)
         setYoutube({ connected: true, channel_name: connected.channel_name })
+        persistYouTube({ connected: true, channel_name: connected.channel_name })
         setYoutubeMessage(connected.message || "YouTube connected.")
       } catch (fallbackError: any) {
         setYoutubeMessage([fallbackError?.message || "Could not connect YouTube.", detail].filter(Boolean).join(" "))
@@ -469,6 +499,7 @@ export default function DashboardPage() {
     try {
       await api.disconnectYouTube(stored)
       setYoutube({ connected: false })
+      persistYouTube({ connected: false })
       setYoutubeMessage("YouTube connection removed.")
     } catch {
       setYoutubeMessage("Could not remove the YouTube connection.")
@@ -879,7 +910,7 @@ export default function DashboardPage() {
   /** Upload cepat satu klip dari kartu memakai metadata AI yang tersimpan. */
   const uploadClipFromCard = async (clip: ClipData) => {
     if (!token || cardUploading[clip.id]) return
-    if (!youtube.connected) {
+    if (!youtube?.connected) {
       void connectYouTube()
       return
     }
@@ -932,7 +963,7 @@ export default function DashboardPage() {
   /** Antre unggahan beberapa klip sekaligus, opsional dengan jadwal publish. */
   const bulkUploadSelected = async () => {
     if (!token || selectedClips.length === 0 || bulkUploading) return
-    if (!youtube.connected) {
+    if (!youtube?.connected) {
       void connectYouTube()
       return
     }
@@ -1019,7 +1050,9 @@ export default function DashboardPage() {
           ))}
         </nav>
         <div className="ui-nav-actions">
-          {youtube.connected ? (
+          {youtube === null ? (
+            <span className="ui-btn ui-btn-ghost ui-yt-skeleton" aria-hidden="true" />
+          ) : youtube.connected ? (
             <div className="ui-yt" ref={ytMenuRef}>
               <button
                 type="button"
@@ -1027,7 +1060,7 @@ export default function DashboardPage() {
                 onClick={() => setYtMenuOpen((open) => !open)}
                 aria-haspopup="menu"
                 aria-expanded={ytMenuOpen}
-                title={`YouTube: ${youtube.channel_name || "connected"}`}
+                title={`YouTube: ${youtube?.channel_name || "connected"}`}
                 disabled={youtubeLoading}
               >
                 {youtubeLoading ? (
@@ -1035,13 +1068,13 @@ export default function DashboardPage() {
                 ) : (
                   <YouTubeIcon size={18} className="yt-icon" />
                 )}
-                <span className="ui-yt-name">{youtube.channel_name || "YouTube connected"}</span>
+                <span className="ui-yt-name">{youtube?.channel_name || "YouTube connected"}</span>
                 <ChevronDown size={14} className="ui-yt-chevron" />
               </button>
               {ytMenuOpen && (
                 <div className="ui-dropdown ui-dropdown-sm" role="menu">
                   <div className="ui-dropdown-note">
-                    Connected as {youtube.channel_name || "YouTube"}
+                    Connected as {youtube?.channel_name || "YouTube"}
                   </div>
                   <button
                     type="button"
@@ -1071,8 +1104,8 @@ export default function DashboardPage() {
           )}
           <UserMenu
             youtube={{
-              connected: Boolean(youtube.connected),
-              channelName: youtube.channel_name,
+              connected: Boolean(youtube?.connected),
+              channelName: youtube?.channel_name,
               loading: youtubeLoading,
             }}
             onConnectYouTube={() => void connectYouTube()}
@@ -2440,7 +2473,7 @@ export default function DashboardPage() {
         description={
           <>
             Clipzy AI will stop auto-uploading clips to{" "}
-            <strong>{youtube.channel_name || "your YouTube channel"}</strong> and the stored access token will be
+            <strong>{youtube?.channel_name || "your YouTube channel"}</strong> and the stored access token will be
             removed. Your clips and projects stay untouched — you can reconnect anytime.
           </>
         }
@@ -2480,7 +2513,7 @@ export default function DashboardPage() {
       <ClipModal
         clip={modalClip}
         token={token}
-        youtubeConnected={Boolean(youtube.connected)}
+        youtubeConnected={Boolean(youtube?.connected)}
         onClose={() => setModalClipId("")}
         onUpdated={patchClip}
         onConnectYouTube={() => {

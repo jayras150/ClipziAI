@@ -52,6 +52,8 @@ class BrandingIn(BaseModel):
     tagline: Optional[str] = Field(default=None, max_length=120)
     logo_url: Optional[str] = None
     favicon_url: Optional[str] = None
+    # Multi-slot favicon per device: {"icon32": url, "icon192": url, ...}
+    favicons: Optional[dict] = None
     og_image_url: Optional[str] = None
     hero_video_url: Optional[str] = None
     accent_color: str = "#f4c76b"
@@ -99,12 +101,28 @@ async def upload_branding_asset(
     request: Request,
     kind: str,
     file: UploadFile = File(...),
+    slot: str = "icon32",
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db_session),
 ):
-    """Unggah logo/favicon/og image (atau video hero landing) ke storage."""
+    """Unggah logo/favicon/og image (atau video hero landing) ke storage.
+
+    Untuk `kind=favicon`, `slot` menentukan perangkat tujuan:
+    icon32 | icon192 | icon512 | apple180 | maskable512 | ico | svg.
+    Slot disimpan di `branding.favicons[slot]`; `icon32` otomatis menjadi
+    `favicon_url` (alias backward-compatible).
+    """
     if kind not in {"logo", "favicon", "og", "hero"}:
         raise HTTPException(status_code=400, detail="kind harus logo, favicon, og, atau hero")
+
+    from app.services.branding import FAVICON_SLOTS
+
+    favicon_slot = (slot or "icon32").strip()
+    if kind == "favicon" and favicon_slot not in FAVICON_SLOTS:
+        raise HTTPException(
+            status_code=400,
+            detail="slot favicon harus salah satu dari: %s" % ", ".join(FAVICON_SLOTS),
+        )
 
     content_type = (file.content_type or "").lower().split(";")[0].strip()
 
@@ -132,7 +150,10 @@ async def upload_branding_asset(
             detail="Ukuran maksimum %d MB." % (limit // (1024 * 1024)),
         )
 
-    key = "branding/%s/%s.%s" % (kind, uuid4().hex, extension)
+    if kind == "favicon":
+        key = "branding/favicon/%s-%s.%s" % (favicon_slot, uuid4().hex, extension)
+    else:
+        key = "branding/%s/%s.%s" % (kind, uuid4().hex, extension)
     try:
         storage = get_storage()
         url = storage.upload_bytes(
@@ -149,7 +170,13 @@ async def upload_branding_asset(
 
     before = await get_branding(db)
     payload = dict(before)
-    payload[field] = url
+    if kind == "favicon":
+        favicons = dict(before.get("favicons") or {})
+        favicons[favicon_slot] = url
+        payload["favicons"] = favicons
+        payload["favicon_url"] = favicons.get("icon32")
+    else:
+        payload[field] = url
     after = await set_branding(db, payload)
 
     db.add(
@@ -171,6 +198,7 @@ async def upload_branding_asset(
     # (dimensi & ukuran) tanpa mengunduh ulang gambar.
     return {
         "kind": kind,
+        "slot": favicon_slot if kind == "favicon" else None,
         "url": url,
         "size_bytes": len(data),
         "content_type": content_type,
@@ -178,6 +206,46 @@ async def upload_branding_asset(
         "height": height,
         "branding": after,
     }
+
+
+@router.delete("/branding/favicon/{slot}")
+async def delete_favicon_slot(
+    slot: str,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Hapus satu slot favicon (file di storage dibiarkan; hanya referensi)."""
+    from app.services.branding import FAVICON_SLOTS
+
+    if slot not in FAVICON_SLOTS:
+        raise HTTPException(
+            status_code=400,
+            detail="slot favicon harus salah satu dari: %s" % ", ".join(FAVICON_SLOTS),
+        )
+    before = await get_branding(db)
+    favicons = dict(before.get("favicons") or {})
+    favicons[slot] = None
+    payload = dict(before)
+    payload["favicons"] = favicons
+    payload["favicon_url"] = favicons.get("icon32")
+    after = await set_branding(db, payload)
+    db.add(
+        AuditLog(
+            actor_type=ActorType.ADMIN,
+            actor_id=current_admin.id,
+            actor_email=current_admin.email,
+            action="platform_branding_favicon_removed",
+            resource_type="platform_setting",
+            resource_id="branding",
+            old_values=before,
+            new_values=after,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+    )
+    await db.commit()
+    return {"slot": slot, "branding": after}
 
 
 @router.post("/branding/reset")
