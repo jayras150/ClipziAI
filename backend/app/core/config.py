@@ -87,6 +87,11 @@ class Settings(BaseSettings):
     TRANSCRIPTION_BASE_URL: Optional[str] = None
     TRANSCRIPTION_MODEL: Optional[str] = None
 
+    # Token HuggingFace untuk unduh model Whisper / model AI lain dari HF Hub
+    # saat worker GPU tidak menggunakan baked model. Diisi admin lewat
+    # dashboard (terenkripsi di DB) lalu dihidrasi ke settings saat startup.
+    HF_TOKEN: Optional[str] = None
+
     # Transkripsi Whisper di GPU worker (CTranslate2/faster-whisper, tanpa torch).
     # Nama model HuggingFace juga diterima: openai/whisper-large-v3 -> large-v3,
     # openai/whisper-large-v3-turbo -> turbo (lebih cepat, akurasi hampir sama).

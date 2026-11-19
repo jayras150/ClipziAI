@@ -667,6 +667,15 @@ def _make_create_instance(task_id: UUID, client: Any):
                 existing_id,
             )
             return existing_id
+        # Hidrasi defensif kredensial runtime (cookies/HF token/storage) agar
+        # dispatch tidak pernah tanpa kredensial walau startup terlewat.
+        try:
+            from app.services.runtime_credentials import hydrate_runtime_credentials
+
+            _creds = await hydrate_runtime_credentials()
+            logger.debug("Hidrasi kredensial runtime pre-dispatch: %s", _creds)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Hidrasi kredensial runtime pre-dispatch gagal: %s", exc)
         worker_env = build_worker_env(task_id)
 
         # Ask Vast cepat hilang (diambil mesin lain). Kalau itu terjadi, ambil

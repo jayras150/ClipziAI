@@ -116,6 +116,16 @@ async def lifespan(app: FastAPI):
         await load_storage_config()
     except Exception as exc:
         logger.warning("Gagal memuat konfigurasi storage: %s", exc)
+    # Hidrasi kredensial runtime (cookies YouTube, HF token, storage primary)
+    # dari database ke `settings`, agar worker/instance tetap punya kredensial
+    # walau env proses kosong setelah restart container.
+    try:
+        from app.services.runtime_credentials import hydrate_runtime_credentials
+
+        summary = await hydrate_runtime_credentials()
+        logger.info("Hidrasi kredensial runtime: %s", summary)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Gagal hidrasi kredensial runtime: %s", exc)
     # Pool proxy YouTube (hasil filter aktif) dipakai otomatis oleh downloader.
     try:
         from app.services.proxy_pool import load_and_apply_proxy_pool

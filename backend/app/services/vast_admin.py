@@ -295,19 +295,45 @@ def worker_env_spec() -> List[Dict[str, Any]]:
         },
     ]
     for name in WORKER_ENV_REQUIRED + WORKER_ENV_OPTIONAL:
+        # Cookies yang terlalu besar dikirim sebagai gzip+base64 (`YTDLP_COOKIES_GZIP_B64`)
+        # supaya total env di bawah ~4 KB. Dari sudut admin, `YTDLP_COOKIES_BASE64`
+        # tetap dianggap "set" walau isinya dikompresi; preview menunjukkan ukuran.
         value = env.get(name, "")
+        is_cookie_packed = name == "YTDLP_COOKIES_BASE64" and bool(
+            env.get("YTDLP_COOKIES_GZIP_B64")
+        )
+        effective_value = value or (
+            env.get("YTDLP_COOKIES_GZIP_B64") if is_cookie_packed else ""
+        )
         secret = _is_secret(name)
         items.append(
             {
                 "name": name,
                 "required": name in WORKER_ENV_REQUIRED,
                 "runtime": False,
-                "set": bool(value),
+                "set": bool(effective_value),
                 "secret": secret,
-                "preview": (_mask(value) if secret else value[:80]) if value else "",
+                "preview": (
+                    _mask(value) if secret else value[:80]
+                )
+                if value
+                else (
+                    f"**** (gzip {len(env.get('YTDLP_COOKIES_GZIP_B64') or '')} char)"
+                    if is_cookie_packed
+                    else ""
+                ),
             }
         )
     return items
+
+
+def _cookie_env_items(env: Dict[str, str]) -> list:
+    """Item env cookies untuk export: gzip+base64 jika dikompresi, else base64."""
+    if env.get("YTDLP_COOKIES_GZIP_B64"):
+        return [("YTDLP_COOKIES_GZIP_B64", env["YTDLP_COOKIES_GZIP_B64"])]
+    if env.get("YTDLP_COOKIES_BASE64"):
+        return [("YTDLP_COOKIES_BASE64", env["YTDLP_COOKIES_BASE64"])]
+    return []
 
 
 def env_text(reveal: bool = False) -> str:
@@ -316,8 +342,16 @@ def env_text(reveal: bool = False) -> str:
     lines = ["# ClipziAI worker environment (auto-generated)"]
     for name in WORKER_ENV_REQUIRED + WORKER_ENV_OPTIONAL:
         value = env.get(name, "")
+        # Jika cookies dikompresi, skip base64 (diganti gzip di bawah).
+        if name == "YTDLP_COOKIES_BASE64" and env.get("YTDLP_COOKIES_GZIP_B64"):
+            continue
         if value and not reveal and _is_secret(name):
             value = "****"
+        if value:
+            lines.append(f"{name}={value}")
+    for name, value in _cookie_env_items(env):
+        if not reveal and name == "YTDLP_COOKIES_GZIP_B64":
+            value = f"**** (gzip {len(value)} char)"
         lines.append(f"{name}={value}")
     return "\n".join(lines) + "\n"
 
