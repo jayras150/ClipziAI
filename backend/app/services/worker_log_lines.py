@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import delete, select
@@ -14,6 +15,23 @@ logger = logging.getLogger(__name__)
 
 MAX_MESSAGE = 4000
 MAX_BATCH = 300
+
+# Noise dari Docker/Vast: instance sudah dihapus saat log dibaca — bukan
+# kegagalan task, jadi tidak perlu masuk dashboard.
+_DROP_MARKERS = ("no such container", "error response from daemon")
+
+# Stack trace Go (helper internal image) bisa ratusan baris dan membanjiri log.
+# Cukup tampilkan satu baris penanda, sisanya dibuang.
+_STACK_LINE = re.compile(
+    r"^(goroutine \d+"
+    r"|created by "
+    r"|runtime\."
+    r"|/usr/local/go/src/"
+    r"|\s+/usr/local/go/src/"
+    r"|[a-z0-9_.$]+\(0x[0-9a-f]+)",
+    re.IGNORECASE,
+)
+_STACK_HINT = "[worker] stack trace internal disembunyikan (tidak memengaruhi task)"
 
 
 def _clean(value: Any, limit: int = MAX_MESSAGE) -> str:
@@ -28,6 +46,7 @@ async def append_lines(
     lines: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
     rows = []
+    stack_hint_done = False
     for offset, item in enumerate((lines or [])[:MAX_BATCH]):
         if not isinstance(item, dict):
             continue
@@ -35,6 +54,24 @@ async def append_lines(
             seq = int(item.get("seq") or 0)
         except (TypeError, ValueError):
             seq = 0
+        message = _clean(item.get("message"))
+        lowered = message.lower()
+        if any(marker in lowered for marker in _DROP_MARKERS):
+            continue
+        if _STACK_LINE.match(message.strip()):
+            if not stack_hint_done:
+                stack_hint_done = True
+                rows.append(
+                    {
+                        "task_id": task_id,
+                        "instance_id": instance_id,
+                        "seq": seq if seq > 0 else offset + 1,
+                        "level": "INFO",
+                        "stage": None,
+                        "message": _STACK_HINT,
+                    }
+                )
+            continue
         rows.append(
             {
                 "task_id": task_id,
@@ -42,7 +79,7 @@ async def append_lines(
                 "seq": seq if seq > 0 else offset + 1,
                 "level": _clean(item.get("level") or "INFO", 16).upper(),
                 "stage": _clean(item.get("stage") or "", 40) or None,
-                "message": _clean(item.get("message")),
+                "message": message,
             }
         )
     if not rows:

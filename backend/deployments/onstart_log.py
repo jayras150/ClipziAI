@@ -101,6 +101,7 @@ def _probe_lines() -> list[dict]:
     add(f"onstart mulai: task={TASK_ID or '<kosong>'} role={os.environ.get('CLIPZI_ROLE', '')}")
 
     # --- Env penting (jangan cetak nilai rahasia) ---
+    baked = (os.environ.get("CLIPZI_MODEL_SOURCE") or "").lower() == "baked"
     for name in (
         "DATABASE_URL",
         "ENCRYPTION_KEY",
@@ -120,8 +121,16 @@ def _probe_lines() -> list[dict]:
         value = os.environ.get(name)
         if value:
             add(f"env {name}=<set> ({len(value)} char)")
-        else:
-            add(f"env {name}=<kosong>", level="WARN")
+            continue
+        # Cookies dipadatkan ke gzip saat > 4 KB: BASE64 kosong itu NORMAL.
+        if name == "YTDLP_COOKIES_BASE64" and os.environ.get("YTDLP_COOKIES_GZIP_B64"):
+            add("env YTDLP_COOKIES_BASE64=<dipadatkan ke YTDLP_COOKIES_GZIP_B64>")
+            continue
+        # Model sudah dibekukan di image: URL/HF repo memang tidak dikirim.
+        if baked and name in ("CLIPZI_MODEL_URL", "CLIPZI_HF_REPO"):
+            add(f"env {name}=<tidak perlu: model baked di image>")
+            continue
+        add(f"env {name}=<kosong>", level="WARN")
 
     # --- GPU ---
     if shutil.which("nvidia-smi"):
@@ -134,7 +143,15 @@ def _probe_lines() -> list[dict]:
         add("nvidia-smi tidak tersedia (GPU mungkin tidak terpasang)", level="WARN")
 
     # --- Model Whisper ---
-    model_dir = os.environ.get("CLIPZI_RESTORE_MODEL_PATH") or "/workspace/whisper_model"
+    # Path model mengikuti env worker (baked: /app/whisper_model). Fallback ke
+    # /workspace/whisper_model untuk instance lama yang me-restore model.
+    model_dir = (
+        os.environ.get("GPU_WHISPER_MODEL")
+        or os.environ.get("CLIPZI_RESTORE_MODEL_PATH")
+        or "/app/whisper_model"
+    )
+    if not os.path.isdir(model_dir) and os.path.isdir("/workspace/whisper_model"):
+        model_dir = "/workspace/whisper_model"
     if os.path.isdir(model_dir):
         try:
             files = sorted(os.listdir(model_dir))[:8]
