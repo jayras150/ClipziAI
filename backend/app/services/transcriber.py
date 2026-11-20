@@ -2,9 +2,11 @@
 import asyncio
 import gc
 import logging
+import math
 import os
 import re
 import subprocess
+import time
 from typing import Dict, Any, List, Optional
 
 import openai
@@ -17,6 +19,110 @@ logger = logging.getLogger(__name__)
 
 # Penanda error kredit/kuota dari provider (OpenRouter 402, OpenAI insufficient_quota).
 _BILLING_HINTS = ("402", "credit", "insufficient_quota", "quota", "billing", "payment")
+
+# Ambang minimum porsi audio yang harus dipertahankan VAD (0..1). Di bawah ini
+# VAD dianggap membuang percakapan (mis. musik/derau/gain ekstrem) sehingga
+# transkripsi diulang tanpa VAD. Bisa diatur lewat WHISPER_VAD_MIN_KEEP.
+DEFAULT_VAD_MIN_KEEP = 0.05
+
+
+def _vad_min_keep() -> float:
+    """Baca WHISPER_VAD_MIN_KEEP (rasio 0..1), fallback 0.05."""
+    raw = (os.getenv("WHISPER_VAD_MIN_KEEP") or "").strip()
+    try:
+        value = float(raw) if raw else DEFAULT_VAD_MIN_KEEP
+    except ValueError:
+        value = DEFAULT_VAD_MIN_KEEP
+    return min(max(value, 0.0), 1.0)
+
+
+def _dbfs(value: float) -> float:
+    """Amplitudo 0..1 → dBFS (dibatasi -120 untuk menghindari -inf)."""
+    if value <= 1e-6:
+        return -120.0
+    return round(20.0 * math.log10(value), 1)
+
+
+def audio_signal_stats(audio: Any, sampling_rate: int = 16000) -> Dict[str, Any]:
+    """Statistik amplitudo audio (RMS/peak/dBFS) — tidak menyimpan audio."""
+    try:
+        import numpy as np
+    except Exception:  # noqa: BLE001 - numpy selalu ada di image, tapi jangan crash
+        return {}
+
+    array = np.asarray(audio, dtype=np.float32).reshape(-1)
+    samples = int(array.size)
+    if samples == 0:
+        return {
+            "samples": 0,
+            "seconds": 0.0,
+            "rms": 0.0,
+            "peak": 0.0,
+            "rms_dbfs": -120.0,
+            "peak_dbfs": -120.0,
+        }
+    rms = float(np.sqrt(np.mean(np.square(array.astype(np.float64)))))
+    peak = float(np.max(np.abs(array)))
+    return {
+        "samples": samples,
+        "seconds": round(samples / float(sampling_rate), 2),
+        "rms": round(rms, 5),
+        "peak": round(peak, 5),
+        "rms_dbfs": _dbfs(rms),
+        "peak_dbfs": _dbfs(peak),
+    }
+
+
+def _probe_audio_summary(audio_path: str) -> Dict[str, Any]:
+    """Ringkasan file audio lewat ffprobe (sample rate, channel, codec, ukuran)."""
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error", "-print_format", "json",
+                "-select_streams", "a:0", "-show_format", "-show_streams",
+                audio_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        import json as _json
+
+        data = _json.loads(result.stdout or "{}")
+    except Exception as exc:  # noqa: BLE001 - diagnostik tidak boleh menggagalkan task
+        logger.debug("ffprobe audio gagal untuk %s: %s", audio_path, str(exc)[:200])
+        return {}
+
+    streams = data.get("streams") or []
+    stream = streams[0] if streams else {}
+    fmt = data.get("format") or {}
+    try:
+        size_bytes = int(fmt.get("size") or 0)
+    except (TypeError, ValueError):
+        size_bytes = 0
+    return {
+        "duration": round(float(fmt.get("duration") or 0), 2),
+        "sample_rate": stream.get("sample_rate"),
+        "channels": stream.get("channels"),
+        "codec": stream.get("codec_name"),
+        "bit_rate": stream.get("bit_rate"),
+        "size_bytes": size_bytes,
+    }
+
+
+def _decode_audio_for_stats(audio_path: str):
+    """Decode audio sekali untuk statistik (dipakai hanya di jalur fallback)."""
+    try:
+        from faster_whisper.audio import decode_audio
+
+        audio = decode_audio(audio_path, sampling_rate=16000)
+        return audio, audio_signal_stats(audio)
+    except Exception as exc:  # noqa: BLE001 - fallback tetap berjalan tanpa statistik
+        logger.warning(
+            "Diagnostik audio gagal untuk %s: %s", audio_path, str(exc)[:200]
+        )
+        return None, {}
+
 
 
 def _is_billing_error(exc: BaseException) -> bool:
@@ -142,7 +248,7 @@ class AudioTranscriber:
         """
         loop = asyncio.get_event_loop()
         model = self._get_gpu_model()
-        segments, info = await loop.run_in_executor(
+        segments, info, vad_meta = await loop.run_in_executor(
             None,
             self._transcribe_sync,
             model,
@@ -159,6 +265,8 @@ class AudioTranscriber:
             "segments": self._split_long_segments(segments),
             # Segmen mentah (timestamp kata) untuk clip planner.
             "raw_segments": segments,
+            # Ringkasan VAD/audio untuk log & diagnosa pipeline.
+            "vad": vad_meta,
 
             "full_text": " ".join(seg.get("text", "") for seg in segments),
         }
@@ -322,7 +430,7 @@ class AudioTranscriber:
         model = self._get_model()
 
         loop = asyncio.get_event_loop()
-        segments, info = await loop.run_in_executor(
+        segments, info, vad_meta = await loop.run_in_executor(
             None,
             self._transcribe_sync,
             model,
@@ -339,6 +447,8 @@ class AudioTranscriber:
             "segments": self._split_long_segments(segments),
             # Segmen mentah (timestamp kata) untuk clip planner.
             "raw_segments": segments,
+            # Ringkasan VAD/audio untuk log & diagnosa pipeline.
+            "vad": vad_meta,
 
             "full_text": " ".join(seg.get("text", "") for seg in segments),
         }
@@ -611,29 +721,95 @@ class AudioTranscriber:
         audio_path: str,
         language: Optional[str],
     ):
-        import os
-
-        # WHISPER_VAD: auto (default) = VAD lalu retry bila kosong,
+        # WHISPER_VAD: auto (default) = VAD lalu retry bila kosong/hampir kosong,
         #              on = selalu VAD (tanpa retry), off = tanpa VAD.
         mode = (os.getenv("WHISPER_VAD") or "auto").strip().lower()
         use_vad = mode != "off"
-        segments, info = self._run_transcribe(
-            model, audio_path, language, vad=use_vad
+        min_keep = _vad_min_keep()
+
+        # Diagnostik ringan (ffprobe ~50 ms): sample rate / channel / codec audio
+        # yang BENAR diekstrak. Tanpa ini, salah stream atau audio nyaris senyap
+        # tidak terlihat di log worker.
+        summary = _probe_audio_summary(audio_path)
+        if summary:
+            logger.info(
+                "Audio input: durasi=%.2fs sr=%s ch=%s codec=%s bitrate=%s ukuran=%.1f KB",
+                float(summary.get("duration") or 0.0),
+                summary.get("sample_rate") or "?",
+                summary.get("channels") or "?",
+                summary.get("codec") or "?",
+                summary.get("bit_rate") or "?",
+                float(summary.get("size_bytes") or 0) / 1024.0,
+            )
+
+        started = time.monotonic()
+        segments, info = self._run_transcribe(model, audio_path, language, vad=use_vad)
+        duration = float(getattr(info, "duration", 0.0) or 0.0)
+        kept = (
+            float(getattr(info, "duration_after_vad", duration) or 0.0)
+            if use_vad
+            else duration
         )
-        if not segments and mode == "auto" and use_vad:
-            # VAD bisa menghapus SELURUH audio (musik/berisik/gain rendah) →
-            # transkripsi 0 segmen dan pipeline jatuh ke scene detection yang
-            # lambat. Ulangi sekali tanpa VAD supaya subtitle tetap dihasilkan.
+        ratio = (kept / duration) if duration > 0 else 1.0
+        vad_meta: Dict[str, Any] = {
+            "mode": mode,
+            "enabled": use_vad,
+            "duration": round(duration, 2),
+            "speech_seconds": round(kept, 2),
+            "speech_ratio": round(ratio, 4),
+            "segments_with_vad": len(segments),
+            "fallback": False,
+            "audio": summary,
+        }
+        logger.info(
+            "VAD %s: speech=%.2fs/%.2fs (%.1f%%) segmen=%d dalam %.1fs",
+            "aktif" if use_vad else "nonaktif",
+            kept,
+            duration,
+            ratio * 100.0,
+            len(segments),
+            time.monotonic() - started,
+        )
+
+        if mode == "auto" and use_vad and (not segments or ratio < min_keep):
+            # VAD membuang seluruh/hampir seluruh audio (musik, derau, gain
+            # ekstrem, atau downmix yang saling meniadakan). Decode sekali untuk
+            # statistik lalu ulangi TANPA VAD memakai array yang sama supaya
+            # audio tidak didekode dua kali.
+            decoded, stats = _decode_audio_for_stats(audio_path)
+            vad_meta["fallback"] = True
+            vad_meta["signal"] = stats
             logger.warning(
-                "VAD tidak menemukan suara di %s; mengulang transkripsi tanpa VAD",
-                audio_path,
+                "VAD membuang %.1f%% audio (speech %.2fs dari %.2fs, "
+                "rms=%s peak=%s rms_dbfs=%s); mengulang transkripsi tanpa VAD",
+                (1.0 - ratio) * 100.0,
+                kept,
+                duration,
+                stats.get("rms", "?"),
+                stats.get("peak", "?"),
+                stats.get("rms_dbfs", "?"),
             )
+            retry_input = decoded if decoded is not None else audio_path
+            retry_started = time.monotonic()
             segments, info = self._run_transcribe(
-                model, audio_path, language, vad=False
+                model, retry_input, language, vad=False
             )
+            vad_meta["segments_without_vad"] = len(segments)
+            vad_meta["retry_seconds"] = round(time.monotonic() - retry_started, 2)
             if segments:
-                logger.info("Transkripsi tanpa VAD: %s segmen", len(segments))
-        return segments, info
+                logger.info(
+                    "Transkripsi tanpa VAD: %s segmen (durasi %.2fs)",
+                    len(segments),
+                    float(getattr(info, "duration", duration) or duration),
+                )
+            else:
+                logger.warning(
+                    "Transkripsi tanpa VAD juga 0 segmen — audio kemungkinan "
+                    "tidak berisi percakapan (rms=%s peak=%s)",
+                    stats.get("rms", "?"),
+                    stats.get("peak", "?"),
+                )
+        return segments, info, vad_meta
 
     def _run_transcribe(
         self, model, audio_path: str, language: Optional[str], vad: bool

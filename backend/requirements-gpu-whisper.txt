@@ -15,6 +15,10 @@
 # `onnxruntime` lalu memasang file ini, sehingga resolver pip memilih
 # onnxruntime-gpu untuk requirement `onnxruntime<2` milik faster-whisper.
 faster-whisper>=1.1.1
+# PyAV dipin <19: av 19 menghapus `metadata_errors` yang masih dipakai
+# faster-whisper 1.2.x di decode_audio() → TypeError dan transkripsi mati.
+# (faster-whisper hanya meminta av>=11 tanpa batas atas, jadi pin ini WAJIB.)
+av>=17,<19
 nvidia-cublas-cu12>=12.1
 nvidia-cudnn-cu12>=9.0
 # Runtime CUDA (libcudart.so.12) — dibutuhkan llama-server (LLM lokal Qwen3).

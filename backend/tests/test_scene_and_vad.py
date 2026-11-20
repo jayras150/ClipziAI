@@ -77,37 +77,54 @@ class _FakeModel:
         self.calls = []
 
     def transcribe(self, audio_path, **kwargs):
+        from types import SimpleNamespace
+
         vad = bool(kwargs.get("vad_filter"))
         self.calls.append(vad)
         if vad:
-            return iter([]), {"language": "id"}
-        return iter([_Segment()]), {"language": "id"}
+            return iter([]), SimpleNamespace(
+                language="id", duration=10.0, duration_after_vad=0.0
+            )
+        return iter([_Segment()]), SimpleNamespace(
+            language="id", duration=10.0, duration_after_vad=10.0
+        )
 
 
-def test_vad_retry_saat_seluruh_audio_dihapus():
+def test_vad_retry_saat_seluruh_audio_dihapus(monkeypatch):
+    import app.services.transcriber as mod
     from app.services.transcriber import AudioTranscriber
 
+    monkeypatch.setattr(mod, "_probe_audio_summary", lambda path: {})
+    monkeypatch.setattr(
+        mod, "_decode_audio_for_stats", lambda path: (None, {"rms": 0.01, "peak": 0.05})
+    )
     transcriber = AudioTranscriber()
     model = _FakeModel()
 
-    segments, _info = transcriber._transcribe_sync(model, "audio.mp3", None)
+    segments, _info, vad_meta = transcriber._transcribe_sync(model, "audio.mp3", None)
 
     assert model.calls == [True, False], "harus retry tanpa VAD setelah hasil kosong"
     assert len(segments) == 1
     assert segments[0]["text"].strip() == "halo"
+    assert vad_meta["fallback"] is True
+    assert vad_meta["segments_with_vad"] == 0
+    assert vad_meta["segments_without_vad"] == 1
 
 
 def test_whisper_vad_off_langsung_tanpa_vad(monkeypatch):
+    import app.services.transcriber as mod
     from app.services.transcriber import AudioTranscriber
 
     monkeypatch.setenv("WHISPER_VAD", "off")
+    monkeypatch.setattr(mod, "_probe_audio_summary", lambda path: {})
     transcriber = AudioTranscriber()
     model = _FakeModel()
 
-    segments, _info = transcriber._transcribe_sync(model, "audio.mp3", None)
+    segments, _info, vad_meta = transcriber._transcribe_sync(model, "audio.mp3", None)
 
     assert model.calls == [False], "WHISPER_VAD=off tidak boleh memakai VAD"
     assert len(segments) == 1
+    assert vad_meta["enabled"] is False
 
 
 def test_hwaccel_off_menghasilkan_argumen_kosong(monkeypatch):

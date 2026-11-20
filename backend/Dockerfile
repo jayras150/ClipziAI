@@ -43,12 +43,14 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 FROM builder AS builder-worker
 
 COPY requirements-gpu-whisper.txt ./
+COPY deployments/check_media_deps.py ./
 # `onnxruntime-gpu` dan `onnxruntime` menyediakan modul yang sama; uninstall
 # versi CPU dulu supaya tidak ada sisa build CPU yang menang di sys.path.
 RUN pip uninstall -y onnxruntime onnxruntime-gpu >/dev/null 2>&1 || true; \
     pip install -r requirements-gpu-whisper.txt && \
     python -c "import faster_whisper, ctranslate2; print('ct2', ctranslate2.__version__, 'gpu libs siap')" && \
-    python -c "import onnxruntime as ort; p = ort.get_available_providers(); print('ort', ort.__version__, p); assert 'CUDAExecutionProvider' in p, 'onnxruntime-gpu tidak aktif: ' + str(p)"
+    python -c "import onnxruntime as ort; p = ort.get_available_providers(); print('ort', ort.__version__, p); assert 'CUDAExecutionProvider' in p, 'onnxruntime-gpu tidak aktif: ' + str(p)" && \
+    python check_media_deps.py
 
 # Perampingan WAJIB di stage ini: file yang dihapus di sini tidak ikut
 # di-COPY ke image akhir (menghapus di stage runtime tidak mengecilkan image).
@@ -71,8 +73,10 @@ RUN set -eux; \
 FROM builder AS builder-api-whisper
 
 COPY requirements-whisper-cpu.txt ./
+COPY deployments/check_media_deps.py ./
 RUN pip install -r requirements-whisper-cpu.txt && \
-    python -c "import faster_whisper; print('faster-whisper siap (cpu)')"
+    python -c "import faster_whisper; print('faster-whisper siap (cpu)')" && \
+    python check_media_deps.py
 
 # -----------------------------------------------------------------------------
 # Stage 2: runtime image (tanpa toolchain, ukuran lebih kecil)

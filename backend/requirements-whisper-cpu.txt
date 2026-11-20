@@ -8,4 +8,8 @@
 # image; diunduh sekali saat runtime ke cache HF (HF_HOME) lalu dipakai ulang.
 # =============================================================================
 faster-whisper>=1.1.1
-av>=15
+# PIN WAJIB <19: PyAV 19 menghapus parameter `metadata_errors` dari av.open(),
+# sedangkan faster-whisper 1.2.x masih memakainya di decode_audio() →
+# `TypeError: open() got an unexpected keyword argument 'metadata_errors'`.
+# Tanpa batas atas, build baru memasang av 19 dan SEMUA transkripsi gagal.
+av>=17,<19

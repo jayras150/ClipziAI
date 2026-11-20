@@ -581,6 +581,22 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
                         "lalu ulangi task."
                     )
             task.original_duration = info.get("duration")
+            audio_streams = info.get("audio_streams") or []
+            if audio_streams:
+                logger.info(
+                    "Pipeline: %d audio stream (%s)",
+                    len(audio_streams),
+                    ", ".join(
+                        "#%s:%s/%sch/%s"
+                        % (
+                            item.get("index"),
+                            item.get("codec") or "?",
+                            item.get("channels") or "?",
+                            item.get("language") or "-",
+                        )
+                        for item in audio_streams[:4]
+                    ),
+                )
             task.download_status = "processing"
             await db.commit()
             await _set_progress(db, task, 15)
@@ -601,13 +617,24 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
                 # memotong tepat di jeda kalimat.
                 raw_segments = list(result.get("raw_segments") or segments)
                 transcription_backend = str(result.get("backend") or "unknown")
+                vad_meta = result.get("vad") or {}
                 logger.info(
-                    "Pipeline: %s segmen transkripsi (%s mentah, backend=%s) dalam %.1fs untuk task %s",
+                    "Pipeline: %s segmen transkripsi (%s mentah, backend=%s) dalam %.1fs "
+                    "untuk task %s | vad=%s speech=%.1fs/%.1fs (%.1f%%) segmen_vad=%s "
+                    "fallback=%s rms=%s peak=%s",
                     len(segments),
                     len(raw_segments),
                     transcription_backend,
                     time.monotonic() - transcribe_started,
                     task.id,
+                    vad_meta.get("mode") or "-",
+                    float(vad_meta.get("speech_seconds") or 0.0),
+                    float(vad_meta.get("duration") or 0.0),
+                    float(vad_meta.get("speech_ratio") or 0.0) * 100.0,
+                    vad_meta.get("segments_with_vad", "-"),
+                    vad_meta.get("fallback"),
+                    (vad_meta.get("signal") or {}).get("rms", "-"),
+                    (vad_meta.get("signal") or {}).get("peak", "-"),
                 )
             except Exception as exc:
                 # Transkripsi gagal bukan alasan menggagalkan task; klip tetap

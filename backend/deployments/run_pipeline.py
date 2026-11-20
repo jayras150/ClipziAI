@@ -80,13 +80,28 @@ def _log_runtime() -> None:
 
     log.info(
         "env: TRANSCRIPTION_PROVIDER=%s ALLOW_REMOTE=%s FFMPEG_ENCODER=%s "
-        "GPU_WHISPER_MODEL=%s WHISPER_VAD=%s",
+        "GPU_WHISPER_MODEL=%s WHISPER_VAD=%s VAD_MIN_KEEP=%s AUDIO_SILENCE_RMS=%s",
         os.environ.get("TRANSCRIPTION_PROVIDER") or "-",
         os.environ.get("TRANSCRIPTION_ALLOW_REMOTE") or "-",
         os.environ.get("FFMPEG_ENCODER") or "-",
         os.environ.get("GPU_WHISPER_MODEL") or "-",
         os.environ.get("WHISPER_VAD") or "auto",
+        os.environ.get("WHISPER_VAD_MIN_KEEP") or "0.05",
+        os.environ.get("AUDIO_SILENCE_RMS") or "0.002",
     )
+
+    # Versi nyata paket media: bukti untuk mendiagnosa tanpa menebak.
+    try:
+        import av
+        import faster_whisper
+
+        log.info(
+            "media stack: faster-whisper %s | PyAV %s",
+            getattr(faster_whisper, "__version__", "?"),
+            getattr(av, "__version__", "?"),
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("faster-whisper/PyAV tidak bisa dilaporkan: %s", exc)
 
     # Bukti decode GPU: dicatat di setiap task supaya tidak perlu menebak.
     try:

@@ -29,6 +29,10 @@ from app.services.reframe.trajectory import crop_window as _reframe_crop_window
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
+# RMS di bawah ini (≈ -54 dBFS) dianggap audio nyaris senyap. Pada video dengan
+# beberapa audio track, hasil ekstraksi yang senyap dicoba ulang dari track lain.
+DEFAULT_AUDIO_SILENCE_RMS = 0.002
+
 
 @dataclass
 class _FaceDetection:
@@ -3236,6 +3240,163 @@ class VideoProcessor:
         if result.returncode != 0:
             raise RuntimeError(f"FFmpeg failed: {result.stderr}")
 
+    @staticmethod
+    def _build_audio_extract_cmd(
+        input_path: str,
+        output_path: str,
+        sample_rate: int = 16000,
+        stream_index: Optional[int] = None,
+    ) -> List[str]:
+        """Perintah FFmpeg ekstraksi audio mono 16 kHz.
+
+        `stream_index` eksplisit mencegah FFmpeg memilih audio stream yang salah
+        pada video multi-track (mis. IAMF/spatial, dubbing, atau audio komentar).
+        """
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
+            "-i", input_path,
+        ]
+        if stream_index is not None:
+            cmd += ["-map", f"0:{int(stream_index)}"]
+        cmd += [
+            "-vn", "-ac", "1", "-ar", str(sample_rate),
+            "-c:a", "libmp3lame", "-q:a", "4",
+            output_path,
+        ]
+        return cmd
+
+    @staticmethod
+    def choose_audio_stream(streams: List[Dict[str, Any]]) -> Optional[int]:
+        """Pilih audio stream: `disposition.default` dulu, lalu stream pertama."""
+        candidates = VideoProcessor.audio_stream_candidates(streams)
+        return candidates[0] if candidates else None
+
+    @staticmethod
+    def audio_stream_candidates(streams: List[Dict[str, Any]]) -> List[int]:
+        """Urutan kandidat stream audio: default dulu, lalu bitrate terbesar.
+
+        Dipakai untuk auto-recovery: bila track default ternyata senyap (mis.
+        track komentar/spatial yang salah), ekstraksi dicoba dari track lain
+        sebelum menyerah.
+        """
+        if not streams:
+            return []
+
+        def _is_default(stream: Dict[str, Any]) -> bool:
+            disposition = stream.get("disposition") or {}
+            try:
+                return int(disposition.get("default") or 0) == 1
+            except (TypeError, ValueError):
+                return False
+
+        def _bitrate(stream: Dict[str, Any]) -> int:
+            try:
+                return int(stream.get("bit_rate") or 0)
+            except (TypeError, ValueError):
+                return 0
+
+        ordered: List[Dict[str, Any]] = []
+        for stream in streams:
+            if _is_default(stream) and stream.get("index") is not None:
+                ordered.append(stream)
+        chosen_indexes = {
+            int(stream["index"]) for stream in ordered if stream.get("index") is not None
+        }
+        rest = [
+            stream
+            for stream in streams
+            if stream.get("index") is not None
+            and int(stream["index"]) not in chosen_indexes
+        ]
+        ordered.extend(sorted(rest, key=_bitrate, reverse=True))
+
+        candidates: List[int] = []
+        for stream in ordered:
+            index = int(stream["index"])
+            if index not in candidates:
+                candidates.append(index)
+        return candidates
+
+    @staticmethod
+    def _audio_silence_threshold() -> float:
+        """Ambang RMS senyap (bisa diatur lewat AUDIO_SILENCE_RMS)."""
+        raw = (os.getenv("AUDIO_SILENCE_RMS") or "").strip()
+        try:
+            value = float(raw) if raw else DEFAULT_AUDIO_SILENCE_RMS
+        except ValueError:
+            value = DEFAULT_AUDIO_SILENCE_RMS
+        return min(max(value, 0.0), 1.0)
+
+    @staticmethod
+    def _audio_rms_sync(audio_path: str) -> Optional[float]:
+        """RMS audio (0..1) lewat decode FFmpeg; None bila gagal."""
+        try:
+            import numpy as np
+
+            result = subprocess.run(
+                [
+                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
+                    "-i", audio_path, "-f", "s16le", "-ac", "1", "-ar", "16000", "-",
+                ],
+                capture_output=True,
+                timeout=180,
+            )
+            if result.returncode != 0:
+                return None
+            audio = np.frombuffer(result.stdout, dtype=np.int16).astype(np.float32)
+            if audio.size == 0:
+                return 0.0
+            audio /= 32768.0
+            return float(np.sqrt(np.mean(np.square(audio.astype(np.float64)))))
+        except Exception as exc:  # noqa: BLE001 - diagnostik tidak boleh gagal task
+            logger.debug("Hitung RMS gagal untuk %s: %s", audio_path, str(exc)[:200])
+            return None
+
+    def _probe_audio_streams_sync(self, video_path: str) -> List[Dict[str, Any]]:
+        """Daftar stream audio (index, codec, channel, sample rate, bahasa)."""
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error", "-print_format", "json",
+                "-select_streams", "a",
+                "-show_entries",
+                (
+                    "stream=index,codec_name,channels,sample_rate,bit_rate,"
+                    "channel_layout:stream_tags=language:stream_disposition=default"
+                ),
+                video_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or "").strip()[:300] or "ffprobe gagal"
+            raise RuntimeError(detail)
+        data = json.loads(result.stdout or "{}")
+        streams: List[Dict[str, Any]] = []
+        for stream in data.get("streams") or []:
+            tags = stream.get("tags") or {}
+            streams.append(
+                {
+                    "index": stream.get("index"),
+                    "codec": stream.get("codec_name"),
+                    "channels": stream.get("channels"),
+                    "sample_rate": stream.get("sample_rate"),
+                    "bit_rate": stream.get("bit_rate"),
+                    "channel_layout": stream.get("channel_layout"),
+                    "language": tags.get("language"),
+                    "disposition": stream.get("disposition") or {},
+                }
+            )
+        return streams
+
+    async def list_audio_streams(self, video_path: str) -> List[Dict[str, Any]]:
+        """Versi async dari `_probe_audio_streams_sync`."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, self._probe_audio_streams_sync, video_path
+        )
+
     async def extract_audio(
         self,
         input_path: str,
@@ -3243,16 +3404,115 @@ class VideoProcessor:
         sample_rate: int = 16000,
     ) -> str:
         """Ekstrak audio mono 16 kHz (format ideal untuk API transkripsi)."""
-        cmd = [
-            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-nostdin", "-y",
-            "-i", input_path,
-            "-vn", "-ac", "1", "-ar", str(sample_rate),
-            "-c:a", "libmp3lame", "-q:a", "4",
-            output_path,
-        ]
+        streams: List[Dict[str, Any]] = []
+        try:
+            streams = await self.list_audio_streams(input_path)
+        except Exception as exc:  # noqa: BLE001 - fallback ke perilaku FFmpeg lama
+            logger.warning(
+                "Probe audio stream gagal (%s); memakai pemilihan default FFmpeg",
+                str(exc)[:200],
+            )
+
+        stream_index = self.choose_audio_stream(streams)
+        candidates = self.audio_stream_candidates(streams) or [stream_index]
+        if streams:
+            chosen = next(
+                (item for item in streams if item.get("index") == stream_index), {}
+            )
+            logger.info(
+                "Audio stream: total=%d default=#%s codec=%s ch=%s sr=%s lang=%s kandidat=%s",
+                len(streams),
+                stream_index,
+                chosen.get("codec") or "?",
+                chosen.get("channels") or "?",
+                chosen.get("sample_rate") or "?",
+                chosen.get("language") or "-",
+                candidates,
+            )
 
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self._run_ffmpeg, cmd)
+        threshold = self._audio_silence_threshold()
+        best_index = candidates[0]
+        best_rms: Optional[float] = None
+        last_index: Optional[int] = None
+
+        for position, candidate in enumerate(candidates):
+            cmd = self._build_audio_extract_cmd(
+                input_path, output_path, sample_rate, candidate
+            )
+            try:
+                await loop.run_in_executor(None, self._run_ffmpeg, cmd)
+            except Exception as exc:  # noqa: BLE001 - coba track berikutnya dulu
+                logger.warning(
+                    "Ekstraksi audio stream #%s gagal (%s)%s",
+                    candidate,
+                    str(exc)[:300],
+                    "; mencoba stream berikutnya"
+                    if position + 1 < len(candidates)
+                    else "",
+                )
+                if position + 1 < len(candidates):
+                    continue
+                raise
+            last_index = candidate
+
+            # Satu stream = tidak ada alternatif; lewati decode RMS ekstra.
+            if len(candidates) == 1:
+                best_index = candidate
+                break
+
+            rms = await loop.run_in_executor(None, self._audio_rms_sync, output_path)
+            logger.info(
+                "Audio stream #%s: rms=%s (ambang senyap=%.5f)",
+                candidate,
+                "?" if rms is None else "%.5f" % rms,
+                threshold,
+            )
+            if rms is None:
+                best_index = candidate
+                break
+            if best_rms is None or rms > best_rms:
+                best_rms, best_index = rms, candidate
+            if rms >= threshold:
+                break
+            if position + 1 < len(candidates):
+                logger.warning(
+                    "Audio stream #%s nyaris senyap (rms=%.5f < %.5f); "
+                    "mencoba stream berikutnya",
+                    candidate,
+                    rms,
+                    threshold,
+                )
+
+        if len(candidates) > 1:
+            # Pastikan file output berasal dari stream terbaik (bila kandidat
+            # terakhir bukan yang terbaik, ekstrak ulang sekali).
+            if last_index != best_index:
+                cmd = self._build_audio_extract_cmd(
+                    input_path, output_path, sample_rate, best_index
+                )
+                await loop.run_in_executor(None, self._run_ffmpeg, cmd)
+
+            chosen = next(
+                (item for item in streams if item.get("index") == best_index), {}
+            )
+            logger.info(
+                "Audio stream final: #%s codec=%s ch=%s sr=%s lang=%s rms=%s",
+                best_index,
+                chosen.get("codec") or "?",
+                chosen.get("channels") or "?",
+                chosen.get("sample_rate") or "?",
+                chosen.get("language") or "-",
+                "?" if best_rms is None else "%.5f" % best_rms,
+            )
+            if best_rms is not None and best_rms < threshold:
+                logger.error(
+                    "Semua audio stream nyaris senyap (rms terbaik=%.5f < %.5f): "
+                    "VAD akan membuang seluruh audio. Periksa sumber/stream video.",
+                    best_rms,
+                    threshold,
+                )
+
         return output_path
 
     async def extract_thumbnail(
@@ -3322,9 +3582,21 @@ class VideoProcessor:
         width = 0
         height = 0
         has_audio = False
+        audio_streams: List[Dict[str, Any]] = []
         for stream in data.get("streams", []):
             if stream.get("codec_type") == "audio":
                 has_audio = True
+                tags = stream.get("tags") or {}
+                audio_streams.append(
+                    {
+                        "index": stream.get("index"),
+                        "codec": stream.get("codec_name"),
+                        "channels": stream.get("channels"),
+                        "sample_rate": stream.get("sample_rate"),
+                        "language": tags.get("language"),
+                        "default": (stream.get("disposition") or {}).get("default"),
+                    }
+                )
             if stream.get("codec_type") == "video" and not width:
                 width = stream.get("width", 0)
                 height = stream.get("height", 0)
@@ -3337,4 +3609,8 @@ class VideoProcessor:
             # Unduhan fallback `b*` bisa menghasilkan video tanpa audio; pipeline
             # memakai flag ini supaya tidak gagal membingungkan di transkripsi.
             "has_audio": has_audio,
+            # Detail stream audio: dipakai log pipeline untuk membuktikan stream
+            # yang dipilih (mis. bukan track IAMF/dubbing yang salah).
+            "audio_streams": audio_streams,
+            "audio_streams_count": len(audio_streams),
         }
