@@ -29,6 +29,9 @@ def test_entrypoint_mencetak_device_aktual():
     assert "get_cuda_device_count" in source
     assert "get_available_providers" in source
     assert "GPU TIDAK TERDETEKSI" in source
+    # Bukti decode GPU harus selalu dicatat agar tidak perlu menebak.
+    assert "_hwaccel_args" in source
+    assert "NVDEC" in source
 
 
 def test_onstart_memakai_entrypoint_bukan_inline_c():

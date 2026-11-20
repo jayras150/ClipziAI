@@ -80,12 +80,26 @@ def _log_runtime() -> None:
 
     log.info(
         "env: TRANSCRIPTION_PROVIDER=%s ALLOW_REMOTE=%s FFMPEG_ENCODER=%s "
-        "GPU_WHISPER_MODEL=%s",
+        "GPU_WHISPER_MODEL=%s WHISPER_VAD=%s",
         os.environ.get("TRANSCRIPTION_PROVIDER") or "-",
         os.environ.get("TRANSCRIPTION_ALLOW_REMOTE") or "-",
         os.environ.get("FFMPEG_ENCODER") or "-",
         os.environ.get("GPU_WHISPER_MODEL") or "-",
+        os.environ.get("WHISPER_VAD") or "auto",
     )
+
+    # Bukti decode GPU: dicatat di setiap task supaya tidak perlu menebak.
+    try:
+        from app.services.processor import VideoProcessor
+
+        hwargs = VideoProcessor._hwaccel_args()
+        log.info(
+            "ffmpeg hwaccel: %s",
+            "cuda (NVDEC aktif untuk decode)" if hwargs else "cpu (NVDEC tidak tersedia)",
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.info("probe hwaccel gagal: %s", exc)
+
     if cuda_devices == 0:
         log.error(
             "GPU TIDAK TERDETEKSI oleh ctranslate2 (count=0) — Whisper akan jalan "
