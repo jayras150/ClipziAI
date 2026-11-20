@@ -28,6 +28,9 @@ yt-dlp-ejs>=0.3.0
 # TRANSCRIPTION_PROVIDER di .env). Kalau ingin transkripsi lokal, install paket
 # tambahan:  pip install -r requirements-whisper-local.txt
 opencv-python-headless>=4.8.0
+# ONNX Runtime untuk deteksi person YOLO11n (AI moment-based reframing).
+# Opsional: tanpa paket ini `reframe/detectors.py` otomatis memakai cv2.dnn.
+onnxruntime>=1.17.0
 scenedetect>=0.6.0
 moviepy>=1.0.3
 boto3>=1.28.0

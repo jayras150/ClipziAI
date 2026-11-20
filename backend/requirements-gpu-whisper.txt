@@ -9,8 +9,33 @@
 # Atur lewat env GPU_WHISPER_MODEL: "large-v3" (akurasi maksimum) atau "turbo"
 # (lebih cepat, akurasi hampir sama).
 # =============================================================================
+# `--no-deps` untuk faster-whisper TIDAK dipakai (ctranslate2/av/tokenizers
+# masih dibutuhkan), tetapi `onnxruntime` CPU yang ikut ditariknya harus
+# dikalahkan oleh `onnxruntime-gpu` di bawah. Dockerfile meng-uninstall
+# `onnxruntime` lalu memasang file ini, sehingga resolver pip memilih
+# onnxruntime-gpu untuk requirement `onnxruntime<2` milik faster-whisper.
 faster-whisper>=1.1.1
 nvidia-cublas-cu12>=12.1
 nvidia-cudnn-cu12>=9.0
 # Runtime CUDA (libcudart.so.12) — dibutuhkan llama-server (LLM lokal Qwen3).
 nvidia-cuda-runtime-cu12>=12.1
+
+# ONNX Runtime GPU untuk deteksi person YOLO11n (AI moment-based reframing).
+# WAJIB di image GPU: `requirements.txt` hanya memasang onnxruntime CPU, yang
+# tidak punya CUDAExecutionProvider sehingga deteksi diam-diam jalan di CPU.
+#
+# PIN <1.23 — ALASAN (jangan naikkan tanpa mengganti stack CUDA worker):
+#   * onnxruntime-gpu 1.21/1.22 -> CUDA 12 + cuDNN 9  (cocok)
+#   * onnxruntime-gpu 1.23+     -> CUDA 13 + cuDNN 9 cu13 (TIDAK cocok)
+# Worker ini memakai `nvidia-cublas-cu12`/`nvidia-cudnn-cu12` untuk
+# faster-whisper, jadi naik ke ORT 1.23 akan menuntut dua stack CUDA sekaligus
+# di satu image. Kalau nanti worker pindah ke CUDA 13, naikkan pin ini
+# bersamaan dengan paket `nvidia-*-cu12` di atas.
+#
+# Catatan: kedua paket menyediakan modul `onnxruntime`, jadi pasang ini SETELAH
+# requirements.txt (lihat Dockerfile) supaya yang aktif versi GPU.
+#
+# Batas atas `<1.23` (bukan sekadar `<2`) WAJIB: faster-whisper meminta
+# `onnxruntime<2`, dan tanpa pin ini resolver pip bebas memilih 1.32 yang
+# menuntut CUDA 13 sementara image ini hanya punya CUDA 12.
+onnxruntime-gpu>=1.21,<1.23

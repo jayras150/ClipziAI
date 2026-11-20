@@ -10,6 +10,7 @@ Semua state berada di luar proses (PostgreSQL, Redis, R2), sehingga fungsi ini
 aman dijalankan di worker mana pun, bahkan beberapa worker paralel sekaligus.
 """
 import asyncio
+import json
 import logging
 import shutil
 import time
@@ -420,6 +421,12 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
             "off",
             "no",
         }
+        # Opsi reframing AI (moments/zoom/follow) diteruskan apa adanya ke
+        # processor; nama lama (`auto_zoom`, `zoom_level`, `auto_zoom_split`)
+        # tetap dihormati oleh `load_reframe_config`.
+        reframe_options = dict(options)
+        reframe_options.setdefault("enable_auto_zoom", auto_zoom in {"speaker", "face", "follow"})
+        reframe_options.setdefault("enable_camera_follow", auto_zoom in {"speaker", "follow"})
         # ---------- Batch E: segmen, caption custom, Ken Burns, PIP ----------
         clip_segments = _normalise_segments(options.get("segments"))
         caption_color = options.get("caption_color")
@@ -939,6 +946,11 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
                                 zoom=zoom_level,
                                 filter_preset=filter_preset,
                                 split_screen=auto_zoom_split,
+                                reframe_options=reframe_options,
+                                analysis_path=str(
+                                    work_dir
+                                    / f"clip_{index:02d}_seg{seg_index:02d}_reframe.json"
+                                ),
                             )
                         elif ken_burns:
                             await processor.render_ken_burns(
@@ -981,6 +993,8 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
                         zoom=zoom_level,
                         filter_preset=filter_preset,
                         split_screen=auto_zoom_split,
+                        reframe_options=reframe_options,
+                        analysis_path=str(work_dir / f"clip_{index:02d}_reframe.json"),
                     )
                 elif ken_burns:
                     await processor.render_ken_burns(
@@ -1003,6 +1017,39 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
                         filter_preset=filter_preset,
                         blur_fill=blur_fill,
                     )
+
+                # Observability reframe: baca laporan analisis (kalau ada) dan
+                # kirim ringkasannya ke worker log supaya keputusan zoom bisa
+                # diverifikasi tanpa membuka file JSON.
+                report_name = work_dir / f"clip_{index:02d}_reframe.json"
+                if not report_name.exists():
+                    report_name = work_dir / f"clip_{index:02d}_seg01_reframe.json"
+                if report_name.exists():
+                    try:
+                        from app.services.worker_callback import report_worker_event
+
+                        report_data = json.loads(report_name.read_text(encoding="utf-8"))
+                        await report_worker_event(
+                            task.id,
+                            "stage",
+                            stage="reframe",
+                            message=(
+                                "clip=%02d moments=%s zoom_events=%s persons=%s "
+                                "backend=%s skipped=%s"
+                                % (
+                                    index,
+                                    report_data.get("selected_moments"),
+                                    report_data.get("zoom_events"),
+                                    report_data.get("detected_persons"),
+                                    (report_data.get("detectors") or {}).get(
+                                        "person_backend"
+                                    ),
+                                    report_data.get("skip_reasons"),
+                                )
+                            )[:400],
+                        )
+                    except Exception as exc:  # pragma: no cover - logging best effort
+                        logger.debug("Gagal membaca reframe report: %s", exc)
 
                 final_clip = raw_clip
                 subtitle_url: Optional[str] = None

@@ -4,6 +4,8 @@ Video Processor Service - FFmpeg, PySceneDetect, smart crop, burn subtitle
 import os
 import asyncio
 import functools
+import hashlib
+import json
 import logging
 import math
 import re
@@ -15,6 +17,14 @@ from pathlib import Path
 from uuid import uuid4
 
 from app.core.config import get_settings
+from app.services.reframe.config import load_reframe_config
+from app.services.reframe.detectors import get_face_detector, get_person_detector
+from app.services.reframe.features import extract_features
+from app.services.reframe.moments import MomentDetectionEngine
+from app.services.reframe.report import build_report
+from app.services.reframe.tracker import ByteTrackLite, track_strength
+from app.services.reframe.trajectory import build_trajectory
+from app.services.reframe.trajectory import crop_window as _reframe_crop_window
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -97,6 +107,13 @@ class _SpeakerCropPlan:
         default_factory=list
     )
     split: bool = False
+    # --- AI moment-based reframing (jalur baru) ---
+    # Keyframe kamera per frame: (t, x, y, w, h) dari `CameraTrajectory`.
+    keyframes: List[Tuple[float, float, float, float, float]] = field(
+        default_factory=list
+    )
+    analysis: Dict[str, Any] = field(default_factory=dict)
+    has_zoom: bool = False
 
 # ---------------------------------------------------------------------------
 # Preset gaya caption/subtitle (dipakai UI "Style subtitle").
@@ -659,6 +676,37 @@ class VideoProcessor:
             width, height = short, round(short / ratio)
 
         return width - (width % 2), height - (height % 2)
+
+    @staticmethod
+    def _ratio_value(aspect_ratio: str) -> float:
+        """'9:16' -> 0.5625. Nilai rusak jatuh ke 9:16 (default project)."""
+        try:
+            num, den = str(aspect_ratio).replace(" ", "").split(":", 1)
+            ratio = float(num) / float(den)
+            if ratio <= 0:
+                raise ValueError
+            return ratio
+        except (ValueError, ZeroDivisionError, AttributeError):
+            return 9.0 / 16.0
+
+    def _probe_dimensions(self, input_path: str) -> Tuple[int, int]:
+        """(width, height) video sumber; (0, 0) bila tidak terbaca."""
+        try:
+            out = subprocess.run(
+                [
+                    "ffprobe", "-v", "error", "-select_streams", "v:0",
+                    "-show_entries", "stream=width,height",
+                    "-of", "csv=s=x:p=0", input_path,
+                ],
+                capture_output=True, text=True, timeout=30,
+            )
+            text = (out.stdout or "").strip().splitlines()
+            if text:
+                width_str, height_str = text[0].split("x")[:2]
+                return int(width_str), int(height_str)
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            logger.warning("ffprobe dimensi gagal (%s): %s", input_path, exc)
+        return 0, 0
 
     async def smart_crop_aspect(
         self,
@@ -1308,6 +1356,255 @@ class VideoProcessor:
         return samples
 
 
+    def _analyze_reframe(
+        self,
+        input_path: str,
+        start_time: float,
+        duration: float,
+        aspect_ratio: str,
+        config: Any,
+        smoothing: float = 0.35,
+        split_screen: bool = True,
+        output_fps: int = 30,
+    ) -> _SpeakerCropPlan:
+        """
+        Pipeline analisis AI: sampling -> deteksi -> tracking -> momen -> kamera.
+
+        Tidak menulis video apa pun. Hasil dikembalikan sebagai keyframe kamera
+        per frame output plus laporan JSON yang bisa diaudit.
+        """
+        import cv2
+        import numpy as np
+
+        plan = _SpeakerCropPlan(split=False)
+        src_w, src_h = self._probe_dimensions(input_path)
+        if src_w <= 0 or src_h <= 0:
+            plan.analysis = {"error": "unreadable_video", "input": input_path}
+            return plan
+
+        target_ratio = self._ratio_value(aspect_ratio)
+        fps = max(1, int(output_fps))
+        analysis_fps = float(getattr(config, "analysis_fps", 8.0) or 8.0)
+        max_side = int(getattr(config, "analysis_max_side", 960) or 960)
+        scale = min(1.0, max_side / float(max(src_w, src_h)))
+        small_w = max(2, int(round(src_w * scale)) // 2 * 2)
+        small_h = max(2, int(round(src_h * scale)) // 2 * 2)
+
+        person_detector = get_person_detector(
+            float(getattr(config, "detection_confidence", 0.35) or 0.35),
+            prefer_cuda=bool(getattr(config, "prefer_cuda", True)),
+        )
+        face_detector = get_face_detector(
+            small_w, small_h, float(getattr(config, "face_confidence", 0.62) or 0.62)
+        )
+        tracker = ByteTrackLite(
+            high_threshold=float(getattr(config, "detection_confidence", 0.35) or 0.35),
+            low_threshold=float(getattr(config, "tracking_confidence", 0.25) or 0.25),
+            max_missed=int(getattr(config, "track_max_missed", 12) or 12),
+            min_hits=int(getattr(config, "track_min_hits", 3) or 3),
+        )
+
+        samples: List[Tuple[float, Optional[int], float, float]] = []
+        features = []
+        primary_id: Optional[int] = None
+        primary_streak = 0
+        last_scene_time = -1e9
+        prev_small = None
+        cut_threshold = float(getattr(config, "scene_cut_threshold", 0.55) or 0.55)
+        hold = float(getattr(config, "primary_switch_hold", 1.5) or 1.5)
+        min_area = float(getattr(config, "person_min_area_ratio", 0.010) or 0.010)
+        edge_margin = float(getattr(config, "edge_margin", 0.10) or 0.10)
+
+        cap = cv2.VideoCapture(input_path)
+        if not cap.isOpened():
+            plan.analysis = {"error": "cannot_open_video", "input": input_path}
+            return plan
+        try:
+            step = 1.0 / max(0.5, analysis_fps)
+            times: List[float] = []
+            cursor = 0.0
+            while cursor < duration:
+                times.append(round(cursor, 4))
+                cursor += step
+            for sample_index, offset in enumerate(times):
+                cap.set(cv2.CAP_PROP_POS_MSEC, (start_time + offset) * 1000.0)
+                ok, frame = cap.read()
+                if not ok or frame is None:
+                    continue
+                if (frame.shape[1], frame.shape[0]) != (small_w, small_h):
+                    small = cv2.resize(frame, (small_w, small_h), interpolation=cv2.INTER_AREA)
+                else:
+                    small = frame
+                gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+                frame_diff = 0.0
+                if prev_small is not None:
+                    diff = cv2.absdiff(gray, prev_small)
+                    frame_diff = float(np.mean(diff)) / 255.0
+                scene_cut = False
+                if prev_small is not None and frame_diff >= cut_threshold:
+                    if offset - last_scene_time > 0.5:
+                        scene_cut = True
+                        last_scene_time = offset
+                        tracker.reset()
+                        primary_id = None
+                prev_small = gray
+
+                frame_area = float(small_w * small_h)
+                raw = person_detector.detect(small)
+                detections = []
+                for det in raw:
+                    if det.area / frame_area < min_area:
+                        continue
+                    inv = 1.0 / max(1e-6, scale)
+                    detections.append(
+                        type(det)(
+                            det.x * inv, det.y * inv, det.w * inv, det.h * inv,
+                            det.score, det.class_id,
+                        )
+                    )
+                tracks = tracker.update(detections, sample_index)
+                faces = face_detector.detect(small) if face_detector.available else []
+                faces_full = [
+                    type(face)(
+                        face.x / max(1e-6, scale), face.y / max(1e-6, scale),
+                        face.w / max(1e-6, scale), face.h / max(1e-6, scale),
+                        face.score, face.class_id,
+                    )
+                    for face in faces
+                ]
+
+                visible = [trk for trk in tracks if trk.misses == 0]
+                chosen = tracker.get(primary_id)
+                best = None
+                best_score = -1.0
+                for trk in visible:
+                    score = track_strength(trk, src_w, src_h, tracker.min_hits)
+                    if trk.track_id == primary_id:
+                        score += 0.15  # hysteresis: jangan berpindah tanpa alasan
+                    if score > best_score:
+                        best, best_score = trk, score
+                if chosen is not None and chosen.track_id == primary_id and chosen.misses > 0:
+                    best = chosen
+                if best is not None:
+                    if best.track_id != primary_id:
+                        primary_streak += 1
+                        if primary_streak >= max(1, int(hold * analysis_fps)):
+                            primary_id = best.track_id
+                            primary_streak = 0
+                    else:
+                        primary_streak = 0
+                elif chosen is None:
+                    primary_id = None
+
+                primary_track = tracker.get(primary_id)
+                feat = extract_features(
+                    time=offset,
+                    frame_index=sample_index,
+                    tracks=visible,
+                    faces=faces_full,
+                    src_w=src_w,
+                    src_h=src_h,
+                    primary=primary_track if primary_track and primary_track.misses == 0 else None,
+                    scene_cut=scene_cut,
+                    frame_diff=frame_diff,
+                    edge_margin=edge_margin,
+                )
+                features.append(feat)
+                if primary_track is not None:
+                    samples.append(
+                        (offset, primary_track.track_id, primary_track.cx, primary_track.cy)
+                    )
+        finally:
+            cap.release()
+
+        engine = MomentDetectionEngine(config)
+        moment_result = engine.detect(features)
+        trajectory = build_trajectory(
+            config=config,
+            moments=moment_result.moments,
+            samples=samples,
+            duration=float(duration),
+            src_w=src_w,
+            src_h=src_h,
+            target_ratio=target_ratio,
+            output_fps=fps,
+        )
+        plan.keyframes = trajectory.as_tuples()
+        plan.has_zoom = trajectory.has_zoom
+        plan.split = False
+        plan.analysis = build_report(
+            config=config,
+            duration=float(duration),
+            features=features,
+            moment_result=moment_result,
+            trajectory=trajectory,
+            detector_info={
+                "person_backend": person_detector.backend,
+                "person_providers": list(person_detector.providers),
+                "face_backend": face_detector.backend,
+                "analysis_size": [small_w, small_h],
+                "source_size": [src_w, src_h],
+            },
+            extra={
+                "aspect_ratio": aspect_ratio,
+                "output_fps": fps,
+                "crop_formula": "crop=w=min(iw,ih*ratio)/zoom:h=min(ih,iw/ratio)/zoom",
+            },
+        )
+        logger.info(
+            "Reframe AI: %s samples=%d persons=%d moments=%d zoom_events=%d backend=%s",
+            Path(input_path).name,
+            len(features),
+            plan.analysis.get("detected_persons", 0),
+            plan.analysis.get("selected_moments", 0),
+            plan.analysis.get("zoom_events", 0),
+            person_detector.backend,
+        )
+        return plan
+
+    def _reframe_analyze_sync(
+        self,
+        input_path: str,
+        start_time: float,
+        duration: float,
+        aspect_ratio: str,
+        config: Any,
+        smoothing: float = 0.35,
+        split_screen: bool = True,
+        output_fps: int = 30,
+    ) -> _SpeakerCropPlan:
+        """Analisis AI moment-based (dipanggil di executor, blocking)."""
+        plan = _SpeakerCropPlan(split=False)
+        try:
+            plan = self._analyze_reframe(
+                input_path,
+                start_time,
+                duration,
+                aspect_ratio,
+                config,
+                smoothing,
+                split_screen,
+                output_fps,
+            )
+        except Exception as exc:  # pragma: no cover - tergantung media
+            logger.warning("Analisis reframe AI gagal (%s); fallback face-only", exc)
+            return plan
+        if plan.keyframes or plan.primary:
+            return plan
+        logger.info("Analisis AI tidak menghasilkan subjek; fallback face-only")
+        legacy = self._speaker_track_sync(
+            input_path,
+            start_time,
+            duration,
+            aspect_ratio,
+            float(getattr(config, "maximum_zoom", 1.0) or 1.0),
+            float(getattr(config, "analysis_fps", 8.0) or 8.0),
+            smoothing,
+            split_screen,
+        )
+        legacy.analysis = plan.analysis
+        return legacy
+
     def _speaker_track_sync(
         self,
         input_path: str,
@@ -1319,7 +1616,8 @@ class VideoProcessor:
         smooth: float,
         split_screen: bool = True,
     ) -> _SpeakerCropPlan:
-        """
+        """Jalur lama (face-only): dipakai hanya bila analisis AI tidak tersedia.
+
         Deteksi + track wajah, lalu bangun jalur crop utama dan pasangan split.
 
         Deteksi berjalan pada frame yang diperkecil (maksimal 960 px) dengan
@@ -1492,6 +1790,40 @@ class VideoProcessor:
         )
 
     @staticmethod
+    def _stabilize_zoom_track(
+        keyframes: List[Tuple[float, float, float, float, float]],
+        window: int = 5,
+    ) -> List[Tuple[float, float, float, float, float]]:
+        """
+        Rapikan keyframe kamera sebelum render.
+
+        x/y di-smooth dua arah (simetris, tanpa lag) lalu dimasukkan ke
+        `_stabilize_track_frames` untuk dead zone + batas kecepatan.
+        `w`/`h` TIDAK ikut di-smooth di sini karena zoom sudah punya easing
+        sendiri; hanya nilai genap + keyframe redundan yang dibuang.
+        """
+        if not keyframes:
+            return []
+        smoothed = VideoProcessor._stabilize_track_frames(list(keyframes), window)
+        if not smoothed:
+            return []
+
+        def snap(value: float) -> float:
+            number = int(round(value))
+            return float(number - number % 2) if number >= 2 else 2.0
+
+        out: List[Tuple[float, float, float, float, float]] = []
+        for index, (t_rel, x, y, win_w, win_h) in enumerate(smoothed):
+            size_w, size_h = snap(win_w), snap(win_h)
+            item = (float(t_rel), float(int(round(x))), float(int(round(y))), size_w, size_h)
+            if index == 0 or item[1:] != out[-1][1:]:
+                out.append(item)
+            else:
+                # posisi & ukuran sama: cukup simpan timestamp terakhir
+                out[-1] = item
+        return out
+
+    @staticmethod
     def _interpolate_track_frames(
         track: List[Tuple[float, float, float, float, float]],
         duration: float,
@@ -1534,16 +1866,18 @@ class VideoProcessor:
         frame_times = np.arange(total_frames, dtype=np.float64) / fps
         xs = np.interp(frame_times, sample_times, sample_x)
         ys = np.interp(frame_times, sample_times, sample_y)
-        win_w = samples[0][3]
-        win_h = samples[0][4]
+        # Ukuran jendela ikut diinterpolasi supaya zoom bergerak halus per
+        # frame, bukan melompat di batas dua sample.
+        ws = np.interp(frame_times, sample_times, [item[3] for item in samples])
+        hs = np.interp(frame_times, sample_times, [item[4] for item in samples])
 
         return [
             (
                 float(frame_times[index]),
                 float(int(round(float(xs[index])))),
                 float(int(round(float(ys[index])))),
-                float(win_w),
-                float(win_h),
+                float(int(round(float(ws[index])))),
+                float(int(round(float(hs[index])))),
             )
             for index in range(total_frames)
         ]
@@ -1569,6 +1903,11 @@ class VideoProcessor:
         times = [item[0] for item in track]
         xs = np.array([item[1] for item in track], dtype=np.float64)
         ys = np.array([item[2] for item in track], dtype=np.float64)
+        # `w`/`h` HARUS mengikuti setiap keyframe: di sinilah zoom diwujudkan.
+        # Membekukannya ke nilai frame pertama (perilaku lama) membuat seluruh
+        # animasi zoom hilang walau trajectory & report sudah benar.
+        ws = np.array([item[3] for item in track], dtype=np.float64)
+        hs = np.array([item[4] for item in track], dtype=np.float64)
         win_w = float(track[0][3])
         win_h = float(track[0][4])
 
@@ -1599,8 +1938,8 @@ class VideoProcessor:
                     times[index],
                     float(int(round(x))),
                     float(int(round(y))),
-                    win_w,
-                    win_h,
+                    float(int(round(float(ws[index])))),
+                    float(int(round(float(hs[index])))),
                 )
             )
         return out
@@ -1610,12 +1949,20 @@ class VideoProcessor:
         cmd_path: str,
         track: List[Tuple[float, float, float, float, float]],
         target: str = "crop",
+        include_size: bool = False,
     ) -> None:
         """Tulis command sendcmd per frame untuk filter crop biasa/named."""
         commands: List[str] = []
-        for t_rel, x, y, _, _ in track:
+        previous: Optional[Tuple[float, float]] = None
+        for t_rel, x, y, win_w, win_h in track:
             commands.append(f"{t_rel:.3f} {target} x {x:.0f};")
             commands.append(f"{t_rel:.3f} {target} y {y:.0f};")
+            if include_size:
+                size = (round(float(win_w)), round(float(win_h)))
+                if previous is None or size != previous:
+                    commands.append(f"{t_rel:.3f} {target} w {size[0]:.0f};")
+                    commands.append(f"{t_rel:.3f} {target} h {size[1]:.0f};")
+                    previous = size
         Path(cmd_path).write_text("\n".join(commands), encoding="utf-8")
 
     async def _render_tracked_single(
@@ -1632,7 +1979,9 @@ class VideoProcessor:
     ) -> str:
         _, first_x, first_y, win_w, win_h = track[0]
         cmd_path = str(Path(output_path).with_name(f"track_{uuid4().hex}.cmd"))
-        self._write_crop_commands(cmd_path, track, target="crop")
+        # `w`/`h` dikirim runtime supaya zoom (dan reset ke framing asli)
+        # benar-benar berubah di tengah video, bukan hanya posisi x/y.
+        self._write_crop_commands(cmd_path, track, target="crop", include_size=True)
 
         preset_chain = self.filter_chain_for_preset(filter_preset)
         # fps + setpts dulu supaya filter melihat frame output dan timeline
@@ -1752,20 +2101,113 @@ class VideoProcessor:
         sample_fps: float = 8.0,
         smoothing: float = 0.35,
         split_screen: bool = True,
+        reframe_options: Optional[Dict[str, Any]] = None,
+        analysis_path: Optional[str] = None,
     ) -> str:
         """
         Render klip dengan jendela crop yang MENGIKUTI wajah pembicara.
 
-        Deteksi/tracking berjalan 8 fps pada frame kecil, lalu jalur crop
-        diinterpolasi ke setiap frame output, di-smooth dua arah, diberi dead
-        zone dan batas kecepatan. Bila dua subjek stabil dan berjauhan, output
-        dibagi menjadi dua panel atas/bawah (khusus output portrait).
-        Bila tidak ada wajah terdeteksi, kembali ke crop tengah.
+        Jalur utama sekarang AI moment-based reframing:
+
+            1. analisis (YOLO11n person + YuNet face + ByteTrack-style tracker)
+            2. Moment Detection Engine (skor + durasi minimum + cooldown)
+            3. virtual camera (zoom state machine + camera follow smooth)
+            4. render FFmpeg `sendcmd` + crop runtime w/h
+
+        Zoom hanya terjadi pada momen yang lolos validasi; tanpa momen valid
+        framing asli dipertahankan (tidak ada zoom statis sepanjang video).
+        Split atas/bawah tetap tersedia dan dipakai bila dua subjek stabil.
+
+        `reframe_options` menerima `editing_options` task (nama lama tetap
+        dihormati: `auto_zoom`, `zoom_level`, `auto_zoom_split`).
         """
+        options = dict(reframe_options or {})
+        config = load_reframe_config(options)
+        # Nilai lama dari signature tetap berlaku bila opsi tidak diberikan.
+        if not reframe_options:
+            legacy: Dict[str, Any] = {}
+            if zoom and float(zoom) > 1.0:
+                legacy["maximum_zoom"] = float(zoom)
+            if sample_fps:
+                legacy["analysis_fps"] = float(sample_fps)
+            config = load_reframe_config(legacy).sanitized()
+
         width, height = self._dimensions_for_ratio(aspect_ratio)
         output_fps = max(1, int(settings.OUTPUT_FPS or 30))
         loop = asyncio.get_event_loop()
 
+        plan = await loop.run_in_executor(
+            None,
+            functools.partial(
+                self._reframe_analyze_sync,
+                input_path,
+                start_time,
+                duration,
+                aspect_ratio,
+                config,
+                smoothing,
+                split_screen,
+                output_fps,
+            ),
+        )
+
+        if analysis_path and plan.analysis:
+            try:
+                Path(analysis_path).parent.mkdir(parents=True, exist_ok=True)
+                Path(analysis_path).write_text(
+                    json.dumps(plan.analysis, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+            except OSError as exc:
+                logger.warning("Gagal menulis analysis report: %s", exc)
+
+        async def fallback() -> str:
+            logger.warning("Track wajah kosong; memakai crop tengah: %s", input_path)
+            return await self.render_clip(
+                input_path, output_path,
+                start_time=start_time, duration=duration,
+                aspect_ratio=aspect_ratio, filter_preset=filter_preset,
+            )
+
+        if not plan.primary and not plan.keyframes:
+            return await fallback()
+
+        if plan.keyframes:
+            track = self._stabilize_zoom_track(plan.keyframes)
+            if not track:
+                return await fallback()
+            if plan.split and plan.secondary and height > width:
+                secondary = self._interpolate_track_frames(
+                    plan.secondary, duration, output_fps
+                )
+                secondary = self._stabilize_track_frames(secondary)
+                if secondary:
+                    logger.info("Auto zoom split atas/bawah aktif: %s", input_path)
+                    return await self._render_tracked_split(
+                        input_path,
+                        output_path,
+                        track,
+                        secondary,
+                        start_time,
+                        duration,
+                        width,
+                        height,
+                        output_fps,
+                        filter_preset,
+                    )
+            return await self._render_tracked_single(
+                input_path,
+                output_path,
+                track,
+                start_time,
+                duration,
+                width,
+                height,
+                output_fps,
+                filter_preset,
+            )
+
+        # Jalur lama (face-only) dipertahankan sebagai fallback.
         plan = await loop.run_in_executor(
             None,
             self._speaker_track_sync,
@@ -1778,14 +2220,6 @@ class VideoProcessor:
             smoothing,
             split_screen,
         )
-
-        async def fallback() -> str:
-            logger.warning("Track wajah kosong; memakai crop tengah: %s", input_path)
-            return await self.render_clip(
-                input_path, output_path,
-                start_time=start_time, duration=duration,
-                aspect_ratio=aspect_ratio, filter_preset=filter_preset,
-            )
 
         if not plan.primary:
             return await fallback()

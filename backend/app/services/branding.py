@@ -71,8 +71,14 @@ def normalize_branding(value: Optional[dict]) -> Dict[str, Any]:
     for slot in FAVICON_SLOTS:
         favicons[slot] = _clean_url(raw_favicons.get(slot))
     merged["favicons"] = favicons
-    # favicon_url = alias ke favicons.icon32 (backward-compatible).
-    merged["favicon_url"] = favicons.get("icon32")
+    # favicon_url = alias ke favicons.icon32 (backward-compatible). Nilai
+    # `favicon_url` yang dikirim langsung tetap dihormati supaya field lama
+    # tidak diam-diam hilang; `icon32` menang bila keduanya terisi.
+    explicit_favicon = _clean_url(merged.get("favicon_url"))
+    merged["favicon_url"] = favicons.get("icon32") or explicit_favicon
+    if explicit_favicon and not favicons.get("icon32"):
+        # Pertahankan perilaku lama: satu URL favicon juga mengisi slot icon32.
+        favicons["icon32"] = explicit_favicon
 
     color = str(merged.get("accent_color") or DEFAULT_BRANDING["accent_color"]).strip()
     merged["accent_color"] = (

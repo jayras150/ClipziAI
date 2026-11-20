@@ -12,6 +12,8 @@ __pycache__/
 .Python
 .venv/
 venv/
+# Virtualenv verifikasi lokal untuk modul reframe (jangan ikut ter-commit).
+.venv-reframe/
 env/
 pip-log.txt
 pip-delete-this-directory.txt

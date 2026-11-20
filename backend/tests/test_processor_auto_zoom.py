@@ -135,9 +135,13 @@ def test_render_writes_one_sendcmd_per_output_frame(monkeypatch, tmp_path):
     assert chain.startswith("fps=30,setpts=PTS-STARTPTS,sendcmd=")
 
     commands = captured["commands"]
-    assert len(commands) == 60  # 30 frame x 2 command (x dan y)
+    # 30 frame x (x, y) + satu pasang (w, h) di awal untuk ukuran crop awal.
+    # w/h dikirim runtime supaya zoom bisa berubah di tengah video.
+    assert len(commands) == 62
     assert commands[0].startswith("0.000 crop x 100;")
     assert commands[1].startswith("0.000 crop y 200;")
+    assert commands[2].startswith("0.000 crop w ")
+    assert commands[3].startswith("0.000 crop h ")
     assert commands[-2].startswith("0.967 crop x ")
     assert commands[-1].startswith("0.967 crop y ")
 
@@ -290,3 +294,96 @@ def test_split_render_uses_two_crop_targets_and_vstack(monkeypatch, tmp_path):
     assert len(bottom_commands) == 60
     assert top_commands[1].startswith("0.000 crop@top y ")
     assert bottom_commands[1].startswith("0.000 crop@bottom y ")
+
+
+def test_zoom_keyframes_keep_even_size_and_drop_redundant_entries():
+    keyframes = [
+        (0.0, 100.0, 200.0, 607.0, 1079.0),
+        (1 / 30, 100.0, 200.0, 607.0, 1079.0),
+        (2 / 30, 101.0, 200.0, 608.0, 1080.0),
+    ]
+
+    track = VideoProcessor._stabilize_zoom_track(keyframes, window=1)
+
+    assert track
+    for _, _, _, win_w, win_h in track:
+        assert int(win_w) % 2 == 0
+        assert int(win_h) % 2 == 0
+    # Keyframe dengan posisi & ukuran identik tidak dikirim dua kali.
+    positions = [item[1:] for item in track]
+    assert len(positions) == len(set(positions))
+
+
+def test_write_crop_commands_can_send_runtime_size(tmp_path):
+    cmd_path = tmp_path / "crop.cmd"
+    track = [
+        (0.0, 10.0, 20.0, 608.0, 1080.0),
+        (0.033, 10.0, 20.0, 608.0, 1080.0),
+        (0.066, 12.0, 20.0, 304.0, 540.0),
+    ]
+
+    VideoProcessor._write_crop_commands(
+        str(cmd_path), track, target="crop", include_size=True
+    )
+    lines = cmd_path.read_text(encoding="utf-8").splitlines()
+
+    # w/h hanya dikirim saat berubah: satu kali di awal dan satu kali saat zoom.
+    assert sum(1 for line in lines if " crop w " in line) == 2
+    assert sum(1 for line in lines if " crop h " in line) == 2
+    assert "0.066 crop w 304;" in lines
+    assert "0.066 crop h 540;" in lines
+
+
+def test_write_crop_commands_without_size_keeps_legacy_behaviour(tmp_path):
+    cmd_path = tmp_path / "crop.cmd"
+    track = [(0.0, 10.0, 20.0, 608.0, 1080.0), (0.033, 11.0, 21.0, 608.0, 1080.0)]
+
+    VideoProcessor._write_crop_commands(str(cmd_path), track, target="crop")
+    lines = cmd_path.read_text(encoding="utf-8").splitlines()
+
+    assert len(lines) == 4
+    assert not any(" crop w " in line for line in lines)
+
+
+def test_stabilize_zoom_track_keeps_size_changes():
+    """Regresi: zoom hilang total karena w/h dibekukan ke frame pertama.
+
+    Stabilizer hanya boleh merapikan posisi; ukuran jendela WAJIB mengikuti
+    keyframe supaya zoom 1.0 -> 1.6 benar-benar terlihat di video.
+    """
+    keyframes = [
+        (0.0, 400.0, 0.0, 404.0, 720.0),
+        (0.5, 400.0, 0.0, 300.0, 532.0),
+        (1.0, 400.0, 0.0, 252.0, 450.0),
+    ]
+
+    track = VideoProcessor._stabilize_zoom_track(keyframes, window=3)
+    sizes = {(int(win_w), int(win_h)) for _, _, _, win_w, win_h in track}
+
+    assert len(sizes) > 1, f"ukuran zoom dibekukan: {sizes}"
+    assert (252, 450) in sizes
+    assert (404, 720) in sizes
+    # Ukuran tetap genap (syarat encoder yuv420p).
+    for _, _, _, win_w, win_h in track:
+        assert int(win_w) % 2 == 0 and int(win_h) % 2 == 0
+
+
+def test_interpolate_track_frames_keeps_size_changes():
+    """Regresi: interpolasi per frame juga tidak boleh membekukan w/h."""
+    track = [
+        (0.0, 400.0, 0.0, 404.0, 720.0),
+        (1.0, 400.0, 0.0, 252.0, 450.0),
+    ]
+
+    dense = VideoProcessor._interpolate_track_frames(track, duration=1.0, output_fps=30)
+
+    assert len(dense) == 30
+    first, last = dense[0], dense[-1]
+    assert (first[3], first[4]) == (404.0, 720.0)
+    # Frame terakhir ada di t=29/30 (bukan 1.0), jadi ukurannya nyaris (tapi
+    # belum tepat) sama dengan keyframe akhir — yang penting sudah mengecil.
+    assert last[3] < first[3] and last[4] < first[4]
+    assert abs(last[3] - 252.0) <= 8.0 and abs(last[4] - 450.0) <= 12.0
+    # Ukuran mengecil bertahap, bukan melompat di akhir.
+    widths = [item[3] for item in dense]
+    assert widths == sorted(widths, reverse=True)

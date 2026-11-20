@@ -43,8 +43,12 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 FROM builder AS builder-worker
 
 COPY requirements-gpu-whisper.txt ./
-RUN pip install -r requirements-gpu-whisper.txt && \
-    python -c "import faster_whisper, ctranslate2; print('ct2', ctranslate2.__version__, 'gpu libs siap')"
+# `onnxruntime-gpu` dan `onnxruntime` menyediakan modul yang sama; uninstall
+# versi CPU dulu supaya tidak ada sisa build CPU yang menang di sys.path.
+RUN pip uninstall -y onnxruntime onnxruntime-gpu >/dev/null 2>&1 || true; \
+    pip install -r requirements-gpu-whisper.txt && \
+    python -c "import faster_whisper, ctranslate2; print('ct2', ctranslate2.__version__, 'gpu libs siap')" && \
+    python -c "import onnxruntime as ort; p = ort.get_available_providers(); print('ort', ort.__version__, p); assert 'CUDAExecutionProvider' in p, 'onnxruntime-gpu tidak aktif: ' + str(p)"
 
 # Perampingan WAJIB di stage ini: file yang dihapus di sini tidak ikut
 # di-COPY ke image akhir (menghapus di stage runtime tidak mengecilkan image).
@@ -117,14 +121,19 @@ RUN curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp 
       -o /usr/local/bin/yt-dlp \
     && chmod 0755 /usr/local/bin/yt-dlp
 
-# Data model deteksi wajah (auto zoom follow-speaker).
+# Data model deteksi (auto zoom follow-speaker + AI moment-based reframing).
 # OpenCV 5.x menghapus cv2.CascadeClassifier dan tidak lagi membundel file XML
 # haar, sehingga dipakai model ONNX YuNet yang diunduh saat build.
+# YOLO11n dipakai untuk deteksi person; model dicari lewat REFRAME_MODEL_DIR,
+# /opt/reframe, lalu /opt/opencv-data.
 RUN mkdir -p /opt/opencv-data \
     && curl -fsSL -o /opt/opencv-data/face_detection_yunet_2023mar.onnx \
        https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx \
+    && curl -fsSL -o /opt/opencv-data/yolo11n.onnx \
+       https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.onnx \
     && ls -l /opt/opencv-data \
-    && test "$(stat -c%s /opt/opencv-data/face_detection_yunet_2023mar.onnx)" -gt 100000
+    && test "$(stat -c%s /opt/opencv-data/face_detection_yunet_2023mar.onnx)" -gt 100000 \
+    && test "$(stat -c%s /opt/opencv-data/yolo11n.onnx)" -gt 10000000
 
 # Ambil virtualenv: dipindah ke masing-masing TARGET (api/worker) karena
 # keduanya memakai builder berbeda (worker menambah lib CUDA + Whisper).
