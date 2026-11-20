@@ -108,7 +108,16 @@ async def admin_upload_clip(
         transcript = str(clip.viral_factors.get("transcript") or "").strip()
         if len(transcript.split()) >= 6:
             try:
-                generated = await MetadataGenerator().generate(
+                from app.services.ai_config import (
+                    load_and_apply_ai_config,
+                    resolve_role,
+                )
+
+                ai_cfg = await load_and_apply_ai_config()
+                generated = await MetadataGenerator(
+                    model=ai_cfg.get("model_metadata"),
+                    endpoint=resolve_role(ai_cfg, "metadata"),
+                ).generate(
                     transcript=transcript,
                     source_title=clip.title or "",
                     duration=float(clip.duration or 0),

@@ -629,10 +629,9 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
             from app.services.ai_config import (
                 ai_is_configured,
                 load_and_apply_ai_config,
+                resolve_role,
             )
             from app.services.provider_llm import ProviderJSONClient
-
-            from app.services.ai_config import resolve_endpoint as _resolve_ai_endpoint
 
             ai_cfg = await load_and_apply_ai_config()
             # Prompt registry: ambil versi terbaru dari DB untuk task ini.
@@ -647,7 +646,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
                 ProviderJSONClient(
                     ai_cfg,
                     ai_cfg["model_rerank"],
-                    endpoint=_resolve_ai_endpoint(ai_cfg, "rerank"),
+                    role="rerank",
                 )
                 if ai_ready and ai_cfg.get("rerank_enabled")
                 else None
@@ -833,7 +832,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
 
                     generator = MetadataGenerator(
                         model=ai_cfg["model_metadata"],
-                        endpoint=_resolve_ai_endpoint(ai_cfg, "metadata"),
+                        endpoint=resolve_role(ai_cfg, "metadata"),
                     )
                     meta_deadline = time.monotonic() + float(
                         ai_cfg["metadata_budget_seconds"]

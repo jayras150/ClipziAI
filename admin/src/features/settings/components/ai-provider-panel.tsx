@@ -23,7 +23,7 @@ const CAPS = [
   { id: 'rerank', label: 'Rerank', capability: 'rerank', model: 'model_rerank', endpoint: 'endpoint_rerank', prompts: ['rerank_system', 'rerank_user'] },
   { id: 'regenerate', label: 'Regenerate', capability: 'regenerate', model: 'model_regenerate', endpoint: 'endpoint_chat', prompts: [] },
   { id: 'transcribe', label: 'Transkripsi', capability: 'transcribe', model: 'model_transcribe', endpoint: 'endpoint_transcribe', prompts: [] },
-  { id: 'viral', label: 'Viral Score', capability: 'chat', model: 'model_metadata', endpoint: 'endpoint_chat', prompts: ['viral_system', 'viral_user'] }
+  { id: 'viral', label: 'Viral Score', capability: 'chat', model: 'model_viral', endpoint: 'endpoint_chat', prompts: ['viral_system', 'viral_user'] }
 ] as const;
 
 type CapId = (typeof CAPS)[number]['id'] | 'umum';
@@ -46,6 +46,15 @@ export default function AiProviderPanel({
   const [promptText, setPromptText] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState('');
   const [busy, setBusy] = useState('');
+  // Kredensial PER FITUR: Base URL + API key sendiri-sendiri.
+  const [roleBaseUrls, setRoleBaseUrls] = useState<Record<string, string>>(
+    (config as unknown as { role_base_urls?: Record<string, string> }).role_base_urls || {}
+  );
+  const [roleApiKeys, setRoleApiKeys] = useState<Record<string, string>>({});
+  const [clearRoleKeys, setClearRoleKeys] = useState<string[]>([]);
+  const roleStatuses =
+    (config as unknown as { roles?: Array<Record<string, unknown>> }).roles || [];
+  const roleStatus = (id: string) => roleStatuses.find((item) => item.role === id) || {};
   const [pending, startTransition] = useTransition();
 
   const set = (key: string, value: unknown) => setForm((prev) => ({ ...prev, [key]: value }));
@@ -91,10 +100,21 @@ export default function AiProviderPanel({
   const save = () => {
     setBusy('save');
     startTransition(async () => {
-      const result = await saveAi({ ...form, provider });
+      const result = await saveAi({
+        ...form,
+        provider,
+        role_base_urls: roleBaseUrls,
+        role_api_keys: Object.fromEntries(
+          Object.entries(roleApiKeys).filter(([, value]) => value.trim())
+        ),
+        clear_role_keys: clearRoleKeys
+      });
       setBusy('');
-      if (result.ok) toast.success('Setelan AI disimpan & diterapkan.');
-      else toast.error(result.error || 'Gagal menyimpan.');
+      if (result.ok) {
+        setRoleApiKeys({});
+        setClearRoleKeys([]);
+        toast.success('Setelan AI disimpan & diterapkan.');
+      } else toast.error(result.error || 'Gagal menyimpan.');
     });
   };
 
@@ -120,10 +140,10 @@ export default function AiProviderPanel({
     });
   };
 
-  const testCap = (capability: string) => {
-    setBusy(`test-${capability}`);
+  const testCap = (capability: string, role?: string) => {
+    setBusy(`test-${role || capability}`);
     startTransition(async () => {
-      const result = await testAiCapability(capability);
+      const result = await testAiCapability(capability, role);
       setBusy('');
       if (result.ok) toast.success(`${capability}: ${result.data.output.slice(0, 80)}`);
       else toast.error(result.error);
@@ -133,8 +153,9 @@ export default function AiProviderPanel({
   return (
     <div className='space-y-4'>
       <p className='text-muted-foreground text-sm'>
-        Pilih provider, lalu atur endpoint & model per kemampuan. Satu API key dipakai untuk
-        chat, rerank, dan transkripsi. Endpoint kosong = ikut base URL provider.
+        Pilih provider, lalu atur endpoint & model per kemampuan. Setiap fitur (Metadata,
+        Rerank, Regenerate, Transkripsi, Viral Score) bisa memakai Base URL dan API key
+        sendiri-sendiri; kosongkan bila ingin memakai kredensial utama.
       </p>
       <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-3'>
         {providers.map((item) => (
@@ -247,12 +268,80 @@ export default function AiProviderPanel({
                   </datalist>
                 </div>
               </div>
+              <div className='space-y-3 rounded-md border p-3'>
+                <div className='flex items-center justify-between gap-2'>
+                  <p className='text-sm font-medium'>Kredensial {cap.label}</p>
+                  <span className='text-muted-foreground text-[11px]'>
+                    {Boolean(roleStatus(cap.id).uses_role_key)
+                      ? 'API key sendiri'
+                      : Boolean(roleStatus(cap.id).has_key)
+                        ? 'API key utama'
+                        : 'belum ada key'}
+                    {Boolean(roleStatus(cap.id).uses_role_base_url)
+                      ? ' · base URL sendiri'
+                      : ''}
+                  </span>
+                </div>
+                <div className='grid gap-3 md:grid-cols-2'>
+                  <div className='space-y-1'>
+                    <Label>Base URL khusus {cap.label}</Label>
+                    <Input
+                      value={roleBaseUrls[cap.id] || ''}
+                      placeholder={active?.base_url || 'kosong = ikut Base URL utama'}
+                      onChange={(event) =>
+                        setRoleBaseUrls((prev) => ({
+                          ...prev,
+                          [cap.id]: event.target.value
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className='space-y-1'>
+                    <Label>API key khusus {cap.label}</Label>
+                    <Input
+                      type='password'
+                      value={roleApiKeys[cap.id] || ''}
+                      placeholder={
+                        Boolean(roleStatus(cap.id).has_key)
+                          ? 'tersimpan — kosongkan bila tidak diubah'
+                          : 'kosong = ikut API key utama'
+                      }
+                      onChange={(event) =>
+                        setRoleApiKeys((prev) => ({
+                          ...prev,
+                          [cap.id]: event.target.value
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+                <p className='text-muted-foreground text-xs'>
+                  Base URL & API key ini dipakai khusus untuk {cap.label}, sehingga tiap fitur
+                  bisa memakai provider berbeda. Kosongkan bila ingin ikut kredensial utama.
+                </p>
+                {Boolean(roleStatus(cap.id).uses_role_key) ? (
+                  <Button
+                    variant='ghost'
+                    size='sm'
+                    onClick={() => {
+                      setRoleApiKeys((prev) => ({ ...prev, [cap.id]: '' }));
+                      setClearRoleKeys((prev) =>
+                        prev.includes(cap.id) ? prev : [...prev, cap.id]
+                      );
+                    }}
+                  >
+                    {clearRoleKeys.includes(cap.id)
+                      ? 'Key khusus akan dihapus saat Simpan'
+                      : 'Hapus key khusus'}
+                  </Button>
+                ) : null}
+              </div>
               <div className='flex flex-wrap gap-2'>
                 <Button variant='outline' size='sm' onClick={loadModels} disabled={pending || busy !== ''}>
                   {busy === 'models' ? 'Memuat model…' : 'Muat daftar model'}
                 </Button>
-                <Button variant='secondary' size='sm' onClick={() => testCap(cap.capability)} disabled={pending || busy !== ''}>
-                  {busy === `test-${cap.capability}` ? 'Menguji…' : 'Test kemampuan'}
+                <Button variant='secondary' size='sm' onClick={() => testCap(cap.capability, cap.id)} disabled={pending || busy !== ''}>
+                  {busy === `test-${cap.id}` ? 'Menguji…' : 'Test kemampuan'}
                 </Button>
               </div>
               {modelInfo ? <p className='text-muted-foreground text-xs'>{modelInfo}</p> : null}

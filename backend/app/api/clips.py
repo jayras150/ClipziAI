@@ -318,7 +318,13 @@ async def _prepare_metadata_bg(clip_id: UUID, user_id: UUID) -> None:
         async with AsyncSessionLocal() as db:
             clip, _task = await _load_clip(db, str(clip_id), user_id)
             transcript, _source = await _ensure_transcript(clip, db)
-            result = await MetadataGenerator().generate(
+            from app.services.ai_config import load_and_apply_ai_config, resolve_role
+
+            ai_cfg = await load_and_apply_ai_config()
+            result = await MetadataGenerator(
+                model=ai_cfg.get("model_metadata"),
+                endpoint=resolve_role(ai_cfg, "metadata"),
+            ).generate(
                 transcript=transcript,
                 source_title=clip.title or "",
                 duration=float(clip.duration or 0),
@@ -497,10 +503,19 @@ async def generate_clip_metadata(
             regenerate_left=regen_left,
         )
 
-    # Regenerate memakai model khusus (OpenRouter gpt-6-luna); pembuatan pertama
-    # memakai AI_MODEL global.
+    # Regenerate memakai model khusus (role `regenerate`); pembuatan pertama
+    # memakai role `metadata`. Keduanya bisa punya base URL + API key sendiri.
+    from app.services.ai_config import load_and_apply_ai_config, resolve_role
+
+    ai_cfg = await load_and_apply_ai_config()
+    role = "regenerate" if options.regenerate else "metadata"
     generator = MetadataGenerator(
-        model=settings.AI_REGENERATE_MODEL if options.regenerate else None
+        model=(
+            (ai_cfg.get("model_regenerate") or settings.AI_REGENERATE_MODEL)
+            if options.regenerate
+            else ai_cfg.get("model_metadata")
+        ),
+        endpoint=resolve_role(ai_cfg, role),
     )
     try:
         # Cloudflare memutus request ke origin setelah ~100 detik (520/524).

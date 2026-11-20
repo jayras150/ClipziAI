@@ -117,8 +117,10 @@ export async function saveAiEndpoints(payload: {
 }
 
 
-export async function testAiCapability(capability: string) {
+export async function testAiCapability(capability: string, role?: string) {
   try {
+    const query = new URLSearchParams({ capability });
+    if (role) query.set('role', role);
     const data = await adminFetch<{
       ok: boolean;
       capability: string;
@@ -127,7 +129,7 @@ export async function testAiCapability(capability: string) {
       elapsed: number;
       output: string;
       log_text: string;
-    }>(`/api/admin/settings/ai/test?capability=${encodeURIComponent(capability)}`, {
+    }>(`/api/admin/settings/ai/test?${query.toString()}`, {
       method: 'POST'
     });
     return { ok: true as const, data };

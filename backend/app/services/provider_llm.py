@@ -26,13 +26,24 @@ class ProviderJSONClient:
         cfg: Dict[str, Any],
         model: str,
         endpoint: Optional[Dict[str, Any]] = None,
+        role: Optional[str] = None,
     ) -> None:
         endpoint = endpoint or {}
-        self.model = str(endpoint.get("model_rerank") or model)
-        self.base_url = str(endpoint.get("base_url") or effective_base_url(cfg)) or None
-        self.api_key = str(
-            endpoint.get("api_key") or decrypt_api_key(cfg.get("api_key_enc"))
-        ) or "sk-no-key-provided"
+        if role:
+            # Kredensial khusus fitur (base_url + API key sendiri). Bila kosong,
+            # resolve_role otomatis memakai kredensial utama.
+            from app.services.ai_config import resolve_role
+
+            info = resolve_role(cfg, role)
+            self.model = str(info.get("model") or model)
+            self.base_url = str(info.get("base_url") or "") or None
+            self.api_key = str(info.get("api_key") or "") or "sk-no-key-provided"
+        else:
+            self.model = str(endpoint.get("model_rerank") or model)
+            self.base_url = str(endpoint.get("base_url") or effective_base_url(cfg)) or None
+            self.api_key = str(
+                endpoint.get("api_key") or decrypt_api_key(cfg.get("api_key_enc"))
+            ) or "sk-no-key-provided"
         self.temperature = float(cfg.get("temperature") or 0.2)
         self.timeout = float(cfg.get("timeout_seconds") or 90)
         self.max_retries = int(cfg.get("max_retries") or 1)

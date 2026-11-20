@@ -32,6 +32,12 @@ DEFAULT_AI: Dict[str, Any] = {
     "model_rerank": "openai/gpt-4o-mini",
     "model_regenerate": "openai/gpt-6-luna",
     "model_transcribe": "openai/whisper-1",
+    "model_viral": "openai/gpt-4o-mini",
+    # Kredensial PER FITUR. Kosong = ikut base_url/api_key utama di atas.
+    # Dipakai bila admin ingin tiap fitur memakai provider/key berbeda
+    # (mis. Metadata ke OpenRouter, Rerank ke Groq, Transkripsi ke OpenAI).
+    "role_base_urls": {},
+    "role_api_key_enc": {},
     # Endpoint per kemampuan. Kosong = ikut base URL provider (lihat DEFAULT_PATHS).
     "endpoint_chat": "",
     "endpoint_transcribe": "",
@@ -44,6 +50,30 @@ DEFAULT_AI: Dict[str, Any] = {
     "metadata_enabled": True,
     "rerank_budget_seconds": 120,
     "metadata_budget_seconds": 180,
+}
+
+# Fitur yang boleh punya kredensial sendiri di tab AI.
+ROLES = ("metadata", "rerank", "regenerate", "transcribe", "viral")
+ROLE_LABELS = {
+    "metadata": "Metadata",
+    "rerank": "Rerank",
+    "regenerate": "Regenerate",
+    "transcribe": "Transkripsi",
+    "viral": "Viral Score",
+}
+ROLE_MODEL_FIELD = {
+    "metadata": "model_metadata",
+    "rerank": "model_rerank",
+    "regenerate": "model_regenerate",
+    "transcribe": "model_transcribe",
+    "viral": "model_viral",
+}
+ROLE_CAPABILITY = {
+    "metadata": "chat",
+    "rerank": "rerank",
+    "regenerate": "chat",
+    "transcribe": "transcribe",
+    "viral": "chat",
 }
 
 _INT_FIELDS = {
@@ -97,6 +127,21 @@ def mask_api_key(value: str) -> str:
     return text[:4] + "..." + text[-4:]
 
 
+def _normalize_role_base_urls(value: Any) -> Dict[str, str]:
+    """Base URL khusus per fitur (kosong = ikut kredensial utama)."""
+    source = value if isinstance(value, dict) else {}
+    out: Dict[str, str] = {}
+    for role in ROLES:
+        text = str(source.get(role) or "").strip()
+        out[role] = text if text.lower().startswith(("http://", "https://")) else ""
+    return out
+
+
+def _normalize_role_keys(value: Any) -> Dict[str, str]:
+    source = value if isinstance(value, dict) else {}
+    return {role: str(source.get(role) or "").strip() for role in ROLES}
+
+
 def normalize_ai(value: Optional[dict]) -> Dict[str, Any]:
     merged = dict(DEFAULT_AI)
     if isinstance(value, dict):
@@ -139,6 +184,9 @@ def normalize_ai(value: Optional[dict]) -> Dict[str, Any]:
         merged[field] = text[:120] or default
 
     merged["api_key_enc"] = str(merged.get("api_key_enc") or "")
+    merged["role_base_urls"] = _normalize_role_base_urls(merged.get("role_base_urls"))
+    merged["role_api_key_enc"] = _normalize_role_keys(merged.get("role_api_key_enc"))
+    merged["model_viral"] = str(merged.get("model_viral") or "").strip()[:120]
     _normalize_capabilities(merged)
     return merged
 
@@ -187,6 +235,70 @@ def resolve_capability(cfg: Dict[str, Any], capability: str) -> Dict[str, Any]:
         "has_key": bool(key),
         "ready": bool(endpoint) and (bool(key) or capability == "chat"),
     }
+
+
+def resolve_role(cfg: Dict[str, Any], role: str) -> Dict[str, Any]:
+    """URL + model + API key untuk SATU fitur.
+
+    Kredensial khusus fitur (`role_base_urls` / `role_api_key_enc`) dipakai bila
+    diisi; kalau kosong, otomatis memakai kredensial utama (base_url/api_key_enc)
+    sehingga konfigurasi lama tetap berjalan tanpa perubahan.
+    """
+    role = role if role in ROLES else "metadata"
+    capability = ROLE_CAPABILITY[role]
+    base_urls = cfg.get("role_base_urls") or {}
+    keys = cfg.get("role_api_key_enc") or {}
+
+    role_base = str(base_urls.get(role) or "").strip().rstrip("/")
+    global_base = (effective_base_url(cfg) or "").rstrip("/")
+    base = role_base or global_base
+
+    role_key_enc = str(keys.get(role) or "")
+    key = decrypt_api_key(role_key_enc) or decrypt_api_key(cfg.get("api_key_enc"))
+
+    endpoint = str(
+        cfg.get(CAPABILITY_ENDPOINT_FIELDS.get(capability, "endpoint_chat")) or ""
+    ).strip()
+    if not endpoint:
+        path = CAPABILITY_DEFAULT_PATHS.get(capability, "/chat/completions")
+        endpoint = f"{base}{path}" if base else ""
+
+    model = str(cfg.get(ROLE_MODEL_FIELD[role]) or "").strip()
+    return {
+        "role": role,
+        "label": ROLE_LABELS[role],
+        "capability": capability,
+        "base_url": base or None,
+        "url": endpoint,
+        "api_key": key,
+        "has_key": bool(key),
+        "model": model,
+        # Kompatibilitas MetadataGenerator (membaca `model_metadata`).
+        "model_metadata": model,
+        "ready": bool(endpoint) and bool(key),
+        "uses_role_base_url": bool(role_base),
+        "uses_role_key": bool(role_key_enc),
+    }
+
+
+def role_status(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Ringkasan kredensial per fitur untuk UI (tanpa membocorkan API key)."""
+    items: List[Dict[str, Any]] = []
+    for role in ROLES:
+        info = resolve_role(cfg, role)
+        items.append(
+            {
+                "role": role,
+                "label": info["label"],
+                "base_url": info["base_url"] or "",
+                "model": info["model"],
+                "has_key": info["has_key"],
+                "uses_role_base_url": info["uses_role_base_url"],
+                "uses_role_key": info["uses_role_key"],
+                "ready": info["ready"],
+            }
+        )
+    return items
 
 
 def resolve_endpoint(cfg: Dict[str, Any], feature: str) -> Optional[Dict[str, Any]]:
@@ -317,7 +429,10 @@ def ai_status_hint(cfg: Dict[str, Any]) -> Optional[str]:
 
 def public_ai_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     key = decrypt_api_key(cfg.get("api_key_enc"))
-    payload = {k: v for k, v in cfg.items() if k != "api_key_enc"}
+    # Jangan bocorkan blob terenkripsi (utama maupun per fitur).
+    payload = {
+        k: v for k, v in cfg.items() if k not in ("api_key_enc", "role_api_key_enc")
+    }
     payload["api_key_set"] = bool(key)
     payload["api_key_masked"] = mask_api_key(key)
     payload["effective_base_url"] = effective_base_url(cfg)
@@ -326,6 +441,8 @@ def public_ai_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
         name: resolve_capability(cfg, name)
         for name in ("chat", "regenerate", "transcribe", "rerank")
     }
+    # Status kredensial PER FITUR (base URL sendiri, API key sendiri).
+    payload["roles"] = role_status(cfg)
     # Alasan siap/tidaknya AI (None = siap). Ditampilkan sebagai banner di UI.
     payload["status_hint"] = ai_status_hint(cfg)
     payload["ready"] = ai_is_configured(cfg)
@@ -384,6 +501,24 @@ async def set_ai_config(db: AsyncSession, payload: dict) -> Dict[str, Any]:
         if payload.get("enabled") is None:
             merged["enabled"] = True
 
+    # API key PER FITUR: nilai kosong = jangan ubah (biarkan yang lama tetap).
+    role_keys = payload.get("role_api_keys")
+    if isinstance(role_keys, dict):
+        encrypted = dict(merged.get("role_api_key_enc") or {})
+        for role in ROLES:
+            value = str(role_keys.get(role) or "").strip()
+            if value:
+                encrypted[role] = encrypt_api_key(value)
+        merged["role_api_key_enc"] = encrypted
+
+    clear_roles = payload.get("clear_role_keys")
+    if isinstance(clear_roles, (list, tuple, set)):
+        encrypted = dict(merged.get("role_api_key_enc") or {})
+        for role in clear_roles:
+            if role in ROLES:
+                encrypted[role] = ""
+        merged["role_api_key_enc"] = encrypted
+
     cfg = normalize_ai(merged)
 
     result = await db.execute(
@@ -418,6 +553,16 @@ def apply_ai_config_to_env(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "AI_REGENERATE_MODEL": cfg["model_regenerate"],
         "AI_RERANK_MODEL": cfg["model_rerank"],
     }
+    # Kredensial transkripsi khusus fitur: transcriber membaca settings ini saat
+    # memakai provider API (TRANSCRIPTION_PROVIDER != local/gpu).
+    transcribe_role = resolve_role(cfg, "transcribe")
+    if transcribe_role["uses_role_key"] or transcribe_role["uses_role_base_url"]:
+        if transcribe_role["api_key"]:
+            values["TRANSCRIPTION_API_KEY"] = transcribe_role["api_key"]
+        if transcribe_role["base_url"]:
+            values["TRANSCRIPTION_BASE_URL"] = transcribe_role["base_url"]
+        if transcribe_role["model"]:
+            values["TRANSCRIPTION_MODEL"] = transcribe_role["model"]
     injected = []
     for name, value in values.items():
         os.environ[name] = value if isinstance(value, str) else str(value)

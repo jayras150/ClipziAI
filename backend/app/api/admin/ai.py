@@ -12,6 +12,7 @@ from app.models.user import User
 from app.services import ai_prompts
 from app.services.ai_client import PROVIDER_DEFAULTS, provider_metadata
 from app.services.ai_config import (
+    ROLES,
     ai_is_configured,
     ai_status_hint,
     apply_ai_config_to_env,
@@ -19,6 +20,7 @@ from app.services.ai_config import (
     get_ai_config,
     public_ai_config,
     resolve_capability,
+    resolve_role,
     set_ai_config,
     decrypt_api_key,
 )
@@ -41,6 +43,12 @@ class AIConfigIn(BaseModel):
     model_metadata: str = "openai/gpt-4o-mini"
     model_rerank: str = "openai/gpt-4o-mini"
     model_regenerate: str = "openai/gpt-6-luna"
+    model_viral: str = "openai/gpt-4o-mini"
+    # Kredensial PER FITUR (opsional). Kosong = ikut kredensial utama.
+    role_base_urls: Optional[Dict[str, str]] = None
+    # Plaintext dari form; hanya dikirim bila admin mengubah/mengisi.
+    role_api_keys: Optional[Dict[str, str]] = None
+    clear_role_keys: Optional[List[str]] = None
     temperature: float = Field(default=0.7, ge=0.0, le=1.5)
     max_tokens: int = Field(default=2048, ge=128, le=8192)
     timeout_seconds: int = Field(default=90, ge=10, le=300)
@@ -234,12 +242,14 @@ async def update_ai(
 @router.post("/ai/test")
 async def test_ai(
     capability: str = "chat",
+    role: str = "",
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db_session),
 ):
     """Uji satu kemampuan: chat, regenerate, transcribe, atau rerank.
 
-    Endpoint & model diambil dari `resolve_capability` (satu API key provider).
+    `role` (metadata/rerank/regenerate/transcribe/viral) menguji kredensial
+    khusus fitur tersebut; kosong = memakai kemampuan global.
     """
     import io
     import time
@@ -248,12 +258,28 @@ async def test_ai(
     import httpx
 
     cfg = await get_ai_config(db)
-    name = capability if capability in ("chat", "regenerate", "transcribe", "rerank") else "chat"
-    cap = resolve_capability(cfg, name)
+    role = (role or "").strip().lower()
+    if role in ROLES:
+        info = resolve_role(cfg, role)
+        name = info["capability"]
+        cap = {
+            "url": info["url"],
+            "model": info["model"],
+            "base_url": info["base_url"],
+            "has_key": info["has_key"],
+        }
+        key = info["api_key"]
+    else:
+        name = (
+            capability
+            if capability in ("chat", "regenerate", "transcribe", "rerank")
+            else "chat"
+        )
+        cap = resolve_capability(cfg, name)
+        key = decrypt_api_key(cfg.get("api_key_enc"))
     if not cap.get("url"):
         raise HTTPException(status_code=400, detail="Endpoint provider belum diketahui.")
 
-    key = decrypt_api_key(cfg.get("api_key_enc"))
     headers = {"Authorization": f"Bearer {key}"} if key else {}
     started = time.monotonic()
     output = ""

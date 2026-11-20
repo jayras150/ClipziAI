@@ -144,7 +144,34 @@ function ComboField({
   );
 }
 
+type RoleStatus = {
+  role: string;
+  label: string;
+  base_url: string;
+  model: string;
+  has_key: boolean;
+  uses_role_base_url: boolean;
+  uses_role_key: boolean;
+  ready: boolean;
+};
+
+type AiFormExtras = {
+  model_viral?: string;
+  role_base_urls?: Record<string, string>;
+  roles?: RoleStatus[];
+  effective_base_url?: string;
+};
+
+const ROLE_FIELDS: Array<{ id: string; label: string; modelKey: string }> = [
+  { id: 'metadata', label: 'Metadata', modelKey: 'model_metadata' },
+  { id: 'rerank', label: 'Rerank', modelKey: 'model_rerank' },
+  { id: 'regenerate', label: 'Regenerate', modelKey: 'model_regenerate' },
+  { id: 'transcribe', label: 'Transkripsi', modelKey: 'model_transcribe' },
+  { id: 'viral', label: 'Viral Score', modelKey: 'model_viral' }
+];
+
 export default function AiForm({ config, providers }: Props) {
+  const extras = config as unknown as AiFormExtras;
   const [form, setForm] = useState({
     enabled: config.enabled,
     provider: config.provider,
@@ -153,6 +180,7 @@ export default function AiForm({ config, providers }: Props) {
     model_metadata: config.model_metadata,
     model_rerank: config.model_rerank,
     model_regenerate: config.model_regenerate,
+    model_viral: extras.model_viral || '',
     temperature: config.temperature,
     max_tokens: config.max_tokens,
     timeout_seconds: config.timeout_seconds,
@@ -162,6 +190,12 @@ export default function AiForm({ config, providers }: Props) {
     rerank_budget_seconds: config.rerank_budget_seconds,
     metadata_budget_seconds: config.metadata_budget_seconds
   });
+  // Base URL + API key PER FITUR (kosong = ikut kredensial utama).
+  const [roleBaseUrls, setRoleBaseUrls] = useState<Record<string, string>>(
+    extras.role_base_urls || {}
+  );
+  const [roleApiKeys, setRoleApiKeys] = useState<Record<string, string>>({});
+  const roleStatus = extras.roles || [];
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [test, setTest] = useState<TestResult | null>(null);
@@ -177,10 +211,18 @@ export default function AiForm({ config, providers }: Props) {
     setMessage('');
     setError('');
     startTransition(async () => {
-      const result = await saveAi({ ...form, api_key: form.api_key || undefined });
+      const result = await saveAi({
+        ...form,
+        api_key: form.api_key || undefined,
+        role_base_urls: roleBaseUrls,
+        role_api_keys: Object.fromEntries(
+          Object.entries(roleApiKeys).filter(([, value]) => value.trim())
+        )
+      });
       if (result.ok) {
         setMessage('Tersimpan. Env di-inject: ' + (result.injected || []).join(', '));
         setForm((prev) => ({ ...prev, api_key: '' }));
+        setRoleApiKeys({});
         // Setelah kredensial tersimpan, langsung muat daftar model nyata.
         const loaded = await loadAiModels({ provider: form.provider, base_url: form.base_url });
         setModels(loaded);
@@ -331,6 +373,75 @@ export default function AiForm({ config, providers }: Props) {
               ? `${modelOptions.length} model tersedia. Klik “Muat daftar model” setelah menyimpan API key untuk memperbarui daftar.`
               : 'Daftar model belum dimuat — isi API key lalu simpan, atau klik “Muat daftar model”. Nama model juga bisa diketik manual.'}
           </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Kredensial per fitur</CardTitle>
+        </CardHeader>
+        <CardContent className='space-y-4'>
+          <p className='text-muted-foreground text-xs'>
+            Setiap fitur bisa memakai provider, Base URL, dan API key sendiri-sendiri
+            (mis. Metadata ke OpenRouter, Rerank ke Groq, Transkripsi ke OpenAI).
+            Kosongkan bila ingin memakai kredensial utama di atas.
+          </p>
+          <div className='grid gap-4 md:grid-cols-2'>
+            {ROLE_FIELDS.map((role) => {
+              const status = roleStatus.find((item) => item.role === role.id);
+              const savedKey = Boolean(status?.has_key);
+              return (
+                <div key={role.id} className='space-y-2 rounded-md border p-3'>
+                  <div className='flex items-center justify-between gap-2'>
+                    <p className='text-sm font-medium'>{role.label}</p>
+                    <span className='text-muted-foreground text-[11px]'>
+                      {savedKey
+                        ? status?.uses_role_key
+                          ? 'API key sendiri'
+                          : 'API key utama'
+                        : 'belum ada key'}
+                      {status?.uses_role_base_url ? ' · base URL sendiri' : ''}
+                    </span>
+                  </div>
+                  <div className='space-y-1'>
+                    <Label htmlFor={`role-base-${role.id}`}>Base URL</Label>
+                    <Input
+                      id={`role-base-${role.id}`}
+                      placeholder={
+                        extras.effective_base_url ||
+                        activeProvider?.base_url ||
+                        'https://...'
+                      }
+                      value={roleBaseUrls[role.id] || ''}
+                      onChange={(event) =>
+                        setRoleBaseUrls((prev) => ({
+                          ...prev,
+                          [role.id]: event.target.value
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className='space-y-1'>
+                    <Label htmlFor={`role-key-${role.id}`}>API key</Label>
+                    <Input
+                      id={`role-key-${role.id}`}
+                      type='password'
+                      placeholder={
+                        savedKey ? 'tersimpan — kosongkan bila tidak diubah' : 'opsional'
+                      }
+                      value={roleApiKeys[role.id] || ''}
+                      onChange={(event) =>
+                        setRoleApiKeys((prev) => ({
+                          ...prev,
+                          [role.id]: event.target.value
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </CardContent>
       </Card>
 
