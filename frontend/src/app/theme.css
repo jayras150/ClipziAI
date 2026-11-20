@@ -2322,10 +2322,16 @@ body.drawer-open { overflow: hidden; }
 
 .cz-inline-status { display: inline-flex; align-items: center; gap: 6px; }
 
+/* Indikator proses HARUS tetap bergerak walau pengguna mengaktifkan
+   "reduce motion": elemen ini menyatakan STATUS (sedang diproses), bukan hiasan.
+   Blok global di atas memakai !important (0.001ms, 1 iterasi) sehingga
+   deklarasi di sini WAJIB !important juga — kalau tidak, spinner di HP dengan
+   "Remove animations" (Android) / "Reduce Motion" (iOS) berhenti total. */
 @media (prefers-reduced-motion: reduce) {
   .cz-spinner__arc, .cz-spinner__orbit, .cz-spinner__orbit--reverse,
   .cz-spinner__core, .cz-spinner__dot, .cz-spinner--dots > span, .cz-processing {
-    animation-duration: 3s;
+    animation-duration: 3s !important;
+    animation-iteration-count: infinite !important;
   }
 }
 
