@@ -47,6 +47,15 @@ def _image_size(data: bytes) -> tuple[Optional[int], Optional[int]]:
         return None, None
 
 
+def _branding_asset_url(key: str) -> str:
+    """URL permanen aset branding lewat API sendiri (lihat /api/branding/asset).
+
+    URL yang dikembalikan storage bisa berupa presigned URL berumur 7 hari;
+    menyimpannya di branding membuat logo/favicon/video hero 404 setelah itu.
+    """
+    return "/api/branding/asset/%s" % key
+
+
 class BrandingIn(BaseModel):
     app_name: str = Field(default="Clipzy AI", max_length=60)
     tagline: Optional[str] = Field(default=None, max_length=120)
@@ -168,15 +177,18 @@ async def upload_branding_asset(
 
     width, height = _image_size(data) if kind != "hero" else (None, None)
 
+    # Simpan path API permanen, bukan presigned URL storage (kedaluwarsa).
+    asset_url = _branding_asset_url(key)
+
     before = await get_branding(db)
     payload = dict(before)
     if kind == "favicon":
         favicons = dict(before.get("favicons") or {})
-        favicons[favicon_slot] = url
+        favicons[favicon_slot] = asset_url
         payload["favicons"] = favicons
         payload["favicon_url"] = favicons.get("icon32")
     else:
-        payload[field] = url
+        payload[field] = asset_url
     after = await set_branding(db, payload)
 
     db.add(
@@ -199,7 +211,9 @@ async def upload_branding_asset(
     return {
         "kind": kind,
         "slot": favicon_slot if kind == "favicon" else None,
-        "url": url,
+        "url": asset_url,
+        # URL asli storage (presigned) hanya untuk diagnosa; jangan disimpan.
+        "storage_url": url,
         "size_bytes": len(data),
         "content_type": content_type,
         "width": width,

@@ -42,12 +42,31 @@ def _clean_text(value: Any, limit: int) -> Optional[str]:
     return text[:limit]
 
 
+def _stabilize_asset_url(text: str) -> str:
+    """Ubah presigned URL aset branding menjadi path API permanen.
+
+    Storage S3/R2 memberi URL bertanda tangan yang berlaku maksimal 7 hari.
+    Kalau URL seperti itu tersimpan di branding (logo/favicon/OG/video hero),
+    aset akan 404 setelah kedaluwarsa. Path `/api/branding/asset/<key>`
+    mengalihkan ke URL baru setiap permintaan sehingga tidak pernah mati.
+    """
+    if "X-Amz-Signature" not in text and "X-Goog-Signature" not in text:
+        return text
+    marker = "/branding/"
+    index = text.find(marker)
+    if index < 0:
+        return text
+    key = text[index + 1 :].split("?", 1)[0]
+    return "/api/branding/asset/" + key
+
+
 def _clean_url(value: Any) -> Optional[str]:
     text = str(value or "").strip()
     if not text:
         return None
     if not text.startswith(("http://", "https://", "/")):
         return None
+    text = _stabilize_asset_url(text)
     return text[:500]
 
 
