@@ -63,7 +63,19 @@
 {$ADMIN_DOMAIN} {
 	encode zstd gzip
 
-	# API dipakai admin app untuk login & data (lewat Caddy -> backend).
+	# Route handler Next.js milik admin app. WAJIB ke container admin, bukan ke
+	# backend: halaman admin memanggil path relatif `/api/system/host|actions`,
+	# dan bila dilempar ke FastAPI hasilnya 404 Not Found. Itu penyebab tombol
+	# "Clear cache / Restart Caddy / Purge Docker" gagal dengan pesan
+	# "Agent host tidak menerima perintah." padahal agent host sehat.
+	# Daftar ini mengikuti `admin/src/app/api/**/route.ts` (system/*,
+	# proxies/*, version).
+	@admin_next_api path /api/system/* /api/proxies/* /api/version
+	handle @admin_next_api {
+		reverse_proxy admin:3000
+	}
+
+	# API backend (login admin, data platform, dsb).
 	handle /api/* {
 		reverse_proxy backend:8000
 	}
