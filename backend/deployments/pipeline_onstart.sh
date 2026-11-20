@@ -155,6 +155,28 @@ fi
 # --- Restore model dari provider non-Drive (Dropbox / B2 / S3 / HuggingFace) -
 # Backend mengirim CLIPZI_MODEL_URL (tautan unduh model.bin) atau CLIPZI_HF_REPO
 # sehingga worker tidak perlu menunggu cloud_copy Vast yang khusus Google Drive.
+# --- Cookies YouTube via API (bukan env) ------------------------------------
+# Cookies TIDAK lagi dikirim lewat env Vast (batas env ±4 KB, dan metadata
+# instance Vast bisa dibaca dari dashboard). Worker mengambil cookies.txt aktif
+# langsung dari API memakai token yang sama dengan callback. Gagal = tidak
+# fatal: pipeline masih memakai pool tabel ytdlp_cookies lewat DATABASE_URL.
+CLIPZI_COOKIE_FILE=/tmp/ytdlp_cookies.txt
+if [ -n "${CLIPZI_API_BASE:-}" ] && [ -n "${CLIPZI_WORKER_TOKEN:-}" ]; then
+    if curl -fsS --max-time 15 \
+        -H "x-clipzi-token: ${CLIPZI_WORKER_TOKEN}" \
+        -o "$CLIPZI_COOKIE_FILE" \
+        "${CLIPZI_API_BASE}/api/internal/cookies/active.txt" 2>/dev/null \
+        && [ -s "$CLIPZI_COOKIE_FILE" ]; then
+        export YTDLP_COOKIES_FILE="$CLIPZI_COOKIE_FILE"
+        log "cookies: via api ($(wc -c < "$CLIPZI_COOKIE_FILE" | tr -d ' ') byte)"
+    else
+        rm -f "$CLIPZI_COOKIE_FILE"
+        log "cookies: api tidak memberi cookies; fallback ke pool database"
+    fi
+else
+    log "cookies: CLIPZI_API_BASE/CLIPZI_WORKER_TOKEN kosong; fallback ke pool database"
+fi
+
 log "menjalankan pipeline untuk task ${CLIPZI_TASK_ID} (python: ${PYTHON_BIN})"
 
 # Catat titik mulai pipeline ke dashboard (setelah bgutil & model siap).

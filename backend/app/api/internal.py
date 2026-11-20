@@ -21,7 +21,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -299,6 +299,29 @@ async def active_proxies(request: Request, db: AsyncSession = Depends(get_db_ses
     _verify_agent_token(request)
     pool = await proxy_pool.get_pool(db)
     return PlainTextResponse(pool.get("active_txt") or "", media_type="text/plain; charset=utf-8")
+
+
+@router.get("/cookies/active.txt", response_class=PlainTextResponse)
+async def active_cookies(request: Request):
+    """cookies.txt (Netscape) aktif untuk worker.
+
+    Worker mengambil cookies di sini saat boot, sehingga env Vast tidak perlu
+    memuat base64/gzip cookies (~2 KB, hampir separuh batas 4 KB) dan cookies
+    tidak tersimpan di metadata instance Vast. Sumbernya sama dengan dashboard
+    admin: `platform_settings`, lalu pool tabel `ytdlp_cookies`.
+
+    Balasan 204 = tidak ada cookies aktif; worker lanjut memakai pool database.
+    """
+    from app.services.runtime_credentials import read_active_cookies_text
+
+    _verify_agent_token(request)
+    text, source = await read_active_cookies_text()
+    if not text:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    logger.info(
+        "Worker mengambil cookies aktif: sumber=%s %s char", source or "-", len(text)
+    )
+    return PlainTextResponse(text, media_type="text/plain; charset=utf-8")
 
 
 

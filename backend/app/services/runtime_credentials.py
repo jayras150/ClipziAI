@@ -121,6 +121,27 @@ async def hydrate_youtube_cookies() -> Dict[str, Any]:
     }
 
 
+async def read_active_cookies_text() -> Tuple[str, str]:
+    """cookies.txt (plaintext) aktif + sumbernya.
+
+    Dipakai endpoint internal yang diambil worker saat boot, supaya cookies
+    tidak perlu dikirim lewat env Vast (batas env ±4 KB, dan metadata instance
+    Vast bisa dibaca dari dashboard). Sumbernya sama dengan dashboard admin:
+    `platform_settings` lebih dulu, lalu pool tabel `ytdlp_cookies`.
+    """
+    encoded, source = await _read_youtube_base64()
+    if not encoded:
+        return "", ""
+    try:
+        plain = base64.b64decode(
+            encoded.encode("ascii"), validate=False
+        ).decode("utf-8", "ignore")
+        return plain, source
+    except Exception as exc:  # noqa: BLE001 - cookies korup bukan alasan 500
+        logger.warning("Cookies aktif tidak bisa didekode: %s", exc)
+        return "", ""
+
+
 async def hydrate_hf_token() -> Dict[str, Any]:
     """Isi `settings.HF_TOKEN` dari setelan sumber model Whisper."""
     token = await _read_hf_token()

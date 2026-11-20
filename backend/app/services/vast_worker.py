@@ -399,6 +399,14 @@ def build_worker_env(task_id: Optional[UUID] = None) -> Dict[str, str]:
         value = getattr(settings, name, None)
         if value:
             env[name] = str(value)
+    # Cookies default TIDAK dikirim lewat env. Worker mengambilnya di onstart
+    # dari /api/internal/cookies/active.txt (token = CLIPZI_WORKER_TOKEN) dan
+    # masih punya pool tabel `ytdlp_cookies` lewat DATABASE_URL. Keuntungan:
+    # sisa anggaran env Vast (~4 KB) bisa dipakai kredensial lain, dan cookies
+    # tidak tersimpan di metadata instance Vast. Set CLIPZI_COOKIES_VIA_ENV=1
+    # untuk kembali ke perilaku lama (cookies ikut di env).
+    if not bool(getattr(settings, "CLIPZI_COOKIES_VIA_ENV", False)):
+        env.pop("YTDLP_COOKIES_BASE64", None)
     callback = str(getattr(settings, "CLIPZI_CALLBACK_URL", "") or "")
     if callback:
         env["CLIPZI_API_BASE"] = callback.split("/api/internal/")[0].rstrip("/")

@@ -306,12 +306,22 @@ def worker_env_spec() -> List[Dict[str, Any]]:
             env.get("YTDLP_COOKIES_GZIP_B64") if is_cookie_packed else ""
         )
         secret = _is_secret(name)
+        # Cookies tidak lagi dikirim lewat env (CLIPZI_COOKIES_VIA_ENV=0):
+        # worker mengambilnya dari endpoint internal. Tanpa penanda ini panel
+        # admin akan menampilkan "kosong" padahal cookies tersedia di database
+        # (bug lama yang pernah dilaporkan).
+        cookies_via_api = (
+            name == "YTDLP_COOKIES_BASE64"
+            and not value
+            and not is_cookie_packed
+            and bool(getattr(get_settings(), "YTDLP_COOKIES_BASE64", None))
+        )
         items.append(
             {
                 "name": name,
                 "required": name in WORKER_ENV_REQUIRED,
                 "runtime": False,
-                "set": bool(effective_value),
+                "set": bool(effective_value) or cookies_via_api,
                 "secret": secret,
                 "preview": (
                     _mask(value) if secret else value[:80]
@@ -320,7 +330,11 @@ def worker_env_spec() -> List[Dict[str, Any]]:
                 else (
                     f"**** (gzip {len(env.get('YTDLP_COOKIES_GZIP_B64') or '')} char)"
                     if is_cookie_packed
-                    else ""
+                    else (
+                        "via API (/api/internal/cookies/active.txt)"
+                        if cookies_via_api
+                        else ""
+                    )
                 ),
             }
         )

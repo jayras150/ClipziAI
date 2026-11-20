@@ -195,6 +195,11 @@ class Settings(BaseSettings):
     DOWNLOAD_RETRY_BASE_SECONDS: int = 30
     # Cookies wajib untuk YouTube (True = jangan diam-diam download tanpa cookies)
     YOUTUBE_COOKIES_REQUIRED: bool = False
+    # Kirim cookies YouTube lewat env worker (perilaku lama). Default False:
+    # worker mengambil cookies dari /api/internal/cookies/active.txt dan pool
+    # tabel ytdlp_cookies, sehingga env Vast tidak penuh (~2 KB) dan cookies
+    # tidak tersimpan di metadata instance Vast.
+    CLIPZI_COOKIES_VIA_ENV: bool = False
 
     # --- GitHub Actions runner fallback (downloader) ------------------------
     RUNNER_FALLBACK_ENABLED: bool = True
