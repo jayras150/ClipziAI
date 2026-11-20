@@ -78,6 +78,18 @@ class AudioTranscriber:
             return False
         if count <= 0:
             logger.warning("CTranslate2 tidak melihat GPU CUDA (count=0)")
+            # Diagnostik tambahan: kalau library CUDA benar-benar bisa dipakai,
+            # compute types akan terdaftar. Kalau gagal, pesannya menyebut
+            # library yang hilang (libcudnn/libcublas) — bukan sekadar count=0.
+            try:
+                types = ctranslate2.get_supported_compute_types("cuda")
+                logger.info("CTranslate2 compute types CUDA: %s", sorted(types))
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    "CTranslate2 tidak bisa memakai CUDA sama sekali (%s). "
+                    "Periksa libcudnn.so.9 & libcublas di LD_LIBRARY_PATH.",
+                    exc,
+                )
         return count > 0
 
     @staticmethod

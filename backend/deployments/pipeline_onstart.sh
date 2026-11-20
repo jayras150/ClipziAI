@@ -191,15 +191,4 @@ fi
 # (unique index task_id+seq) dan dibuang oleh ON CONFLICT DO NOTHING.
 export CLIPZI_LOG_SEQ_OFFSET=$((CLIPZI_LOG_SEQ_OFFSET + 1))
 
-exec "$PYTHON_BIN" -u /app/deployments/worker_log_shipper.py -- "$PYTHON_BIN" -u -c '
-import asyncio
-import os
-from uuid import UUID
-
-from app.services.pipeline import run_video_pipeline
-
-task_id = UUID(os.environ["CLIPZI_TASK_ID"])
-result = asyncio.run(run_video_pipeline(task_id))
-print("PIPELINE_RESULT", result, flush=True)
-raise SystemExit(0 if result.get("ok") else 1)
-'
+exec "$PYTHON_BIN" -u /app/deployments/worker_log_shipper.py -- "$PYTHON_BIN" -u /app/deployments/run_pipeline.py
