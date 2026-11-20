@@ -182,7 +182,9 @@ export default function LandingPage() {
       window.removeEventListener("scroll", onFirstInteraction)
       window.removeEventListener("keydown", onFirstInteraction)
     }
-  }, [])
+    // src hero bisa berubah setelah admin mengganti video (branding refresh);
+    // pasang ulang listener supaya video baru langsung diputar tanpa reload.
+  }, [heroVideoSrc])
 
   const onPickFile = (file: File | null) => {
     if (!file) {

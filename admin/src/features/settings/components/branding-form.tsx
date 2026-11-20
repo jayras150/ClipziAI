@@ -31,6 +31,36 @@ const KIND_HINT: Record<AssetKind, string> = {
   hero: 'MP4/WEBM maksimal 30 MB. Animasi yang diputar di landing page (autoplay, tanpa ikon).'
 };
 
+/** Batas ukuran mengikuti backend: gambar 2 MB, video hero 30 MB. */
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 30 * 1024 * 1024;
+const HERO_MIME = new Set(['video/mp4', 'video/webm', 'video/quicktime']);
+
+/**
+ * Validasi di browser sebelum Server Action dipanggil.
+ *
+ * Sebelumnya file 30 MB tetap dikirim ke server Next (batas Server Action
+ * hanya 1 MB) sehingga unggahan video hero selalu gagal dengan error 413 yang
+ * tidak informatif. Sekarang file ditolak lebih awal dengan pesan jelas.
+ */
+function validateAsset(kind: AssetKind, file: File): string | null {
+  const type = (file.type || '').toLowerCase();
+  if (kind === 'hero') {
+    if (type && !HERO_MIME.has(type)) return 'Video harus MP4, WEBM, atau MOV.';
+    if (file.size > MAX_VIDEO_BYTES) {
+      return `Video maksimal 30 MB (file ${humanSize(file.size)}).`;
+    }
+    return null;
+  }
+  if (type && !type.startsWith('image/')) {
+    return 'File harus berupa gambar (PNG/JPG/WEBP/SVG/ICO).';
+  }
+  if (file.size > MAX_IMAGE_BYTES) {
+    return `Gambar maksimal 2 MB (file ${humanSize(file.size)}).`;
+  }
+  return null;
+}
+
 /** Slot favicon yang dipakai browser & OS (Android, iOS, Windows, tab browser). */
 const FAVICON_SLOTS: Array<{ slot: string; label: string; spec: string }> = [
   { slot: 'icon32', label: 'Favicon 32×32', spec: 'Tab browser & bookmark (PNG)' },
@@ -112,7 +142,12 @@ function FaviconSlotsCard({
                     type='file'
                     className='hidden'
                     accept='image/png,image/svg+xml,image/x-icon,image/vnd.microsoft.icon'
-                    onChange={(event) => pick(slot, event.target.files?.[0] || null)}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] || null;
+                      // Reset supaya memilih file yang sama lagi tetap memicu onChange.
+                      event.target.value = '';
+                      pick(slot, file);
+                    }}
                   />
                 </label>
                 {url ? (
@@ -295,7 +330,12 @@ function AssetCard({
                 : 'image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon,image/vnd.microsoft.icon'
             }
             className='hidden'
-            onChange={(event) => pick(event.target.files?.[0] || null)}
+            onChange={(event) => {
+              const file = event.target.files?.[0] || null;
+              // Reset supaya memilih file yang sama lagi tetap memicu onChange.
+              event.target.value = '';
+              pick(file);
+            }}
           />
         </div>
 
@@ -372,6 +412,11 @@ export default function BrandingForm({ config }: { config: BrandingConfig }) {
     if (!file) return;
     setMessage('');
     setError('');
+    const invalid = validateAsset(kind, file);
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
     setUploading(kind);
     startTransition(async () => {
       const data = new FormData();
@@ -385,7 +430,12 @@ export default function BrandingForm({ config }: { config: BrandingConfig }) {
         setAssets((prev) => ({ ...prev, [kind]: result.asset as UploadedAsset }));
         setMessage(`${KIND_LABEL[kind]} terunggah (${humanSize(result.asset.size_bytes)}).`);
       } else {
-        setError(result.error || 'Gagal mengunggah.');
+        const raw = result.error || 'Gagal mengunggah.';
+        setError(
+          /exceeded .*limit|413|body.?size/i.test(raw)
+            ? `File terlalu besar untuk server admin (${humanSize(file.size)}). Coba file yang lebih kecil.`
+            : raw
+        );
       }
     });
   };
@@ -394,6 +444,11 @@ export default function BrandingForm({ config }: { config: BrandingConfig }) {
     if (!file) return;
     setMessage('');
     setError('');
+    const invalid = validateAsset('favicon', file);
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
     setUploadingSlot(slot);
     startTransition(async () => {
       const data = new FormData();
@@ -407,7 +462,12 @@ export default function BrandingForm({ config }: { config: BrandingConfig }) {
         if (slot === 'icon32') set('favicon_url', result.asset.url);
         setMessage(`Favicon ${slot} terunggah (${humanSize(result.asset.size_bytes)}).`);
       } else {
-        setError(result.error || 'Gagal mengunggah favicon.');
+        const raw = result.error || 'Gagal mengunggah favicon.';
+        setError(
+          /exceeded .*limit|413|body.?size/i.test(raw)
+            ? `File terlalu besar untuk server admin (${humanSize(file.size)}). Coba file yang lebih kecil.`
+            : raw
+        );
       }
     });
   };
