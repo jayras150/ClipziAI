@@ -591,6 +591,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
             raw_segments: List[Dict[str, Any]] = []
             transcription_backend = "unknown"
             try:
+                transcribe_started = time.monotonic()
                 audio_path = await processor.extract_audio(
                     video_path, str(work_dir / "audio.mp3")
                 )
@@ -601,10 +602,11 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
                 raw_segments = list(result.get("raw_segments") or segments)
                 transcription_backend = str(result.get("backend") or "unknown")
                 logger.info(
-                    "Pipeline: %s segmen transkripsi (%s mentah, backend=%s) untuk task %s",
+                    "Pipeline: %s segmen transkripsi (%s mentah, backend=%s) dalam %.1fs untuk task %s",
                     len(segments),
                     len(raw_segments),
                     transcription_backend,
+                    time.monotonic() - transcribe_started,
                     task.id,
                 )
             except Exception as exc:
@@ -937,6 +939,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
                         seg_start = float(spec["start"])
                         seg_duration = float(spec["end"]) - seg_start
                         if auto_zoom in {"speaker", "face", "follow"}:
+                            render_started = time.monotonic()
                             await processor.track_speaker_crop(
                                 video_path,
                                 seg_raw,
@@ -951,6 +954,12 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
                                     work_dir
                                     / f"clip_{index:02d}_seg{seg_index:02d}_reframe.json"
                                 ),
+                            )
+                            logger.info(
+                                "Render klip %02d segmen %02d (auto-zoom) %.1fs",
+                                index,
+                                seg_index,
+                                time.monotonic() - render_started,
                             )
                         elif ken_burns:
                             await processor.render_ken_burns(
@@ -984,6 +993,7 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
                     await processor.concat_videos(segment_paths, raw_clip, width, height)
                 elif auto_zoom in {"speaker", "face", "follow"}:
                     # Auto zoom: jendela crop mengikuti wajah pembicara.
+                    render_started = time.monotonic()
                     await processor.track_speaker_crop(
                         video_path,
                         raw_clip,
@@ -995,6 +1005,11 @@ async def run_video_pipeline(task_id: UUID) -> Dict[str, Any]:  # pyright: ignor
                         split_screen=auto_zoom_split,
                         reframe_options=reframe_options,
                         analysis_path=str(work_dir / f"clip_{index:02d}_reframe.json"),
+                    )
+                    logger.info(
+                        "Render klip %02d (auto-zoom) %.1fs",
+                        index,
+                        time.monotonic() - render_started,
                     )
                 elif ken_burns:
                     await processor.render_ken_burns(

@@ -33,6 +33,10 @@ _STACK_LINE = re.compile(
 )
 _STACK_HINT = "[worker] stack trace internal disembunyikan (tidak memengaruhi task)"
 
+# Progres unduhan yt-dlp dari instance lama (sebelum shipper memfilter) tetap
+# bisa membanjiri DB. Hanya baris 100% yang disimpan sebagai penanda selesai.
+_DOWNLOAD_PROGRESS = re.compile(r"^\[download\]\s+(\d+(?:\.\d+)?)%\s+of\s+")
+
 
 def _clean(value: Any, limit: int = MAX_MESSAGE) -> str:
     return str(value or "")[:limit]
@@ -57,6 +61,10 @@ async def append_lines(
         message = _clean(item.get("message"))
         lowered = message.lower()
         if any(marker in lowered for marker in _DROP_MARKERS):
+            continue
+        progress = _DOWNLOAD_PROGRESS.match(message.strip())
+        if progress and float(progress.group(1)) < 100.0:
+            # Buang progres antara; simpan hanya penanda 100%.
             continue
         if _STACK_LINE.match(message.strip()):
             if not stack_hint_done:

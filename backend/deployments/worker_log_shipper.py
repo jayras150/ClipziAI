@@ -8,6 +8,7 @@ batch tiap 2 detik / 60 baris, retry backoff, antrean disimpan di /tmp.
 import json
 import os
 import queue
+import re
 import subprocess
 import sys
 import threading
@@ -40,6 +41,11 @@ except (TypeError, ValueError):
     _SEQ_START = 0
 SEQ = {"value": _SEQ_START}
 BUFFER = queue.Queue(maxsize=4000)
+
+# Baris progres unduhan yt-dlp: "[download]  75.2% of ~1.43GiB at 5.88MiB/s ...".
+# Dibuang (kecuali 100%) supaya log admin berisi kejadian penting saja.
+IN_PROGRESS_RE = re.compile(r"^\[download\]\s+(\d+(?:\.\d+)?)%\s+of\s+")
+PROGRESS_STATE = {"text": "", "done": False}
 
 
 def _next_seq():
@@ -132,6 +138,18 @@ def emit(message, level="INFO", stage=None):
     text = str(message or "").rstrip("\n")
     if not text:
         return
+    # Spam progres yt-dlp ("[download]  75.2% of ~1.43GiB at 5.88MiB/s ...")
+    # membanjiri log admin tanpa nilai diagnosis. Simpan hanya satu baris saat
+    # download benar-benar selesai (100%).
+    match = IN_PROGRESS_RE.match(text.strip())
+    if match:
+        pct = float(match.group(1))
+        PROGRESS_STATE["text"] = text.strip()
+        if pct < 100.0 or PROGRESS_STATE["done"]:
+            return
+        PROGRESS_STATE["done"] = True
+        text = "download selesai: " + text.strip()
+        stage = "download"
     # 20000 char: satu traceback SSL/boto3 bisa >4000 char. Dulu dipotong 4000
     # sehingga error di admin berhenti di tengah URL dan tidak bisa didiagnosis.
     item = {"seq": _next_seq(), "level": level[:16], "stage": (stage or "")[:40], "message": text[:20000]}
