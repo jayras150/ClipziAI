@@ -27,9 +27,11 @@ export default function WorkerLogViewer({
     if (!taskId.trim()) return;
     const after = reset ? 0 : lines.length ? lines[lines.length - 1].seq : 0;
     startTransition(async () => {
-      const result = await fetchWorkerLines(taskId.trim(), after, level);
+      // Reset = muat riwayat penuh (2000 baris), bukan hanya 300 terakhir.
+      const result = await fetchWorkerLines(taskId.trim(), after, level, 2000);
       setError(result.error || '');
-      setLines((prev) => (reset ? result.items : [...prev, ...result.items].slice(-2000)));
+      // Simpan sampai 50000 baris: jangan buang bagian awal error.
+      setLines((prev) => (reset ? result.items : [...prev, ...result.items].slice(-50000)));
     });
   };
 
@@ -120,7 +122,7 @@ export default function WorkerLogViewer({
 
         {error ? <p className='text-destructive text-xs'>{error}</p> : null}
 
-        <pre className='max-h-[420px] overflow-auto rounded-md bg-black p-3 font-mono text-[11px] leading-relaxed text-emerald-300'>
+        <pre className='max-h-[70vh] overflow-auto rounded-md bg-black p-3 font-mono text-[11px] leading-relaxed text-emerald-300 whitespace-pre-wrap break-all'>
           {lines.length ? text : 'Belum ada log dari worker — instance mungkin belum mulai atau task ID salah.'}
           <div ref={bottomRef} />
         </pre>

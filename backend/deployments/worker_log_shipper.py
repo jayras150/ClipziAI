@@ -100,7 +100,9 @@ def emit(message, level="INFO", stage=None):
     text = str(message or "").rstrip("\n")
     if not text:
         return
-    item = {"seq": _next_seq(), "level": level[:16], "stage": (stage or "")[:40], "message": text[:4000]}
+    # 20000 char: satu traceback SSL/boto3 bisa >4000 char. Dulu dipotong 4000
+    # sehingga error di admin berhenti di tengah URL dan tidak bisa didiagnosis.
+    item = {"seq": _next_seq(), "level": level[:16], "stage": (stage or "")[:40], "message": text[:20000]}
     try:
         BUFFER.put_nowait(item)
     except queue.Full:

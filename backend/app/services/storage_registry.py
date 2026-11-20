@@ -342,6 +342,29 @@ class ResolvedStorage:
     path_prefix: str
 
 
+def _needs_path_style(item: Dict[str, Any], endpoint: str) -> bool:
+    """True bila endpoint WAJIB path-style agar verifikasi SSL tidak gagal.
+
+    Banyak penyedia S3-compatible (mis. HuggingFace `*.s3.hf.co`) hanya punya
+    sertifikat wildcard satu level (`*.s3.hf.co`). Dengan virtual-hosted style,
+    boto3 memanggil `https://<bucket>.<user>.s3.hf.co/...` (dua level) sehingga
+    sertifikat tidak cocok dan muncul:
+      SSL validation failed for https://<bucket>.<user>.s3.hf.co/...
+    Path-style memakai `https://<user>.s3.hf.co/<bucket>/...` yang cocok.
+    """
+    if item.get("path_style"):
+        return True
+    try:
+        from urllib.parse import urlparse
+
+        host = (urlparse(endpoint).hostname or "").lower()
+    except Exception:  # noqa: BLE001
+        host = ""
+    if not host:
+        return False
+    return host == "hf.co" or host.endswith(".hf.co")
+
+
 def resolve(item: Dict[str, Any], timeout: int = 30) -> ResolvedStorage:
     """Bangun klien boto3 untuk satu item konfigurasi."""
     access_key = decrypt_field(item["access_key_enc"]) if item.get("access_key_enc") else ""
@@ -356,6 +379,14 @@ def resolve(item: Dict[str, Any], timeout: int = 30) -> ResolvedStorage:
         match = re.search(r"s3\.([a-z0-9-]+)\.backblazeb2\.com", endpoint)
         if match:
             region = match.group(1)
+    path_style = _needs_path_style(item, endpoint)
+    if path_style and not item.get("path_style"):
+        logger.info(
+            "Storage %s: path-style otomatis untuk endpoint %s "
+            "(sertifikat tidak mendukung virtual-host)",
+            item.get("id"),
+            endpoint,
+        )
     client = boto3.client(
         "s3",
         endpoint_url=endpoint or None,
@@ -364,7 +395,7 @@ def resolve(item: Dict[str, Any], timeout: int = 30) -> ResolvedStorage:
         region_name=region,
         config=Config(
             signature_version="s3v4",
-            s3={"addressing_style": "path" if item.get("path_style") else "virtual"},
+            s3={"addressing_style": "path" if path_style else "virtual"},
             connect_timeout=timeout,
             read_timeout=timeout,
             retries={"max_attempts": 2},

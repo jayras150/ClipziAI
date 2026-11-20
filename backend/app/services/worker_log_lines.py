@@ -13,8 +13,8 @@ from app.models.worker_log_line import WorkerLogLine
 
 logger = logging.getLogger(__name__)
 
-MAX_MESSAGE = 4000
-MAX_BATCH = 300
+MAX_MESSAGE = 20000
+MAX_BATCH = 800
 
 # Noise dari Docker/Vast: instance sudah dihapus saat log dibaca — bukan
 # kegagalan task, jadi tidak perlu masuk dashboard.
@@ -104,7 +104,7 @@ async def list_lines(
     *,
     task_id: Optional[str] = None,
     after_seq: int = 0,
-    limit: int = 200,
+    limit: int = 500,
     level: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     # Tanpa after_seq: ambil N TERBARU (desc) lalu dibalik agar UI melihat
@@ -118,7 +118,9 @@ async def list_lines(
         query = query.where(WorkerLogLine.seq > after_seq)
     if level:
         query = query.where(WorkerLogLine.level == level.upper())
-    rows = (await db.execute(query.limit(min(1000, max(1, limit))))).scalars().all()
+    # Batas atas 5000: admin perlu riwayat penuh untuk diagnosis, bukan 200
+    # baris terakhir saja (log boto3/ffmpeg bisa ribuan baris).
+    rows = (await db.execute(query.limit(min(5000, max(1, limit))))).scalars().all()
     if not after_seq:
         rows = list(reversed(rows))
     return [

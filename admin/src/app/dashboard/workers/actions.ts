@@ -16,9 +16,16 @@ export type WorkerLogLine = {
 export async function fetchWorkerLines(
   taskId: string,
   afterSeq = 0,
-  level = ''
+  level = '',
+  limit = 2000
 ): Promise<{ items: WorkerLogLine[]; error?: string }> {
-  const query = new URLSearchParams({ task_id: taskId, after_seq: String(afterSeq), limit: '300' });
+  // 2000 baris: cukup untuk traceback boto3/ffmpeg lengkap. Sebelumnya 300
+  // sehingga bagian awal error (penyebab) hilang saat auto-scroll.
+  const query = new URLSearchParams({
+    task_id: taskId,
+    after_seq: String(afterSeq),
+    limit: String(limit)
+  });
   if (level) query.set('level', level);
   try {
     const data = await adminFetch<{ items: WorkerLogLine[]; error?: string | null }>(
