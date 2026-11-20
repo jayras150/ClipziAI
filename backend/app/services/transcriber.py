@@ -611,8 +611,16 @@ class AudioTranscriber:
         audio_path: str,
         language: Optional[str],
     ):
-        segments, info = self._run_transcribe(model, audio_path, language, vad=True)
-        if not segments:
+        import os
+
+        # WHISPER_VAD: auto (default) = VAD lalu retry bila kosong,
+        #              on = selalu VAD (tanpa retry), off = tanpa VAD.
+        mode = (os.getenv("WHISPER_VAD") or "auto").strip().lower()
+        use_vad = mode != "off"
+        segments, info = self._run_transcribe(
+            model, audio_path, language, vad=use_vad
+        )
+        if not segments and mode == "auto" and use_vad:
             # VAD bisa menghapus SELURUH audio (musik/berisik/gain rendah) →
             # transkripsi 0 segmen dan pipeline jatuh ke scene detection yang
             # lambat. Ulangi sekali tanpa VAD supaya subtitle tetap dihasilkan.

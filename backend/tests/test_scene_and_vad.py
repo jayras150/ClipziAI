@@ -95,3 +95,88 @@ def test_vad_retry_saat_seluruh_audio_dihapus():
     assert model.calls == [True, False], "harus retry tanpa VAD setelah hasil kosong"
     assert len(segments) == 1
     assert segments[0]["text"].strip() == "halo"
+
+
+def test_whisper_vad_off_langsung_tanpa_vad(monkeypatch):
+    from app.services.transcriber import AudioTranscriber
+
+    monkeypatch.setenv("WHISPER_VAD", "off")
+    transcriber = AudioTranscriber()
+    model = _FakeModel()
+
+    segments, _info = transcriber._transcribe_sync(model, "audio.mp3", None)
+
+    assert model.calls == [False], "WHISPER_VAD=off tidak boleh memakai VAD"
+    assert len(segments) == 1
+
+
+def test_hwaccel_off_menghasilkan_argumen_kosong(monkeypatch):
+    from app.services.processor import VideoProcessor
+
+    monkeypatch.setenv("FFMPEG_HWACCEL", "off")
+    VideoProcessor._HWACCEL_CACHE.clear()
+    assert VideoProcessor._hwaccel_args() == []
+    VideoProcessor._HWACCEL_CACHE.clear()
+
+
+def _force_scene_methods(monkeypatch, hwaccel):
+    from app.services.processor import VideoProcessor
+
+    calls = {"proxy": 0, "native": 0}
+    monkeypatch.setattr(
+        VideoProcessor, "_hwaccel_args", classmethod(lambda cls: list(hwaccel))
+    )
+    monkeypatch.setattr(
+        VideoProcessor,
+        "_detect_scenes_proxy",
+        lambda self, path: (
+            calls.__setitem__("proxy", calls["proxy"] + 1)
+            or [{"start": 0.0, "end": 5.0, "confidence": 1.0}]
+        ),
+    )
+    monkeypatch.setattr(
+        VideoProcessor,
+        "_detect_scenes_native",
+        lambda self, path: (
+            calls.__setitem__("native", calls["native"] + 1) or []
+        ),
+    )
+    return calls
+
+
+def test_auto_memakai_proxy_saat_nvdec_tersedia(monkeypatch):
+    from app.services.processor import VideoProcessor
+
+    monkeypatch.delenv("SCENE_DETECT_MODE", raising=False)
+    monkeypatch.delenv("FFMPEG_HWACCEL", raising=False)
+    calls = _force_scene_methods(monkeypatch, ["-hwaccel", "cuda"])
+
+    VideoProcessor()._detect_scenes_sync("x.mp4")
+
+    assert calls == {"proxy": 1, "native": 0}
+
+
+def test_auto_tanpa_nvdec_memakai_pyscenedetect(monkeypatch):
+    from app.services.processor import VideoProcessor
+
+    monkeypatch.delenv("SCENE_DETECT_MODE", raising=False)
+    calls = _force_scene_methods(monkeypatch, [])
+
+    VideoProcessor()._detect_scenes_sync("x.mp4")
+
+    assert calls == {"proxy": 0, "native": 1}, (
+        "tanpa NVDEC, proxy terbukti lebih lambat → langsung PySceneDetect"
+    )
+
+
+def test_storage_isolated_memakai_engine_sendiri():
+    import inspect
+
+    from app.services import storage_registry as registry
+
+    source = inspect.getsource(registry._load_storage_config_isolated)
+
+    assert "NullPool" in source
+    assert "create_async_engine" in source
+    assert "engine.dispose" in source
+

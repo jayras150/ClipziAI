@@ -675,6 +675,43 @@ def get_storage() -> StorageService:
     return StorageService()
 
 
+async def _load_storage_config_isolated() -> Dict[str, Any]:
+    """Muat konfigurasi storage memakai engine SEMENTARA (aman lintas event loop).
+
+    `load_storage_config()` memakai `AsyncSessionLocal` global yang pool-nya
+    terikat ke event loop server. Menjalankannya lewat `asyncio.run()` di thread
+    lain membuat asyncpg melempar:
+      "got Future attached to a different loop"
+      "connection was closed in the middle of operation"
+    (terbukti di log worker Vast; akibatnya konfigurasi storage gagal dimuat dan
+    hanya fallback env yang dipakai).
+
+    Engine baru + NullPool di sini hidup hanya selama fungsi ini, jadi tidak ada
+    koneksi yang diwarisi dari loop lain.
+    """
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.pool import NullPool
+
+    from app.core.config import get_settings
+    from app.services.platform_settings import get_setting, set_setting
+
+    url = str(get_settings().DATABASE_URL or "").strip()
+    if not url:
+        raise RuntimeError("DATABASE_URL kosong")
+    engine = create_async_engine(url, poolclass=NullPool, future=True)
+    try:
+        maker = async_sessionmaker(engine, expire_on_commit=False)
+        async with maker() as db:
+            raw = await get_setting(db, STORAGE_KEY, None)
+            if not isinstance(raw, dict) or not raw.get("items"):
+                seeded = _from_env()
+                await set_setting(db, STORAGE_KEY, seeded)
+                return set_config(seeded)
+            return set_config(raw)
+    finally:
+        await engine.dispose()
+
+
 def _ensure_loaded_sync() -> None:
     """Muat konfigurasi storage dari DB pada konteks sinkron (worker pipeline).
 
@@ -687,7 +724,7 @@ def _ensure_loaded_sync() -> None:
         asyncio.get_running_loop()
     except RuntimeError:
         try:
-            asyncio.run(load_storage_config())
+            asyncio.run(_load_storage_config_isolated())
         except Exception as exc:
             logger.warning("Gagal memuat konfigurasi storage dari DB: %s", exc)
     else:
@@ -695,7 +732,7 @@ def _ensure_loaded_sync() -> None:
 
         def _load() -> None:
             try:
-                asyncio.run(load_storage_config())
+                asyncio.run(_load_storage_config_isolated())
             except Exception as exc:  # pragma: no cover - jalur thread
                 errors.append(exc)
 

@@ -655,6 +655,95 @@ class VideoProcessor:
 
         return await loop.run_in_executor(None, self._detect_scenes_sync, video_path)
 
+    _HWACCEL_CACHE: Dict[str, Any] = {}
+
+    @classmethod
+    def _hwaccel_args(cls) -> List[str]:
+        """Argumen decode GPU (`-hwaccel cuda` / NVDEC) bila tersedia.
+
+        NVDEC memindahkan DEKODE video ke GPU. Ini penting karena pengukuran
+        menunjukkan decode adalah bottleneck (proxy tanpa hwaccel 9.8s vs
+        PySceneDetect 9.6s — sama saja). `FFMPEG_HWACCEL=off` mematikan.
+        """
+        import os
+        import shutil
+        import subprocess
+
+        if (os.getenv("FFMPEG_HWACCEL") or "").strip().lower() in {"0", "off", "cpu"}:
+            return []
+        cached = cls._HWACCEL_CACHE.get("args")
+        if cached is not None:
+            return list(cached)
+
+        args: List[str] = []
+        try:
+            if shutil.which("ffmpeg") and shutil.which("nvidia-smi"):
+                probe = subprocess.run(
+                    ["ffmpeg", "-hide_banner", "-hwaccels"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if "cuda" in (probe.stdout or "").lower():
+                    args = ["-hwaccel", "cuda"]
+                    logger.info("NVDEC tersedia: decode video akan memakai GPU")
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Probe hwaccel gagal (pakai CPU): %s", exc)
+        cls._HWACCEL_CACHE["args"] = args
+        return list(args)
+
+    def _detect_scenes_proxy(self, video_path: str) -> List[Dict[str, Any]]:
+        """Deteksi scene pada proxy kecil (dibuat dengan decode GPU bila ada)."""
+        import os
+        import subprocess
+        import tempfile
+
+        from scenedetect import ContentDetector, detect
+
+        width = int(os.getenv("SCENE_PROXY_WIDTH", "320") or 320)
+        fps = int(os.getenv("SCENE_PROXY_FPS", "4") or 4)
+        hw = self._hwaccel_args()
+
+        fd, proxy_path = tempfile.mkstemp(prefix="scene_proxy_", suffix=".mp4")
+        os.close(fd)
+        try:
+            subprocess.run(
+                [
+                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+                    *hw,
+                    "-i", video_path, "-an",
+                    "-vf", f"scale={width}:-2:flags=fast_bilinear,fps={fps}",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "32",
+                    proxy_path,
+                ],
+                check=True,
+                timeout=900,
+            )
+            scenes = detect(
+                proxy_path, ContentDetector(min_scene_len=max(2, fps * 2))
+            )
+        finally:
+            try:
+                os.unlink(proxy_path)
+            except OSError:
+                pass
+
+        logger.info(
+            "Scene detection: %s scene (proxy %spx/%sfps, hwaccel=%s)",
+            len(scenes),
+            width,
+            fps,
+            bool(hw),
+        )
+        return [
+            {
+                "start": start_time.get_seconds(),
+                "end": end_time.get_seconds(),
+                "confidence": 1.0,
+            }
+            for start_time, end_time in scenes
+        ]
+
     def _detect_scenes_native(self, video_path: str) -> List[Dict[str, Any]]:
         """PySceneDetect penuh (histogram tiap frame). Akurat tapi lambat:
         terukur 94s untuk video 1080p 10 menit, dan >9 menit untuk video 1 jam.
@@ -772,19 +861,39 @@ class VideoProcessor:
         return scenes
 
     def _detect_scenes_sync(self, video_path: str) -> List[Dict[str, Any]]:
-        """Pilih metode deteksi scene: sampling cepat, fallback PySceneDetect."""
+        """Pilih metode deteksi scene.
+
+        `auto` (default): proxy + decode GPU (NVDEC) bila NVDEC tersedia —
+        satu-satunya cara memotong biaya DEKODE. Tanpa GPU, proxy terbukti
+        lebih lambat (9.8s vs 9.6s terukur), jadi langsung PySceneDetect.
+        Mode lain: `proxy`, `sampling`, `native`.
+        """
         import os
 
-        mode = (os.getenv("SCENE_DETECT_MODE") or "sampling").strip().lower()
+        mode = (os.getenv("SCENE_DETECT_MODE") or "auto").strip().lower()
+
         if mode == "native":
             return self._detect_scenes_native(video_path)
-        try:
-            return self._detect_scenes_sampling(video_path)
-        except Exception as exc:  # noqa: BLE001 - jangan gagalkan pipeline
-            logger.warning(
-                "Scene detection sampling gagal (%s); memakai PySceneDetect penuh", exc
-            )
-            return self._detect_scenes_native(video_path)
+
+        if mode == "sampling":
+            try:
+                return self._detect_scenes_sampling(video_path)
+            except Exception as exc:  # noqa: BLE001 - jangan gagalkan pipeline
+                logger.warning(
+                    "Scene detection sampling gagal (%s); memakai PySceneDetect", exc
+                )
+                return self._detect_scenes_native(video_path)
+
+        if mode == "proxy" or (mode == "auto" and self._hwaccel_args()):
+            try:
+                return self._detect_scenes_proxy(video_path)
+            except Exception as exc:  # noqa: BLE001 - fallback aman
+                logger.warning(
+                    "Proxy scene-detection (NVDEC) gagal (%s); memakai PySceneDetect",
+                    exc,
+                )
+
+        return self._detect_scenes_native(video_path)
         return [
             {
                 "start": start_time.get_seconds(),
