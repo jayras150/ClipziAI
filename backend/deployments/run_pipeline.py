@@ -19,13 +19,24 @@ import sys
 from uuid import UUID
 
 # PENTING: script ini ada di /app/deployments, dan folder itu juga berisi
-# `app.py` (file). Tanpa baris di bawah, `sys.path[0]` = /app/deployments
-# sehingga `import app.services...` menemukan file `/app/deployments/app.py`
-# dan gagal dengan "No module named 'app.core'; 'app' is not a package".
-# Root aplikasi (/app) harus berada DI DEPAN sys.path.
-_APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _APP_ROOT not in sys.path:
-    sys.path.insert(0, _APP_ROOT)
+# `app.py` (file). Bila folder itu ada di sys.path, `import app...` menemukan
+# `/app/deployments/app.py` dan gagal dengan
+#   "No module named 'app.core'; 'app' is not a package"
+# (terbukti di Vast: exit=1 dalam 0 detik).
+#
+# `if _APP_ROOT not in sys.path` TIDAK cukup: /app sudah ada di sys.path
+# (dari PYTHONPATH) tapi di belakang, sehingga folder script tetap menang.
+# Karena itu folder script dibuang dari sys.path dan /app dipaksa paling depan.
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_APP_ROOT = os.path.dirname(_SCRIPT_DIR)
+sys.path[:] = [
+    path
+    for path in sys.path
+    if os.path.abspath(path or os.getcwd()) != _SCRIPT_DIR
+]
+while _APP_ROOT in sys.path:
+    sys.path.remove(_APP_ROOT)
+sys.path.insert(0, _APP_ROOT)
 
 
 def _setup_logging() -> None:

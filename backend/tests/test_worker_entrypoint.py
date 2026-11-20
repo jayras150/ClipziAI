@@ -54,3 +54,7 @@ def test_entrypoint_menaruh_app_root_di_syspath():
     source = inspect.getsource(run_pipeline)
     assert "sys.path.insert(0, _APP_ROOT)" in source
     assert "os.path.abspath(__file__)" in source
+    # `if _APP_ROOT not in sys.path` tidak cukup (folder script tetap menang),
+    # jadi folder script WAJIB dibuang dari sys.path.
+    assert "_SCRIPT_DIR" in source
+    assert "!= _SCRIPT_DIR" in source
