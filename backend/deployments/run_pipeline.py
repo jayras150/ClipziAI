@@ -18,6 +18,15 @@ import os
 import sys
 from uuid import UUID
 
+# PENTING: script ini ada di /app/deployments, dan folder itu juga berisi
+# `app.py` (file). Tanpa baris di bawah, `sys.path[0]` = /app/deployments
+# sehingga `import app.services...` menemukan file `/app/deployments/app.py`
+# dan gagal dengan "No module named 'app.core'; 'app' is not a package".
+# Root aplikasi (/app) harus berada DI DEPAN sys.path.
+_APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _APP_ROOT not in sys.path:
+    sys.path.insert(0, _APP_ROOT)
+
 
 def _setup_logging() -> None:
     level = (os.environ.get("CLIPZI_LOG_LEVEL") or "INFO").upper()

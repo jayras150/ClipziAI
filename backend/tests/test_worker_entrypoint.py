@@ -39,3 +39,18 @@ def test_onstart_memakai_entrypoint_bukan_inline_c():
     ).read_text(encoding="utf-8")
 
     assert "/app/deployments/run_pipeline.py" in script
+
+
+def test_entrypoint_menaruh_app_root_di_syspath():
+    """Regresi: /app/deployments/app.py membuat `app` dianggap modul, bukan package.
+
+    Tanpa sys.path.insert(0, /app), worker gagal start dengan
+    "No module named 'app.core'; 'app' is not a package" (terbukti di Vast).
+    """
+    import inspect
+
+    from deployments import run_pipeline
+
+    source = inspect.getsource(run_pipeline)
+    assert "sys.path.insert(0, _APP_ROOT)" in source
+    assert "os.path.abspath(__file__)" in source
