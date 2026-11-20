@@ -208,7 +208,7 @@ def main() -> int:
                 "seq": SEQ_OFFSET + 1,
                 "level": level[:16],
                 "stage": stage[:40],
-                "message": str(message)[:4000],
+                "message": str(message)[:20000],
             }
         ]
     )

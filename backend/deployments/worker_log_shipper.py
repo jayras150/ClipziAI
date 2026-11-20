@@ -17,6 +17,11 @@ import urllib.request
 
 TOKEN = (os.environ.get("CLIPZI_WORKER_TOKEN") or "").strip()
 TASK_ID = (os.environ.get("CLIPZI_TASK_ID") or "").strip()
+# Cloudflare memblokir User-Agent default urllib ("Python-urllib/3.11") dengan
+# error 1010 / HTTP 403. Tanpa UA sendiri, SEMUA log pipeline ditolak dan hanya
+# tersimpan di /tmp (hilang saat instance dihapus) — itulah sebabnya admin
+# hanya melihat log boot dari onstart_log.py.
+USER_AGENT = "ClipziAI-Worker/1.0"
 CALLBACK = (os.environ.get("CLIPZI_CALLBACK_URL") or "").strip()
 API = (os.environ.get("CLIPZI_API_BASE") or (CALLBACK.split("/api/internal/")[0] if CALLBACK else "")).rstrip("/")
 INSTANCE = (os.environ.get("VAST_CONTAINERLABEL") or os.environ.get("CONTAINER_ID") or "").strip()
@@ -44,20 +49,47 @@ def _next_seq():
 
 
 def _post(lines):
-    if not API or not TOKEN:
+    if not API or not TOKEN or not lines:
         return False
     body = json.dumps({"task_id": TASK_ID or None, "instance_id": INSTANCE_ID, "lines": lines}).encode()
-    request = urllib.request.Request(
-        API + "/api/internal/worker/logs",
-        data=body,
-        method="POST",
-        headers={"Content-Type": "application/json", "X-Clipzi-Token": TOKEN},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=15) as response:
-            return response.status < 400
-    except Exception:
+    # Retry 3x: instance bisa dihapus beberapa detik setelah pipeline gagal,
+    # jadi satu kegagalan kecil pun membuat log terakhir hilang selamanya.
+    for attempt in range(3):
+        request = urllib.request.Request(
+            API + "/api/internal/worker/logs",
+            data=body,
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "X-Clipzi-Token": TOKEN,
+                "User-Agent": USER_AGENT,
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                if response.status < 400:
+                    return True
+        except Exception:
+            pass
+        time.sleep(0.4 * (attempt + 1))
+    return False
+
+
+def _flush_now():
+    """Kirim semua yang ada di buffer SEKARANG (dipakai saat ada ERROR/exit)."""
+    items = []
+    while True:
+        try:
+            items.append(BUFFER.get_nowait())
+        except queue.Empty:
+            break
+    if not items:
+        return True
+    if not _post(items):
+        _persist(items)
         return False
+    return True
 
 
 def _persist(lines):
@@ -74,7 +106,7 @@ def _drain_persisted():
         if not os.path.exists(QUEUE_FILE) or os.path.getsize(QUEUE_FILE) == 0:
             return
         with open(QUEUE_FILE, "r", encoding="utf-8") as handle:
-            lines = [json.loads(row) for row in handle if row.strip()][-400:]
+            lines = [json.loads(row) for row in handle if row.strip()][-2000:]
         if lines and _post(lines):
             open(QUEUE_FILE, "w").close()
     except Exception:
@@ -143,13 +175,26 @@ def main():
         return 1
     for line in process.stdout or []:
         sys.stdout.write(line)
-        emit(line, level="ERROR" if "error" in line.lower() else "INFO", stage=_stage_of(line))
+        level = "ERROR" if "error" in line.lower() else "INFO"
+        emit(line, level=level, stage=_stage_of(line))
+        if level == "ERROR":
+            # Jangan menunggu batch 2 detik: instance sering dihapus tepat
+            # setelah pipeline gagal, sehingga batch terakhir hilang.
+            _flush_now()
     code = process.wait()
     emit(f"pipeline selesai exit={code} durasi={int(time.time() - started)}s", level="INFO" if code == 0 else "ERROR", stage="exit")
     if code != 0:
         emit("_dmesg: " + _tail("dmesg | tail -40"), level="ERROR", stage="crash")
         emit("_nvidia_smi: " + _tail("nvidia-smi --query-gpu=name,memory.used,memory.total,utilization.gpu --format=csv"), level="ERROR", stage="crash")
-    time.sleep(3)
+    # Kirim sisa buffer + antrean persist sebelum container dimatikan reaper.
+    for _ in range(8):
+        _flush_now()
+        _drain_persisted()
+        if BUFFER.empty():
+            break
+        time.sleep(1)
+    time.sleep(2)
+    _flush_now()
     _drain_persisted()
     return code
 

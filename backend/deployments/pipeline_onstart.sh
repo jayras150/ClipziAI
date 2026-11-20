@@ -186,6 +186,11 @@ if [ -f /app/deployments/onstart_log.py ]; then
         --stage boot --level INFO >/dev/null 2>&1 || true
 fi
 
+# Baris "pipeline dimulai" memakai seq = OFFSET+1, sedangkan shipper juga mulai
+# dari OFFSET+1. Tanpa pergeseran ini, baris pertama pipeline bertabrakan
+# (unique index task_id+seq) dan dibuang oleh ON CONFLICT DO NOTHING.
+export CLIPZI_LOG_SEQ_OFFSET=$((CLIPZI_LOG_SEQ_OFFSET + 1))
+
 exec "$PYTHON_BIN" -u /app/deployments/worker_log_shipper.py -- "$PYTHON_BIN" -u -c '
 import asyncio
 import os
