@@ -205,7 +205,7 @@ def test_get_storage_lazy_load_konfigurasi_kosong(monkeypatch):
             }
         )
 
-    monkeypatch.setattr(reg, "load_storage_config", fake_load)
+    monkeypatch.setattr(reg, "_load_storage_config_isolated", fake_load)
 
     service = reg.get_storage()
 
@@ -245,7 +245,7 @@ def test_get_storage_di_dalam_event_loop_tetap_memuat(monkeypatch):
             }
         )
 
-    monkeypatch.setattr(reg, "load_storage_config", fake_load)
+    monkeypatch.setattr(reg, "_load_storage_config_isolated", fake_load)
 
     async def pipeline():
         return reg.get_storage().primary_id
@@ -285,7 +285,7 @@ def test_get_storage_tidak_memuat_ulang_bila_sudah_terisi(monkeypatch):
         calls["n"] += 1
         return {}
 
-    monkeypatch.setattr(reg, "load_storage_config", fake_load)
+    monkeypatch.setattr(reg, "_load_storage_config_isolated", fake_load)
 
     reg.get_storage()
     assert calls["n"] == 0
