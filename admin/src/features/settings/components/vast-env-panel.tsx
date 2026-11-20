@@ -5,7 +5,7 @@ import { useState, useTransition } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { exportVastEnv, syncVastEnv } from '@/app/dashboard/settings/vast/actions';
+import { exportVastEnv, refreshVastEnv, syncVastEnv } from '@/app/dashboard/settings/vast/actions';
 
 export type WorkerEnvItem = {
   name: string;
@@ -17,7 +17,7 @@ export type WorkerEnvItem = {
 };
 
 export default function VastEnvPanel({ items }: { items: Array<Record<string, unknown>> }) {
-  const rows = items as unknown as WorkerEnvItem[];
+  const [rows, setRows] = useState<WorkerEnvItem[]>(items as unknown as WorkerEnvItem[]);
   const configurable = rows.filter((row) => !row.runtime).map((row) => row.name);
   const [selected, setSelected] = useState<string[]>(configurable);
   const [text, setText] = useState('');
@@ -25,6 +25,27 @@ export default function VastEnvPanel({ items }: { items: Array<Record<string, un
   const [error, setError] = useState('');
   const [confirmReveal, setConfirmReveal] = useState(false);
   const [pending, startTransition] = useTransition();
+
+  /**
+   * Samakan tampilan dengan isi database tanpa restart container.
+   * Backend menghidrasi cookies/HF token/storage dari DB lalu mengembalikan
+   * daftar env terbaru, jadi panel tidak lagi menampilkan nilai usang.
+   */
+  const refresh = () => {
+    setError('');
+    setMessage('');
+    startTransition(async () => {
+      const result = await refreshVastEnv();
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      const next = (result.data.items || []) as unknown as WorkerEnvItem[];
+      setRows(next);
+      setSelected(next.filter((row) => !row.runtime).map((row) => row.name));
+      setMessage('Env disegarkan dari database.');
+    });
+  };
 
   const toggle = (name: string) => {
     setSelected((current) =>
@@ -135,6 +156,15 @@ export default function VastEnvPanel({ items }: { items: Array<Record<string, un
               className='bg-primary text-primary-foreground rounded-md px-3 py-1 text-xs disabled:opacity-50'
             >
               {pending ? 'Memproses…' : 'Sync ke Vast'}
+            </button>
+            <button
+              type='button'
+              disabled={pending}
+              onClick={refresh}
+              className='hover:bg-muted rounded-md border px-3 py-1 text-xs disabled:opacity-50'
+              title='Muat ulang cookies/HF token/storage dari database tanpa restart container'
+            >
+              Sinkron dari DB
             </button>
             {text ? (
               <>

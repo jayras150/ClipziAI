@@ -1,6 +1,7 @@
 import PageContainer from '@/components/layout/page-container';
 import { StatCard } from '@/features/admin/table-shell';
 import BackupPanel from '@/features/system/backup-panel';
+import ServerCleanupCard from '@/features/system/components/server-cleanup-card';
 import { NeonSystem } from '@/features/system/neon-system';
 import { AdminErrorCard } from '@/components/admin-error-card';
 import { adminFetchSafe } from '@/lib/clipzi';
@@ -50,6 +51,7 @@ export default async function SystemPage() {
 
         <section className='space-y-3'>
           <BackupPanel />
+          <ServerCleanupCard />
           <div className='rounded-lg border p-4 text-sm'>
             <p className='font-medium'>Bersihkan disk (manual, di VPS)</p>
             <pre className='bg-muted overflow-x-auto rounded p-2 text-xs'>{PRUNE_CMD}</pre>

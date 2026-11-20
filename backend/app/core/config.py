@@ -218,6 +218,20 @@ class Settings(BaseSettings):
     TEMP_TTL_HOURS: int = 6
     CLEANUP_DRY_RUN: bool = False
 
+    # --- Pembersihan sampah SERVER (tab System di admin) ---------------------
+    # Berbeda dari cleanup storage di atas: ini membersihkan file sementara,
+    # log yang membesar, cache cookies, dan (opsional) image Docker sisa build.
+    # Default MATI supaya deployment baru tidak menghapus apa pun diam-diam.
+    SERVER_CLEANUP_ENABLED: bool = False
+    # Jam (0-23 waktu lokal container) untuk pembersihan otomatis harian.
+    SERVER_CLEANUP_HOUR: int = 3
+    # Hanya file sementara lebih tua dari ini (jam) yang dihapus.
+    SERVER_CLEANUP_TEMP_TTL_HOURS: int = 24
+    # Log lebih besar dari ini dipotong (menyisakan bagian terbaru).
+    SERVER_CLEANUP_LOG_MAX_MB: int = 50
+    # `docker prune` hanya dijalankan bila true DAN socket Docker tersedia.
+    SERVER_CLEANUP_DOCKER: bool = False
+
     # URL API yang dipakai frontend. Tidak dipakai backend, tetapi dibaca di sini
     # agar satu file .env bisa dipakai bersama (Docker compose) tanpa error
     # "extra inputs are not permitted".

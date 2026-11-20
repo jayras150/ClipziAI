@@ -305,6 +305,28 @@ async def system_host(db: AsyncSession = Depends(get_db_session)):
 
 
 
+@router.get("/cleanup")
+async def server_cleanup_status() -> Dict[str, Any]:
+    """Estimasi sampah server (temp/log/cache/docker) tanpa menghapus apa pun."""
+    from app.services import server_cleanup
+
+    return server_cleanup.describe()
+
+
+@router.post("/cleanup")
+async def server_cleanup_run(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Bersihkan sampah server. `dry_run` default true (aman).
+
+    Body: {"dry_run": bool, "targets": ["temp","logs","cache","docker"]}
+    """
+    from app.services import server_cleanup
+
+    dry_run = bool(payload.get("dry_run", True))
+    targets = payload.get("targets") or None
+    result = await server_cleanup.cleanup_server(dry_run=dry_run, targets=targets)
+    return result
+
+
 @router.get("/actions")
 async def system_actions():
     """Aksi host yang diizinkan + riwayat perintah terbaru."""

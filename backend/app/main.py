@@ -75,6 +75,10 @@ async def lifespan(app: FastAPI):
     from app.services.cleanup_manager import cleanup_scheduler
 
     cleanup_task = asyncio.create_task(cleanup_scheduler())
+    # Pembersihan sampah server (temp/log/cache/docker) — default mati.
+    from app.services.server_cleanup import server_cleanup_scheduler
+
+    server_cleanup_task = asyncio.create_task(server_cleanup_scheduler())
     from app.services.youtube_queue import scheduled_publish_scheduler
 
     publish_task = asyncio.create_task(scheduled_publish_scheduler())
@@ -137,7 +141,7 @@ async def lifespan(app: FastAPI):
     # Shutdown: batalkan task latar dan tunggu sampai selesai SEBELUM menutup
     # engine. Tanpa await, koneksi asyncpg bisa ditutup setelah event loop mati
     # (log "Event loop is closed" saat restart).
-    for task in (cleanup_task, vast_task, publish_task):
+    for task in (cleanup_task, server_cleanup_task, vast_task, publish_task):
         task.cancel()
         try:
             await task

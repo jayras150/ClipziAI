@@ -32,9 +32,11 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       # Worker = image PENUH (Whisper CTranslate2 + lib CUDA) untuk Vast.ai.
-      # Tag :worker dipakai VAST_WORKER_IMAGE; :1.5.0/:latest dipertahankan
-      # supaya deployment lama tetap kompatibel.
+      # HANYA tag `:worker`: tag duplikat (:1.5.0, :latest) membuat web Vast dan
+      # Docker Hub membingungkan (dulu :latest malah menunjuk image 3,8 GB ini)
+      # dan menambah manifest yang harus di-push setiap build.
       - name: Build and Push (worker, GPU)
+        id: worker
         uses: docker/build-push-action@v6
         with:
           context: ./backend
@@ -42,18 +44,23 @@ jobs:
           target: worker
           push: true
           platforms: linux/amd64
+          # Cache layer antar-build: tanpa ini seluruh dependency + model Whisper
+          # (±1,6 GB) diunduh ulang setiap push sehingga build 7-10 menit.
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker
           # Model Whisper dibekukan di image (turbo ±1.6 GB) -> worker tidak
           # mengunduh model saat start; build lebih lama, runtime lebih andal.
           build-args: |
             WHISPER_MODEL_REPO=deepdml/faster-whisper-large-v3-turbo-ct2
           tags: |
             sujinwo555/clipzi-backend:worker
-            sujinwo555/clipzi-backend:1.5.0
-            sujinwo555/clipzi-backend:latest
 
       # API = image untuk container di VPS (tanpa CUDA, dengan Whisper CPU kecil).
       # Render video berat tetap hanya di worker Vast.ai.
+      # `:latest` sengaja di sini (image 700 MB), bukan di worker, supaya
+      # `docker pull :latest` tidak pernah menarik image 3,8 GB.
       - name: Build and Push (api)
+        id: api
         uses: docker/build-push-action@v6
         with:
           context: ./backend
@@ -61,5 +68,23 @@ jobs:
           target: api
           push: true
           platforms: linux/amd64
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
           tags: |
             sujinwo555/clipzi-backend:api
+            sujinwo555/clipzi-backend:latest
+
+      # Digest dipakai untuk pin `image@sha256:...` — node Vast bisa menyimpan
+      # cache tag `:worker` lama, sedangkan digest selalu menunjuk build ini.
+      - name: Ringkasan digest image
+        run: |
+          echo "worker : sujinwo555/clipzi-backend@${{ steps.worker.outputs.digest }}"
+          echo "api    : sujinwo555/clipzi-backend@${{ steps.api.outputs.digest }}"
+          {
+            echo "## Digest image"
+            echo ""
+            echo "| target | image |"
+            echo "| --- | --- |"
+            echo "| worker (Vast) | \`sujinwo555/clipzi-backend@${{ steps.worker.outputs.digest }}\` |"
+            echo "| api (VPS) | \`sujinwo555/clipzi-backend@${{ steps.api.outputs.digest }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
+  createVastTemplate,
   loadVastTemplateStatus,
   syncVastTemplate,
   type VastTemplateStatus
@@ -77,6 +78,39 @@ export default function WorkerTemplatePanel({ status }: { status: VastTemplateSt
     });
   };
 
+  const runCreate = () => {
+    setBusy('create');
+    setMessage('');
+    setWarnings([]);
+    startTransition(async () => {
+      // Nama otomatis (clipzi-worker-N) + image dipin ke digest terbaru.
+      const result = await createVastTemplate({
+        image: image.trim() || undefined,
+        disk_space: disk ? Number(disk) : undefined,
+        activate: true,
+        include_env: true,
+        sync_env_vars: true,
+        auto_name: true,
+        pin_digest: true
+      });
+      setBusy('');
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      const payload = result.data;
+      setWarnings(payload.warnings || []);
+      setMessage(
+        payload.template_hash
+          ? `Template ${payload.name || '(baru)'} dibuat (${payload.env_count || 0} env) dan aktif untuk dispatch.`
+          : 'Template dibuat tetapi hash belum terbaca — isi manual di kolom Template hash.'
+      );
+      toast.success('Template worker baru dibuat.');
+      if (payload.name) setName(payload.name);
+      refresh();
+    });
+  };
+
   const drift = Boolean(data.drift);
 
   return (
@@ -132,13 +166,21 @@ export default function WorkerTemplatePanel({ status }: { status: VastTemplateSt
         </div>
 
         <div className='flex flex-wrap items-center gap-2'>
-          <Button onClick={() => runSync()} disabled={pending || busy !== ''}>
-            {busy === 'sync' ? 'Menyinkronkan…' : 'Buat / Update & Aktifkan'}
+          <Button onClick={runCreate} disabled={pending || busy !== ''}>
+            {busy === 'create' ? 'Membuat template baru…' : 'Buat template baru (auto nama)'}
+          </Button>
+          <Button variant='outline' onClick={() => runSync()} disabled={pending || busy !== ''}>
+            {busy === 'sync' ? 'Menyinkronkan…' : 'Update template aktif'}
           </Button>
           <Button variant='outline' onClick={refresh} disabled={pending || busy !== ''}>
             Muat status
           </Button>
         </div>
+        <p className='text-muted-foreground text-xs'>
+          &ldquo;Buat template baru&rdquo; selalu membuat template berbeda (
+          <code>clipzi-worker-1</code>, <code>-2</code>, …) memakai env backend terbaru dan image
+          yang dipin ke digest build terbaru, lalu otomatis diaktifkan untuk dispatch.
+        </p>
 
         <div className='rounded-md border border-dashed p-3'>
           <p className='text-sm font-medium'>Adopsi template lama (opsional)</p>

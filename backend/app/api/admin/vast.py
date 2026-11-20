@@ -31,6 +31,10 @@ class TemplateCreateIn(BaseModel):
     sync_env_vars: bool = True
     public: bool = False
     activate: bool = True
+    # Sekali klik dari admin dashboard: nama template baru otomatis
+    # (clipzi-worker-1, -2, ...) dan image di-pin ke digest build terbaru.
+    auto_name: bool = True
+    pin_digest: bool = True
 
 
 class TemplateSyncIn(BaseModel):
@@ -148,6 +152,28 @@ async def read_worker_env():
     return {"items": vast_admin.worker_env_spec()}
 
 
+@router.post("/env/refresh")
+async def refresh_worker_env(
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Muat ulang kredensial dari database lalu kembalikan env terbaru.
+
+    `settings` dihidrasi saat startup; kalau admin mengubah cookies/HF token/
+    storage di tab lain, panel ini bisa menampilkan nilai lama sampai container
+    di-restart. Endpoint ini menyamakan tampilan dengan isi database tanpa
+    restart.
+    """
+    from app.services.runtime_credentials import hydrate_runtime_credentials
+
+    summary = await hydrate_runtime_credentials()
+    items = vast_admin.worker_env_spec()
+    _audit(db, request, current_admin, "vast_env_refreshed", {"summary": summary})
+    await db.commit()
+    return {"items": items, "summary": summary}
+
+
 @router.get("/env/export", response_class=PlainTextResponse)
 async def export_worker_env(
     request: Request,
@@ -241,6 +267,8 @@ async def create_worker_template(
             include_env=payload.include_env,
             sync_env_vars=payload.sync_env_vars,
             public=payload.public,
+            auto_name=payload.auto_name,
+            pin_digest=payload.pin_digest,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import shlex
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -609,6 +611,95 @@ async def worker_template_status(db=None) -> Dict[str, Any]:
     return spec
 
 
+# =============================================================================
+# Nama template otomatis & pin digest image
+# =============================================================================
+
+# Cache digest per `repo:tag` (TTL singkat) agar pembuatan template berulang
+# tidak menghubungi Docker Hub setiap kali.
+_TEMPLATE_DIGEST_CACHE: Dict[str, Any] = {}
+
+
+def _split_image(image: str) -> tuple:
+    """('owner/repo', 'tag') dari referensi image Docker."""
+    ref = (image or "").strip()
+    if "@" in ref:
+        return ref.split("@", 1)[0], ""
+    name, _, tag = ref.rpartition(":")
+    if not name or "/" in tag:
+        return ref, "latest"
+    return name, (tag or "latest")
+
+
+async def resolve_image_digest(image: str, ttl_seconds: int = 300) -> str:
+    """Ubah `repo:tag` menjadi `repo@sha256:...` (digest terbaru Docker Hub).
+
+    Node Vast bisa menyimpan cache tag `:worker` lama sehingga worker menjalankan
+    kode usang. Digest selalu menunjuk build terbaru dan tidak bisa di-cache
+    salah. Kalau registry tidak bisa dibaca (privat / rate limit), image asli
+    dikembalikan supaya pembuatan template tidak gagal.
+    """
+    ref = (image or "").strip()
+    repo, tag = _split_image(ref)
+    if not repo or not tag or "@" in ref:
+        return ref
+    lookup = repo if "/" in repo else f"library/{repo}"
+    cache_key = f"{lookup}:{tag}"
+    now = time.time()
+    cached = _TEMPLATE_DIGEST_CACHE.get(cache_key)
+    if cached and now - cached[0] < ttl_seconds:
+        return str(cached[1])
+
+    def _fetch() -> str:
+        import requests
+
+        url = f"https://hub.docker.com/v2/repositories/{lookup}/tags/{tag}"
+        response = requests.get(url, timeout=10)
+        if response.status_code != 200:
+            return ""
+        return str((response.json() or {}).get("digest") or "").strip()
+
+    try:
+        digest = await asyncio.to_thread(_fetch)
+    except Exception as exc:  # noqa: BLE001 - jangan gagalkan pembuatan template
+        logger.debug("Resolve digest %s gagal: %s", ref, exc)
+        digest = ""
+    if not digest:
+        return ref
+    pinned = f"{lookup}@{digest}"
+    _TEMPLATE_DIGEST_CACHE[cache_key] = (now, pinned)
+    return pinned
+
+
+async def next_template_name(prefix: str = "clipzi-worker") -> str:
+    """Nama template berikutnya: `prefix-1`, `prefix-2`, ... (tidak menimpa).
+
+    Vast mengizinkan nama sama, tetapi menimpanya membuat sulit membedakan
+    build lama dan baru di web Vast. Nomor diambil dari template yang sudah ada
+    sehingga klik berikutnya otomatis menjadi nomor selanjutnya.
+    """
+    base = (prefix or "clipzi-worker").strip().rstrip("-") or "clipzi-worker"
+    client = _client()
+    names: List[str] = []
+    try:
+        rows = await asyncio.to_thread(client.search_templates, base)
+        for row in rows or []:
+            if isinstance(row, dict):
+                names.append(str(row.get("name") or ""))
+            else:
+                names.append(str(getattr(row, "name", "") or ""))
+    except Exception as exc:  # noqa: BLE001 - fallback ke -1
+        logger.warning("Gagal membaca daftar template Vast: %s", exc)
+
+    highest = 0
+    pattern = re.compile(rf"^{re.escape(base)}-(\d+)$")
+    for found in names:
+        match = pattern.match(found.strip())
+        if match:
+            highest = max(highest, int(match.group(1)))
+    return f"{base}-{highest + 1}"
+
+
 async def create_worker_template(
     name: Optional[str] = None,
     image: Optional[str] = None,
@@ -616,6 +707,8 @@ async def create_worker_template(
     include_env: bool = True,
     sync_env_vars: bool = True,
     public: bool = False,
+    auto_name: bool = False,
+    pin_digest: bool = False,
 ) -> Dict[str, Any]:
     """Buat template Vast.ai dari image worker + env pipeline (sekali klik).
 
@@ -635,8 +728,21 @@ async def create_worker_template(
         )
     if any(ch.isspace() for ch in resolved_image):
         raise ValueError(f"Image tidak valid: {resolved_image!r}")
+    # Pin digest: pakai build TERBARU walau node Vast masih menyimpan cache tag.
+    if pin_digest:
+        resolved_image = await resolve_image_digest(resolved_image)
 
-    resolved_name = (name or settings.VAST_TEMPLATE_NAME or "clipzi-worker").strip()
+    # Prefix dibersihkan dari akhiran nomor supaya `clipzi-worker-3` tidak
+    # berkembang menjadi `clipzi-worker-3-1` pada klik berikutnya.
+    default_name = (settings.VAST_TEMPLATE_NAME or "clipzi-worker").strip() or "clipzi-worker"
+    prefix = re.sub(r"-\d+$", "", default_name) or "clipzi-worker"
+    if name and name.strip():
+        resolved_name = name.strip()
+    elif auto_name:
+        # Sekali klik = template baru bernomor (clipzi-worker-1, -2, ...).
+        resolved_name = await next_template_name(prefix)
+    else:
+        resolved_name = default_name
     if not resolved_name:
         raise ValueError("Nama template tidak boleh kosong.")
 

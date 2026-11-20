@@ -122,40 +122,6 @@ export async function loadVastTemplateStatus() {
   }
 }
 
-/** Buat template Vast.ai dari image worker + env pipeline, lalu aktifkan. */
-export async function createVastTemplate(payload: {
-  name?: string;
-  image?: string;
-  disk_space?: number;
-  include_env?: boolean;
-  sync_env_vars?: boolean;
-  public?: boolean;
-  activate?: boolean;
-}) {
-  try {
-    const data = await adminFetch<{
-      ok: boolean;
-      template_hash: string;
-      template_id: number | null;
-      name: string;
-      image: string;
-      disk_space: number;
-      env_count: number;
-      env_keys: string[];
-      env_sync: Record<string, unknown>;
-      warnings: string[];
-      activated: boolean;
-    }>('/api/admin/settings/vast/template/create', {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    });
-    revalidatePath('/dashboard/settings/vast');
-    return { ok: true, data };
-  } catch (error) {
-    return { error: _error(error) };
-  }
-}
-
 export async function exportVastEnv(reveal: boolean) {
   try {
     return await adminFetch<{ text: string; reveal: boolean }>(
@@ -237,3 +203,65 @@ export async function syncVastTemplate(payload: {
     return { ok: false as const, error: _error(error) };
   }
 }
+
+/**
+ * Sekali klik: buat template worker BARU.
+ *
+ * - `auto_name` (default true) → nama otomatis `clipzi-worker-1`, `-2`, ...
+ *   sehingga klik berikutnya tidak menimpa template yang sudah dipakai.
+ * - `pin_digest` (default true) → image di-pin ke `repo@sha256:...` build
+ *   terbaru supaya node Vast tidak memakai cache tag lama.
+ * - Env selalu diambil ulang dari backend (build_worker_env), jadi template
+ *   baru otomatis memakai env terkini.
+ */
+export async function createVastTemplate(payload: {
+  name?: string;
+  image?: string;
+  disk_space?: number;
+  activate?: boolean;
+  include_env?: boolean;
+  sync_env_vars?: boolean;
+  auto_name?: boolean;
+  pin_digest?: boolean;
+}) {
+  try {
+    const data = await adminFetch<TemplateSyncResult>(
+      '/api/admin/settings/vast/template/create',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          auto_name: payload.auto_name ?? true,
+          pin_digest: payload.pin_digest ?? true,
+          ...payload
+        })
+      }
+    );
+    revalidatePath('/dashboard/settings/instance');
+    revalidatePath('/dashboard/settings/vast');
+    return { ok: true as const, data };
+  } catch (error) {
+    return { ok: false as const, error: _error(error) };
+  }
+}
+
+/**
+ * Muat ulang kredensial dari database (cookies YouTube, HF token, storage)
+ * lalu kembalikan daftar env terbaru — tanpa restart container API.
+ */
+export async function refreshVastEnv() {
+  try {
+    const data = await adminFetch<{
+      items: Array<Record<string, unknown>>;
+      summary?: Record<string, unknown>;
+    }>('/api/admin/settings/vast/env/refresh', {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+    revalidatePath('/dashboard/settings/instance');
+    revalidatePath('/dashboard/settings/vast');
+    return { ok: true as const, data };
+  } catch (error) {
+    return { ok: false as const, error: _error(error) };
+  }
+}
+

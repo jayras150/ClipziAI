@@ -317,7 +317,7 @@ def test_admin_endpoint_activates_template(monkeypatch):
 
     result = asyncio.run(
         vast_api.create_worker_template(
-            vast_api.TemplateCreateIn(),
+            vast_api.TemplateCreateIn(auto_name=False, pin_digest=False),
             cast(Any, FakeRequest()),
             cast(Any, FakeAdmin()),
             cast(Any, FakeDB()),
@@ -330,3 +330,117 @@ def test_admin_endpoint_activates_template(monkeypatch):
         "worker_image": "user/clipzi:worker",
         "worker_disk": 40,
     }
+
+
+def test_next_template_name_menaikkan_nomor(monkeypatch):
+    class FakeClient:
+        def search_templates(self, query=None):
+            return [
+                {"name": "clipzi-worker-1"},
+                {"name": "clipzi-worker-2"},
+                {"name": "clipzi-worker-lama"},
+            ]
+
+    monkeypatch.setattr(vast_admin, "_client", lambda: FakeClient())
+
+    name = asyncio.run(vast_admin.next_template_name("clipzi-worker"))
+
+    assert name == "clipzi-worker-3"
+
+
+def test_next_template_name_mulai_dari_satu(monkeypatch):
+    class FakeClient:
+        def search_templates(self, query=None):
+            return []
+
+    monkeypatch.setattr(vast_admin, "_client", lambda: FakeClient())
+
+    assert asyncio.run(vast_admin.next_template_name("clipzi-worker")) == "clipzi-worker-1"
+
+
+def test_resolve_image_digest_memakai_digest_docker_hub(monkeypatch):
+    import requests
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {"digest": "sha256:deadbeef"}
+
+    monkeypatch.setattr(requests, "get", lambda *a, **k: FakeResponse())
+    vast_admin._TEMPLATE_DIGEST_CACHE.clear()
+
+    pinned = asyncio.run(
+        vast_admin.resolve_image_digest("sujinwo555/clipzi-backend:worker")
+    )
+
+    assert pinned == "sujinwo555/clipzi-backend@sha256:deadbeef"
+
+
+def test_resolve_image_digest_fallback_saat_gagal(monkeypatch):
+    import requests
+
+    class NotFound:
+        status_code = 404
+
+        def json(self):
+            return {}
+
+    monkeypatch.setattr(requests, "get", lambda *a, **k: NotFound())
+    vast_admin._TEMPLATE_DIGEST_CACHE.clear()
+
+    assert (
+        asyncio.run(vast_admin.resolve_image_digest("user/gagal:tag"))
+        == "user/gagal:tag"
+    )
+
+
+def test_create_worker_template_auto_name_dan_tanpa_timpa(monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(
+        settings, "VAST_WORKER_IMAGE", "user/clipzi:worker", raising=False
+    )
+    monkeypatch.setattr(
+        settings, "VAST_TEMPLATE_NAME", "clipzi-worker-2", raising=False
+    )
+    monkeypatch.setattr(settings, "VAST_WORKER_DISK", 40, raising=False)
+    monkeypatch.setattr(
+        vast_admin,
+        "build_worker_env",
+        lambda task_id=None: {
+            "CLIPZI_ROLE": "worker",
+            "DATABASE_URL": "postgresql+asyncpg://u:p@h/db",
+            "CLIPZI_WORKER_TOKEN": "tok",
+            "CLIPZI_CALLBACK_URL": "https://x/api/internal/worker/events",
+            "SECRET_KEY": "s",
+            "ENCRYPTION_KEY": "e",
+        },
+    )
+
+    class FakeClient:
+        def __init__(self):
+            self.created = None
+
+        def create_template(self, **kwargs):
+            self.created = kwargs
+            return {"success": True, "template": {"id": 7, "hash_id": "hash-new"}}
+
+        def search_templates(self, query=None):
+            return [{"name": "clipzi-worker-1"}, {"name": "clipzi-worker-2"}]
+
+    client = FakeClient()
+    monkeypatch.setattr(vast_admin, "_client", lambda: client)
+
+    async def fake_sync(keys=None, dry_run=False):
+        return {"dry_run": dry_run, "results": [], "summary": {"same": 1}}
+
+    monkeypatch.setattr(vast_admin, "sync_env_to_vast", fake_sync)
+
+    result = asyncio.run(
+        vast_admin.create_worker_template(auto_name=True, pin_digest=False)
+    )
+
+    # Prefix dibersihkan dari akhiran nomor, lalu nomor berikutnya dipakai.
+    assert result["name"] == "clipzi-worker-3"
+    assert (client.created or {}).get("name") == "clipzi-worker-3"
+
