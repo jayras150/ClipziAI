@@ -150,13 +150,20 @@ export function BrandingProvider({
       const href = withVersion(url, branding.version)
       if (!href) return
       const key = `clipzyIcon${rel}${sizes || ""}`
-      let link = document.head.querySelector<HTMLLinkElement>(`link[data-${key}]`)
+      // PENTING: jangan pakai `link.dataset[key]`. Nama properti dataset tidak
+      // boleh mengandung "-" (mis. `apple-touch-icon`), dan assignment seperti
+      // itu melempar SyntaxError saat hydration sehingga seluruh halaman jatuh
+      // ke "Application error: a client-side exception has occurred".
+      // Atribut data-* dengan nilai bebas aman dipakai untuk menandai link.
+      let link = document.head.querySelector<HTMLLinkElement>(
+        `link[data-clipzy-key="${key}"]`
+      )
       if (!link) {
         link = document.createElement("link")
         link.rel = rel
         if (sizes) link.sizes = sizes
         if (type) link.type = type
-        link.dataset[key] = "1"
+        link.setAttribute("data-clipzy-key", key)
         document.head.appendChild(link)
       }
       link.href = href
