@@ -611,13 +611,32 @@ class AudioTranscriber:
         audio_path: str,
         language: Optional[str],
     ):
+        segments, info = self._run_transcribe(model, audio_path, language, vad=True)
+        if not segments:
+            # VAD bisa menghapus SELURUH audio (musik/berisik/gain rendah) →
+            # transkripsi 0 segmen dan pipeline jatuh ke scene detection yang
+            # lambat. Ulangi sekali tanpa VAD supaya subtitle tetap dihasilkan.
+            logger.warning(
+                "VAD tidak menemukan suara di %s; mengulang transkripsi tanpa VAD",
+                audio_path,
+            )
+            segments, info = self._run_transcribe(
+                model, audio_path, language, vad=False
+            )
+            if segments:
+                logger.info("Transkripsi tanpa VAD: %s segmen", len(segments))
+        return segments, info
+
+    def _run_transcribe(
+        self, model, audio_path: str, language: Optional[str], vad: bool
+    ):
         segments_iter, info = model.transcribe(
             audio_path,
             language=language,
             word_timestamps=True,
-            vad_filter=True,
+            vad_filter=vad,
         )
-        
+
         segments = []
         for segment in segments_iter:
             words = []
@@ -636,7 +655,7 @@ class AudioTranscriber:
                 "text": segment.text,
                 "words": words,
             })
-        
+
         return segments, info
     
     def generate_srt(self, segments: List[dict], output_path: str) -> str:

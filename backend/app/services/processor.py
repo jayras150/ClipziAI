@@ -609,25 +609,182 @@ class VideoProcessor:
             ]
         return ["-c:v", "libx264", "-preset", preset, "-crf", str(crf)]
     
+    @staticmethod
+    def _video_duration_sync(video_path: str) -> float:
+        """Durasi video (detik) — murah, hanya membaca metadata container."""
+        import cv2
+
+        cap = cv2.VideoCapture(video_path)
+        try:
+            fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
+            frames = cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0.0
+            return float(frames) / float(fps) if fps else 0.0
+        finally:
+            cap.release()
+
     async def detect_scenes(self, video_path: str) -> List[Dict[str, Any]]:
-        """Detect scene changes using PySceneDetect (API 0.6+/0.7+)."""
+        """Deteksi scene, dengan batas durasi agar video panjang tidak lambat.
+
+        Scene detection hanya dipakai sebagai FALLBACK saat perencanaan berbasis
+        transkrip tidak menghasilkan rentang. Biayanya terukur 94s untuk video
+        1080p 10 menit (≈9 menit untuk 1 jam). Untuk video di atas
+        `SCENE_DETECT_MAX_MINUTES` (default 20) kita lewati dan biarkan
+        `_select_clip_ranges` membagi durasi merata — jauh lebih hemat dengan
+        dampak kualitas kecil.
+        """
         try:
             from scenedetect import ContentDetector, detect  # noqa: F401
         except ImportError:
             return [{"start": 0, "end": 60, "confidence": 1.0}]
 
+        import os
+
+        max_minutes = float(os.getenv("SCENE_DETECT_MAX_MINUTES", "20") or 20)
         loop = asyncio.get_event_loop()
+        duration = await loop.run_in_executor(
+            None, self._video_duration_sync, video_path
+        )
+        if max_minutes > 0 and duration > max_minutes * 60:
+            logger.info(
+                "Scene detection dilewati: durasi %.1f menit > batas %.0f menit "
+                "(rentang klip dibagi merata)",
+                duration / 60,
+                max_minutes,
+            )
+            return []
+
         return await loop.run_in_executor(None, self._detect_scenes_sync, video_path)
 
-    def _detect_scenes_sync(self, video_path: str) -> List[Dict[str, Any]]:
-        """Deteksi scene memakai `detect()`.
-
-        Catatan: `VideoManager` sudah dihapus sejak PySceneDetect 0.7, sehingga
-        implementasi lama selalu gagal import lalu jatuh ke fallback 60 detik.
-        """
+    def _detect_scenes_native(self, video_path: str) -> List[Dict[str, Any]]:
+        """PySceneDetect penuh (histogram tiap frame). Akurat tapi lambat:
+        terukur 94s untuk video 1080p 10 menit, dan >9 menit untuk video 1 jam.
+        Dipakai sebagai fallback / saat SCENE_DETECT_MODE=native."""
         from scenedetect import ContentDetector, detect
 
-        scenes = detect(video_path, ContentDetector())
+        scenes = detect(video_path, ContentDetector(min_scene_len=5))
+        logger.info("Scene detection: %s scene (PySceneDetect penuh)", len(scenes))
+        return [
+            {
+                "start": start_time.get_seconds(),
+                "end": end_time.get_seconds(),
+                "confidence": 1.0,
+            }
+            for start_time, end_time in scenes
+        ]
+
+    def _detect_scenes_sampling(self, video_path: str) -> List[Dict[str, Any]]:
+        """Deteksi scene cepat: sampling 1 frame/N detik + refine sekitar cut.
+
+        Mengapa: PySceneDetect 0.7 menghitung histogram SETIAP frame pada
+        resolusi penuh — itu sumber utama waktu proses (94s untuk 10 menit
+        1080p). Sampling pada 160x90 dengan lompatan waktu jauh lebih murah,
+        lalu kandidat cut di-refine pada 0.25s agar batas scene tetap presisi.
+
+        Env:
+          SCENE_DETECT_MODE      = sampling (default) | native
+          SCENE_SAMPLE_SECONDS   = 2   (jarak antar sample)
+          SCENE_CUT_THRESHOLD    = 18  (mean abs diff 0-255 untuk cut)
+        """
+        import os
+
+        import cv2
+        import numpy as np
+
+        step = max(0.5, float(os.getenv("SCENE_SAMPLE_SECONDS", "2") or 2))
+        threshold = float(os.getenv("SCENE_CUT_THRESHOLD", "18") or 18)
+
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            raise RuntimeError("video tidak bisa dibuka")
+        try:
+            fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+            frames = cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0
+            duration = float(frames) / fps if fps > 0 else 0.0
+            if duration <= 0:
+                raise RuntimeError("durasi video tidak diketahui")
+
+            diffs: List[tuple] = []
+            prev = None
+            stamp = 0.0
+            while stamp < duration:
+                cap.set(cv2.CAP_PROP_POS_MSEC, stamp * 1000.0)
+                ok, frame = cap.read()
+                if not ok:
+                    break
+                gray = cv2.cvtColor(
+                    cv2.resize(frame, (160, 90), interpolation=cv2.INTER_AREA),
+                    cv2.COLOR_BGR2GRAY,
+                )
+                if prev is not None:
+                    diffs.append((stamp, float(np.mean(cv2.absdiff(gray, prev)))))
+                prev = gray
+                stamp += step
+        finally:
+            cap.release()
+
+        candidates = [stamp for stamp, diff in diffs if diff >= threshold]
+
+        # Refine tiap kandidat pada jendela ±step dengan resolusi 0.25s.
+        cuts: List[float] = []
+        if candidates:
+            cap = cv2.VideoCapture(video_path)
+            try:
+                for cut in candidates:
+                    start = max(0.0, cut - step)
+                    end = min(duration, cut + step)
+                    best_at, best_diff, prev = cut, -1.0, None
+                    stamp = start
+                    while stamp <= end:
+                        cap.set(cv2.CAP_PROP_POS_MSEC, stamp * 1000.0)
+                        ok, frame = cap.read()
+                        if not ok:
+                            break
+                        gray = cv2.cvtColor(
+                            cv2.resize(frame, (160, 90), interpolation=cv2.INTER_AREA),
+                            cv2.COLOR_BGR2GRAY,
+                        )
+                        if prev is not None:
+                            diff = float(np.mean(cv2.absdiff(gray, prev)))
+                            if diff > best_diff:
+                                best_at, best_diff = stamp, diff
+                        prev = gray
+                        stamp += 0.25
+                    cuts.append(round(best_at, 2))
+            finally:
+                cap.release()
+
+        points = sorted({0.0, *cuts})
+        scenes: List[Dict[str, Any]] = []
+        for index, start in enumerate(points):
+            end = points[index + 1] if index + 1 < len(points) else round(duration, 2)
+            if end - start >= 0.5:
+                scenes.append(
+                    {"start": round(start, 2), "end": round(end, 2), "confidence": 1.0}
+                )
+        if not scenes:
+            scenes = [{"start": 0.0, "end": round(duration, 2), "confidence": 1.0}]
+        logger.info(
+            "Scene detection: %s scene (sampling %.1fs/160x90, %s kandidat cut)",
+            len(scenes),
+            step,
+            len(cuts),
+        )
+        return scenes
+
+    def _detect_scenes_sync(self, video_path: str) -> List[Dict[str, Any]]:
+        """Pilih metode deteksi scene: sampling cepat, fallback PySceneDetect."""
+        import os
+
+        mode = (os.getenv("SCENE_DETECT_MODE") or "sampling").strip().lower()
+        if mode == "native":
+            return self._detect_scenes_native(video_path)
+        try:
+            return self._detect_scenes_sampling(video_path)
+        except Exception as exc:  # noqa: BLE001 - jangan gagalkan pipeline
+            logger.warning(
+                "Scene detection sampling gagal (%s); memakai PySceneDetect penuh", exc
+            )
+            return self._detect_scenes_native(video_path)
         return [
             {
                 "start": start_time.get_seconds(),
