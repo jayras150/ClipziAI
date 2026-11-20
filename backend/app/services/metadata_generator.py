@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from typing import Any, Dict, List, Optional
 
@@ -27,6 +28,23 @@ from app.services import ai_prompts
 from app.services.ai_client import get_ai_client, get_ai_model, is_ai_configured
 
 logger = logging.getLogger(__name__)
+
+# Anggaran token untuk metadata. Dulu di-hardcode 900 — cukup untuk model chat
+# biasa, tetapi TIDAK cukup untuk reasoning model (DeepSeek flash/v4-pro):
+# seluruh 900 token bisa habis jadi reasoning sebelum satu karakter JSON pun
+# ditulis → provider membalas content kosong / terpotong.
+DEFAULT_METADATA_MAX_TOKENS = 4096
+MAX_METADATA_MAX_TOKENS = 16384
+
+
+def _metadata_max_tokens() -> int:
+    """Baca METADATA_MAX_TOKENS (512..16384), default 4096."""
+    raw = (os.getenv("METADATA_MAX_TOKENS") or "").strip()
+    try:
+        value = int(raw) if raw else DEFAULT_METADATA_MAX_TOKENS
+    except ValueError:
+        value = DEFAULT_METADATA_MAX_TOKENS
+    return min(max(value, 512), MAX_METADATA_MAX_TOKENS)
 
 # Error autentikasi provider: tidak ada gunanya retry 3×, dan pesannya harus
 # memberi tahu admin bahwa provider/base URL tidak cocok dengan key.
@@ -265,13 +283,19 @@ class MetadataGenerator:
         client: Optional[Any] = None,
         model: Optional[str] = None,
         endpoint: Optional[Dict[str, Any]] = None,
+        max_tokens: Optional[int] = None,
     ) -> None:
         """Generator metadata.
 
         `client`/`model` opsional: worker mengirim client yang menunjuk ke
         llama-server lokal (Qwen3-4B-Instruct-2507), sedangkan API memakai
         konfigurasi global (OpenRouter untuk tombol Regenerate).
+
+        `max_tokens` = anggaran token awal per percobaan. Percobaan berikutnya
+        otomatis memakai 2× lipat (hingga 16384) supaya reasoning model tidak
+        kehabisan token sebelum menulis JSON.
         """
+        self.max_tokens = int(max_tokens or _metadata_max_tokens())
         if client is not None:
             self.client = client
             self.model = model or "local-llm"
@@ -371,9 +395,14 @@ class MetadataGenerator:
             user_prompt += variation_note
 
         last_error: Optional[Exception] = None
+        base_tokens = max(512, int(self.max_tokens or DEFAULT_METADATA_MAX_TOKENS))
         # 3 percobaan: model kadang membalas kosong (GLM/OpenRouter) dan sebagian
         # provider menolak `response_format`, jadi percobaan terakhir tanpa itu.
+        # Budget token naik 2× setiap percobaan: reasoning model (DeepSeek
+        # flash/v4-pro) bisa menghabiskan seluruh budget untuk "berpikir"
+        # sehingga content kosong / JSON belum sempat ditulis.
         for attempt in range(3):
+            budget = min(MAX_METADATA_MAX_TOKENS, base_tokens * (2**attempt))
             request_kwargs: Dict[str, Any] = {
                 "model": self.model,
                 "messages": [
@@ -381,18 +410,42 @@ class MetadataGenerator:
                     {"role": "user", "content": user_prompt},
                 ],
                 "temperature": (0.35, 0.6, 0.45)[attempt],
-                "max_tokens": 900,
+                "max_tokens": budget,
             }
             if attempt < 2:
                 request_kwargs["response_format"] = {"type": "json_object"}
+            finish_reason: Optional[str] = None
+            content = ""
+            reasoning_tokens: Optional[int] = None
             try:
                 response = await self.client.chat.completions.create(**request_kwargs)  # type: ignore[union-attr]
-                content = response.choices[0].message.content or ""
+                choice = response.choices[0]
+                finish_reason = getattr(choice, "finish_reason", None)
+                content = choice.message.content or ""
+                usage = getattr(response, "usage", None)
+                details = getattr(usage, "completion_tokens_details", None)
+                reasoning_tokens = getattr(details, "reasoning_tokens", None) if details else None
+                if not content.strip():
+                    raise MetadataGenerationError(
+                        "AI returned an empty response (kemungkinan seluruh "
+                        f"{budget} token habis untuk reasoning; "
+                        f"finish_reason={finish_reason})."
+                    )
                 payload = _extract_json(content)
                 return self._validate(payload, transcript=text, variation=variation)
             except MetadataGenerationError as exc:
                 last_error = exc
-                logger.warning("Metadata AI ditolak (percobaan %s): %s", attempt + 1, exc)
+                logger.warning(
+                    "Metadata AI ditolak (percobaan %s): %s "
+                    "[model=%s finish=%s content=%d chars reasoning_tokens=%s max_tokens=%s]",
+                    attempt + 1,
+                    exc,
+                    self.model,
+                    finish_reason,
+                    len(content),
+                    reasoning_tokens,
+                    budget,
+                )
             except Exception as exc:  # provider error, timeout, dsb.
                 last_error = exc
                 text = str(exc)

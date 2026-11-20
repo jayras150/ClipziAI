@@ -80,7 +80,8 @@ def _log_runtime() -> None:
 
     log.info(
         "env: TRANSCRIPTION_PROVIDER=%s ALLOW_REMOTE=%s FFMPEG_ENCODER=%s "
-        "GPU_WHISPER_MODEL=%s WHISPER_VAD=%s VAD_MIN_KEEP=%s AUDIO_SILENCE_RMS=%s",
+        "GPU_WHISPER_MODEL=%s WHISPER_VAD=%s VAD_MIN_KEEP=%s AUDIO_SILENCE_RMS=%s "
+        "METADATA_MAX_TOKENS=%s",
         os.environ.get("TRANSCRIPTION_PROVIDER") or "-",
         os.environ.get("TRANSCRIPTION_ALLOW_REMOTE") or "-",
         os.environ.get("FFMPEG_ENCODER") or "-",
@@ -88,6 +89,7 @@ def _log_runtime() -> None:
         os.environ.get("WHISPER_VAD") or "auto",
         os.environ.get("WHISPER_VAD_MIN_KEEP") or "0.05",
         os.environ.get("AUDIO_SILENCE_RMS") or "0.002",
+        os.environ.get("METADATA_MAX_TOKENS") or "4096",
     )
 
     # Versi nyata paket media: bukti untuk mendiagnosa tanpa menebak.
