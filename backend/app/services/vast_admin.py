@@ -675,29 +675,37 @@ async def next_template_name(prefix: str = "clipzi-worker") -> str:
     """Nama template berikutnya: `prefix-1`, `prefix-2`, ... (tidak menimpa).
 
     Vast mengizinkan nama sama, tetapi menimpanya membuat sulit membedakan
-    build lama dan baru di web Vast. Nomor diambil dari template yang sudah ada
-    sehingga klik berikutnya otomatis menjadi nomor selanjutnya.
+    build lama dan baru di web Vast.
+
+    Catatan penting: `search_templates(None)` mengembalikan ±2048 template
+    PUBLIK dan tidak memuat template privat akun ini (terbukti: 0 hasil
+    berprefix `clipzi-worker`). Query dict `{"name": {"eq": ...}}` akurat,
+    jadi nomor dicek per nama dan berhenti pada nomor pertama yang belum ada.
     """
     base = (prefix or "clipzi-worker").strip().rstrip("-") or "clipzi-worker"
     client = _client()
-    names: List[str] = []
-    try:
-        rows = await asyncio.to_thread(client.search_templates, base)
-        for row in rows or []:
-            if isinstance(row, dict):
-                names.append(str(row.get("name") or ""))
-            else:
-                names.append(str(getattr(row, "name", "") or ""))
-    except Exception as exc:  # noqa: BLE001 - fallback ke -1
-        logger.warning("Gagal membaca daftar template Vast: %s", exc)
 
-    highest = 0
-    pattern = re.compile(rf"^{re.escape(base)}-(\d+)$")
-    for found in names:
-        match = pattern.match(found.strip())
-        if match:
-            highest = max(highest, int(match.group(1)))
-    return f"{base}-{highest + 1}"
+    def _exists(candidate: str) -> bool:
+        try:
+            rows = client.search_templates({"name": {"eq": candidate}})
+        except Exception as exc:  # noqa: BLE001 - fallback di bawah
+            logger.warning("Cek nama template %s gagal: %s", candidate, exc)
+            raise
+        return any(
+            str((row or {}).get("name") or "").strip() == candidate
+            for row in (rows or [])
+        )
+
+    try:
+        for index in range(1, 100):
+            candidate = f"{base}-{index}"
+            if not await asyncio.to_thread(_exists, candidate):
+                return candidate
+    except Exception:
+        # Registry tidak bisa dibaca: pakai nomor waktu supaya TIDAK menimpa
+        # template yang sedang dipakai dispatch.
+        return f"{base}-{int(time.time()) % 100000}"
+    return f"{base}-{int(time.time()) % 100000}"
 
 
 async def create_worker_template(
