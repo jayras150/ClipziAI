@@ -523,6 +523,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .ui-btn-gold:hover { box-shadow: 0 18px 34px rgba(244, 199, 107, 0.34); }
 
+/* Aksi utama sekunder: biru (mis. "View clips" di kartu project). */
+.ui-btn-blue {
+  background: linear-gradient(135deg, #9ccdff, #4c93e8 55%, #2f6fd0);
+  color: #071628;
+  box-shadow: 0 12px 26px rgba(76, 147, 232, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.ui-btn-blue:hover { box-shadow: 0 18px 34px rgba(76, 147, 232, 0.4); }
+
 .ui-btn-ghost {
   background: rgba(255, 255, 255, 0.04);
   border-color: var(--ui-line-strong);
@@ -531,9 +539,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .ui-btn-ghost:hover { background: rgba(244, 199, 107, 0.09); border-color: rgba(244, 199, 107, 0.45); color: #ffe6b0; }
 
 .ui-btn-danger {
-  background: linear-gradient(135deg, #ffa79f, #e3685e);
-  color: #240f0c;
-  box-shadow: 0 12px 26px rgba(227, 104, 94, 0.24);
+  background: linear-gradient(135deg, #f4685e, #d93b30 60%, #b0261c);
+  color: #fff;
+  box-shadow: 0 12px 26px rgba(217, 59, 48, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 .ui-btn-block { width: 100%; }
 .ui-btn-clear {

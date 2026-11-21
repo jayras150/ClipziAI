@@ -24,6 +24,7 @@ import {
   RotateCcw,
   Droplets,
   ChevronDown,
+  SquareArrowOutUpRight,
 } from "lucide-react"
 
 import { api, ClipData, MusicTrackData, TaskData } from "@/lib/api"
@@ -329,6 +330,8 @@ export default function DashboardPage() {
   const [notice, setNotice] = useState("")
 
   const [openTaskId, setOpenTaskId] = useState("")
+  // Task yang harus digulir otomatis saat tab baru dibuka via "View clips".
+  const [focusClipTask, setFocusClipTask] = useState("")
   const [clips, setClips] = useState<ClipData[]>([])
   const [clipsLoading, setClipsLoading] = useState(false)
   // Editing lanjutan: pilih klip untuk digabung / potong
@@ -428,6 +431,16 @@ export default function DashboardPage() {
       if (status === "connected") setYoutubeMessage("YouTube connected successfully.")
       if (status === "denied") setYoutubeMessage("YouTube permission was cancelled.")
       if (status === "error") setYoutubeMessage("YouTube connection failed. Check the Google OAuth configuration.")
+
+      // Tombol "View clips" membuka TAB BARU: /dashboard?tab=projects&task=<id>.
+      // Di tab itu klip task langsung dimuat, bukan accordion di bawah daftar.
+      const focusTask = params.get("task")
+      if (focusTask) {
+        changeTab("projects")
+        setOpenTaskId(focusTask)
+        setFocusClipTask(focusTask)
+        void loadClips(stored, focusTask)
+      }
     }
 
     void boot()
@@ -450,6 +463,17 @@ export default function DashboardPage() {
     }, 5000)
     return () => window.clearInterval(timer)
   }, [token, tasks, openTaskId, refreshTasks, loadClips])
+
+  // Tab baru dari tombol "View clips": gulir ke panel klip setelah kartu siap.
+  useEffect(() => {
+    if (!focusClipTask || openTaskId !== focusClipTask) return
+    if (clipsLoading || clips.length === 0) return
+    const timer = window.setTimeout(() => {
+      document.getElementById("clips-panel")?.scrollIntoView({ behavior: "smooth", block: "start" })
+      setFocusClipTask("")
+    }, 120)
+    return () => window.clearTimeout(timer)
+  }, [focusClipTask, openTaskId, clipsLoading, clips.length])
 
   const connectYouTube = async () => {
     const stored = getToken()
@@ -751,9 +775,29 @@ export default function DashboardPage() {
     else window.location.href = "/"
   }
 
-  const openTask = (task: TaskData) => {
+  /**
+   * Buka klip sebuah task di TAB BARU, bukan accordion di bawah daftar project.
+   * URL membawa `task` sehingga tab baru langsung memuat klip task tersebut.
+   * Kalau popup diblokir browser, kembali ke perilaku lama (buka di halaman ini)
+   * supaya admin/user tetap bisa melihat klipnya.
+   */
+  const openTaskInNewTab = (task: TaskData) => {
+    try {
+      const url = new URL(window.location.href)
+      url.searchParams.set("tab", "projects")
+      url.searchParams.set("task", task.id)
+      const opened = window.open(url.toString(), "_blank")
+      if (opened) {
+        // Cegah tab baru mengakses window pembuka (equivalent noopener).
+        opened.opener = null
+        return
+      }
+    } catch {
+      /* URL/popup gagal: pakai fallback di bawah */
+    }
     setOpenTaskId(task.id)
-    loadClips(token, task.id)
+    setFocusClipTask(task.id)
+    void loadClips(token, task.id)
   }
 
   const removeTask = async (taskId: string) => {
@@ -2065,14 +2109,16 @@ export default function DashboardPage() {
 
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <button
-                        className="ui-btn ui-btn-ghost"
+                        className="ui-btn ui-btn-blue"
                         style={{ fontSize: 12, padding: "8px 12px" }}
-                        onClick={() => openTask(task)}
+                        title="Open clips in a new tab"
+                        onClick={() => openTaskInNewTab(task)}
                       >
+                        <SquareArrowOutUpRight size={13} />
                         View clips
                       </button>
                       <button
-                        className="ui-btn ui-btn-ghost"
+                        className="ui-btn ui-btn-danger"
                         style={{ fontSize: 12, padding: "8px 12px" }}
                         onClick={() => setConfirmDeleteTask({ id: task.id, label: sourceHost(task.source_url) })}
                       >
@@ -2111,7 +2157,7 @@ export default function DashboardPage() {
 
 
             {openTaskData && (
-              <div className="ui-card">
+              <div className="ui-card" id="clips-panel">
                 <div
                   style={{
                     display: "flex",
