@@ -62,7 +62,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         )}
       >
         <NextTopLoader color='var(--primary)' showSpinner={false} />
-        <VersionWatcher />
+        {/* buildId = ID bundle halaman ini, supaya tab basi (setelah deploy)
+            langsung reload dan Server Action (unggah/simpan) tidak gagal. */}
+        <VersionWatcher buildId={process.env.NEXT_DEPLOYMENT_ID} />
         <NuqsAdapter>
           <ThemeProvider
             attribute='class'
