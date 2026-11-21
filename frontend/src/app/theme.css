@@ -966,21 +966,32 @@ a.ui-link-card:hover { border-color: rgba(244, 199, 107, 0.4); transform: transl
 /* =============================================================================
    KARTU KLIP
    ============================================================================= */
+/* Grid kartu klip: lebar kartu HARUS sama di semua baris.
+   Dulu memakai flex `flex: 1 1 232px` sehingga baris terakhir yang isinya < 5
+   kartu ikut melebar (auto-fit/flex-grow). Sekarang kolomnya tetap (5 di
+   desktop) dan baris terakhir mengikuti lebar kolom yang sama. */
 .clip-grid {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 18px;
   align-items: stretch;
   width: 100%;
   margin-top: 16px;
 }
-.clip-card { flex: 1 1 232px; max-width: 320px; }
-@media (max-width: 620px) {
-  .clip-grid { gap: 12px; }
-  .clip-card { flex: 1 1 calc(50% - 6px); max-width: none; }
+.clip-card { min-width: 0; max-width: none; }
+/* Turunkan jumlah kolom di layar kecil — jumlah kartu per baris tetap konsisten
+   dan lebar kartu tidak pernah "melompat" karena sisa kartu di baris terakhir. */
+@media (max-width: 900px) {
+  .clip-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
 }
-@media (max-width: 420px) {
-  .clip-card { flex: 1 1 100%; }
+@media (max-width: 740px) {
+  .clip-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .clip-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+}
+@media (max-width: 380px) {
+  .clip-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 .clip-card {
