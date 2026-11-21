@@ -3169,3 +3169,48 @@ html, body { max-width: 100%; overflow-x: clip; }
   .ytup-btn{width:100%;justify-content:center}
 }
 @media (max-width:380px){.ytup-btn-group{grid-template-columns:1fr}}
+
+/* =============================================================================
+   LOADER VIDEO KLIP (popup) — muncul sampai frame pertama siap.
+   ============================================================================= */
+.clip-media-stage { position: relative; }
+.clip-media-stage.is-loading { min-height: 240px; }
+.clip-media-loader {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+  color: #e8ecf5;
+  background: rgba(5, 7, 11, 0.62);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  border-radius: inherit;
+  pointer-events: none;
+}
+.clip-media-loader strong { font-size: 13px; font-weight: 600; letter-spacing: 0.01em; }
+.clip-media-loader small {
+  font-size: 10.5px;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: rgba(232, 236, 245, 0.66);
+}
+.clip-media-loader-ring {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 8px;
+  border-radius: 50%;
+  border: 3px solid rgba(244, 199, 107, 0.18);
+  border-top-color: rgba(244, 199, 107, 0.95);
+  border-right-color: rgba(110, 231, 215, 0.85);
+  animation: clip-loader-spin 0.85s linear infinite;
+  box-shadow: 0 0 22px rgba(244, 199, 107, 0.22);
+}
+@keyframes clip-loader-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .clip-media-loader-ring { animation-duration: 2.4s; }
+}

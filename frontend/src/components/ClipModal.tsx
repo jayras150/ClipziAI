@@ -95,6 +95,10 @@ export default function ClipModal({
   const [videoDuration, setVideoDuration] = useState(0)
   const [videoError, setVideoError] = useState(false)
   const [videoRatio, setVideoRatio] = useState<number | null>(null)
+  // Overlay "Loading video / Please wait" sampai frame pertama benar-benar siap,
+  // supaya kotak hitam kosong tidak terlihat seperti video rusak.
+  const [videoReady, setVideoReady] = useState(false)
+  const [videoBuffering, setVideoBuffering] = useState(false)
   const [filmstrip, setFilmstrip] = useState<{ at_second: number; url: string }[]>([])
   const [ytThumbBusy, setYtThumbBusy] = useState(false)
   const [successOpen, setSuccessOpen] = useState(false)
@@ -229,6 +233,15 @@ export default function ClipModal({
     setTranscript("")
     setError("")
     setNotice("")
+    // Reset status player: video/thumbnail klip sebelumnya tidak boleh terbawa
+    // (kotak hitam atau poster klip lama sebelum video baru termuat).
+    setVideoReady(false)
+    setVideoBuffering(false)
+    setVideoError(false)
+    setVideoDuration(0)
+    setVideoRatio(null)
+    setCurrentTime(0)
+    setLiveThumb("")
     setUploadUrl(
       clip.youtube_video_id ? `https://youtu.be/${clip.youtube_video_id}` : "",
     )
@@ -632,7 +645,9 @@ export default function ClipModal({
         <div className="clip-modal-body">
           <div className="clip-modal-media">
             <div
-              className="clip-media-stage"
+              className={`clip-media-stage${
+                clip.download_url && !videoError && (!videoReady || videoBuffering) ? " is-loading" : ""
+              }`}
               style={{
                 aspectRatio: videoRatio ? `${videoRatio}` : undefined,
                 maxWidth: videoRatio ? (videoRatio < 1 ? 380 : 460) : undefined,
@@ -647,7 +662,7 @@ export default function ClipModal({
                   poster={liveThumb || clip.thumbnail_url || undefined}
                   controls
                   playsInline
-                  preload="metadata"
+                  preload="auto"
                   onLoadedMetadata={(event) => {
                     const el = event.currentTarget
                     setVideoDuration(el.duration || 0)
@@ -656,6 +671,19 @@ export default function ClipModal({
                       setVideoRatio(el.videoWidth / el.videoHeight)
                     }
                   }}
+                  // Frame pertama siap: sembunyikan overlay loading.
+                  onLoadedData={() => {
+                    setVideoReady(true)
+                    setVideoBuffering(false)
+                  }}
+                  onCanPlay={() => {
+                    setVideoReady(true)
+                    setVideoBuffering(false)
+                  }}
+                  onPlaying={() => setVideoBuffering(false)}
+                  onWaiting={() => setVideoBuffering(true)}
+                  onSeeking={() => setVideoBuffering(true)}
+                  onSeeked={() => setVideoBuffering(false)}
                   onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
                   onError={() => setVideoError(true)}
                 />
@@ -675,6 +703,13 @@ export default function ClipModal({
                   </span>
                 </div>
               )}
+              {clip.download_url && !videoError && (!videoReady || videoBuffering) ? (
+                <div className="clip-media-loader" role="status" aria-live="polite">
+                  <span className="clip-media-loader-ring" aria-hidden="true" />
+                  <strong>{videoReady ? "Buffering…" : "Loading video…"}</strong>
+                  <small>Please wait</small>
+                </div>
+              ) : null}
               {coverOpen && (liveThumb || clip.thumbnail_url) ? (
                 <div className="cs-cover-view" role="group" aria-label="YouTube cover preview">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
