@@ -24,7 +24,6 @@ import {
   RotateCcw,
   Droplets,
   ChevronDown,
-  SquareArrowOutUpRight,
 } from "lucide-react"
 
 import { api, ClipData, MusicTrackData, TaskData } from "@/lib/api"
@@ -178,15 +177,19 @@ function viralTooltip(factors: Record<string, any> | null | undefined): string {
 
 export default function DashboardPage() {
   const [token, setToken] = useState("")
-  const [activeTab, setActiveTab] = useState<"upload" | "projects">("upload")
+  // Tab di dalam aplikasi: Upload | Projects | Clips (klip satu project).
+  const [activeTab, setActiveTab] = useState<"upload" | "projects" | "clips">("upload")
 
   /** Pindah tab + simpan ke URL (?tab=) dan localStorage. */
-  const changeTab = (tab: "upload" | "projects") => {
+  const changeTab = (tab: "upload" | "projects" | "clips") => {
     setActiveTab(tab)
     try {
-      window.localStorage.setItem("clipzi.dashboard.tab", tab)
+      // localStorage hanya menyimpan tab utama supaya refresh tidak membuka
+      // tab Clips tanpa project yang valid.
+      if (tab !== "clips") window.localStorage.setItem("clipzi.dashboard.tab", tab)
       const url = new URL(window.location.href)
       url.searchParams.set("tab", tab)
+      if (tab !== "clips") url.searchParams.delete("task")
       window.history.replaceState(null, "", url.toString())
     } catch {
       /* localStorage/URL tidak tersedia — abaikan */
@@ -330,8 +333,6 @@ export default function DashboardPage() {
   const [notice, setNotice] = useState("")
 
   const [openTaskId, setOpenTaskId] = useState("")
-  // Task yang harus digulir otomatis saat tab baru dibuka via "View clips".
-  const [focusClipTask, setFocusClipTask] = useState("")
   const [clips, setClips] = useState<ClipData[]>([])
   const [clipsLoading, setClipsLoading] = useState(false)
   // Editing lanjutan: pilih klip untuk digabung / potong
@@ -432,13 +433,12 @@ export default function DashboardPage() {
       if (status === "denied") setYoutubeMessage("YouTube permission was cancelled.")
       if (status === "error") setYoutubeMessage("YouTube connection failed. Check the Google OAuth configuration.")
 
-      // Tombol "View clips" membuka TAB BARU: /dashboard?tab=projects&task=<id>.
-      // Di tab itu klip task langsung dimuat, bukan accordion di bawah daftar.
+      // Tombol "View clips" membuka tab Clips DI DALAM aplikasi:
+      // /dashboard?tab=clips&task=<id>. Tab itu langsung memuat klip task tsb.
       const focusTask = params.get("task")
       if (focusTask) {
-        changeTab("projects")
         setOpenTaskId(focusTask)
-        setFocusClipTask(focusTask)
+        changeTab("clips")
         void loadClips(stored, focusTask)
       }
     }
@@ -463,17 +463,6 @@ export default function DashboardPage() {
     }, 5000)
     return () => window.clearInterval(timer)
   }, [token, tasks, openTaskId, refreshTasks, loadClips])
-
-  // Tab baru dari tombol "View clips": gulir ke panel klip setelah kartu siap.
-  useEffect(() => {
-    if (!focusClipTask || openTaskId !== focusClipTask) return
-    if (clipsLoading || clips.length === 0) return
-    const timer = window.setTimeout(() => {
-      document.getElementById("clips-panel")?.scrollIntoView({ behavior: "smooth", block: "start" })
-      setFocusClipTask("")
-    }, 120)
-    return () => window.clearTimeout(timer)
-  }, [focusClipTask, openTaskId, clipsLoading, clips.length])
 
   const connectYouTube = async () => {
     const stored = getToken()
@@ -672,9 +661,9 @@ export default function DashboardPage() {
         setNotice("Task created — Clipzy AI is processing your video.")
       }
       await refreshTasks(stored)
-      changeTab("projects")
       setOpenTaskId(task.id)
-      loadClips(stored, task.id)
+      changeTab("clips")
+      void loadClips(stored, task.id)
     } catch (error: any) {
       setTaskError(readApiError(error.response?.data, "Could not start processing this video."))
     } finally {
@@ -776,28 +765,20 @@ export default function DashboardPage() {
   }
 
   /**
-   * Buka klip sebuah task di TAB BARU, bukan accordion di bawah daftar project.
-   * URL membawa `task` sehingga tab baru langsung memuat klip task tersebut.
-   * Kalau popup diblokir browser, kembali ke perilaku lama (buka di halaman ini)
-   * supaya admin/user tetap bisa melihat klipnya.
+   * Buka klip sebuah project di TAB "Clips" DI DALAM aplikasi (bukan tab
+   * browser dan bukan accordion di bawah daftar project).
    */
-  const openTaskInNewTab = (task: TaskData) => {
-    try {
-      const url = new URL(window.location.href)
-      url.searchParams.set("tab", "projects")
-      url.searchParams.set("task", task.id)
-      const opened = window.open(url.toString(), "_blank")
-      if (opened) {
-        // Cegah tab baru mengakses window pembuka (equivalent noopener).
-        opened.opener = null
-        return
-      }
-    } catch {
-      /* URL/popup gagal: pakai fallback di bawah */
-    }
+  const openTask = (task: TaskData) => {
     setOpenTaskId(task.id)
-    setFocusClipTask(task.id)
+    setClips([])
+    setSelectedClips([])
+    changeTab("clips")
     void loadClips(token, task.id)
+    try {
+      window.scrollTo({ top: 0, behavior: "smooth" })
+    } catch {
+      /* scroll tidak tersedia — abaikan */
+    }
   }
 
   const removeTask = async (taskId: string) => {
@@ -1194,6 +1175,14 @@ export default function DashboardPage() {
             >
               Projects{tasks.length ? ` (${tasks.length})` : ""}
             </button>
+            {openTaskId ? (
+              <button
+                className={`ui-tab${activeTab === "clips" ? " active" : ""}`}
+                onClick={() => changeTab("clips")}
+              >
+                Clips
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -1996,6 +1985,8 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div style={{ display: "grid", gap: 18 }}>
+            {activeTab === "projects" ? (
+              <>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <h2 className="ui-subtitle" style={{ margin: 0 }}>
                 Projects
@@ -2111,10 +2102,10 @@ export default function DashboardPage() {
                       <button
                         className="ui-btn ui-btn-blue"
                         style={{ fontSize: 12, padding: "8px 12px" }}
-                        title="Open clips in a new tab"
-                        onClick={() => openTaskInNewTab(task)}
+                        title="Open the clips tab for this project"
+                        onClick={() => openTask(task)}
                       >
-                        <SquareArrowOutUpRight size={13} />
+                        <Layers size={13} />
                         View clips
                       </button>
                       <button
@@ -2154,9 +2145,24 @@ export default function DashboardPage() {
                 ))}
               </div>
             )}
+              </>
+            ) : null}
 
+            {activeTab === "clips" && !openTaskData && (
+              <div className="ui-card" style={{ textAlign: "center" }}>
+                <FileVideo size={30} className="ui-gold" style={{ margin: "0 auto 10px" }} />
+                <p className="ui-muted">Choose a project to see its clips.</p>
+                <button
+                  className="ui-btn ui-btn-ghost"
+                  style={{ marginTop: 12 }}
+                  onClick={() => changeTab("projects")}
+                >
+                  <ArrowLeft size={14} /> Back to projects
+                </button>
+              </div>
+            )}
 
-            {openTaskData && (
+            {activeTab === "clips" && openTaskData && (
               <div className="ui-card" id="clips-panel">
                 <div
                   style={{
@@ -2167,9 +2173,27 @@ export default function DashboardPage() {
                     flexWrap: "wrap",
                   }}
                 >
-                  <h3 className="ui-subtitle" style={{ margin: 0, fontSize: 17 }}>
-                    Clips · {sourceHost(openTaskData.source_url)}
-                  </h3>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                    <button
+                      className="ui-btn ui-btn-ghost"
+                      style={{ fontSize: 12, padding: "6px 10px" }}
+                      onClick={() => changeTab("projects")}
+                    >
+                      <ArrowLeft size={13} /> Projects
+                    </button>
+                    <h3
+                      className="ui-subtitle"
+                      style={{
+                        margin: 0,
+                        fontSize: 17,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Clips · {sourceHost(openTaskData.source_url)}
+                    </h3>
+                  </div>
                   <span className={statusBadgeClass(openTaskData.status)} style={statusBadgeStyle(openTaskData.status)}>
                     {STATUS_LABEL[openTaskData.status] ?? openTaskData.status}
                   </span>
